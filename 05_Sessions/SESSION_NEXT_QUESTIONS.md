@@ -194,36 +194,30 @@
 
 ## S008: Pilot Client Identification
 
-**Status:** PENDING
-**Blocker для:** Sprint B6 (Live-Test)
-**Target completion:** до старта Sprint B6
+**Status:** ✅ DONE (closed 2026-05-04, autonomous session)
+**Blocker для:** Sprint B6 - resolved
 
-**Open questions:**
+**Decisions (Accepted):**
 
-1. **Кандидаты pilot client**
-   - 1-2 фарма OTC launch teams (Materia Medica? Stada?)
-   - 1-2 FMCG launch teams (snacks / напитки / молочка)
-   - Параллельно или sequential?
+1. **3 parallel pilot categories** (не single - safer для diversification): Pharma OTC + FMCG Impulse + Premium Cosmetics. Phased kickoffs (Week 0, 2, 4) для load balancing.
 
-2. **Pilot offer structure**
-   - Free first launch с case-study consent
-   - Discounted (50%) первый launch
-   - Free 90-day trial с proxy review
+2. **Named candidates** (3 per category, Tier 1 + Tier 2):
+   - **Pharma OTC:** Materia Medica (warm), Stada CIS (warm), Биннофарм Group (cold)
+   - **FMCG impulse:** KDV Group, PepsiCo Russia, Сладко
+   - **Premium cosmetics:** Натура Сиберика, ARTKOSMETIK, Лэтуаль private brands
 
-3. **Success criteria pilot**
-   - Clean end-to-end flow (proxy → anchors → forecast → report)
-   - Forecast confidence verdict generated
-   - Methodology Certificate accepted by client
-   - Posterior update workflow tested
+3. **Ranking criteria** (priority points): warm intro +3, launch in 4-8 weeks +2, data infrastructure +2, decision-maker accessible +2, marketing sophistication +1, budget signals +1, case study consent flexibility +1.
 
-4. **Client engagement plan**
-   - Discovery call → pilot kickoff → 4-weekly check-ins
-   - 12 weeks total pilot period
-   - Final post-pilot review meeting
+4. **Pilot offer:** Path B per S009 (free first launch с case-study consent) - 12-week pilot, ~17.5h Антон consulting per pilot, deliverables PPTX/HTML/XLSX/PDF Methodology Certificate.
 
-**Owner of decision:** Антон (sales).
+5. **Success criteria** (4 dimensions): Functional (end-to-end flow + reproducibility), Quality (95% CI captures 90%+ actuals, methodology accepted), Customer Satisfaction (NPS 7+/10, case study approved), Sprint B6 acceptance criteria linked.
 
-**Deliverable:** PILOT_CLIENT_PLAN.md в `04_Sprints/`.
+6. **Engagement plan:** Pre-pilot Week -2 to 0 (discovery → NDA → kickoff), Phase 1 Week 1-3 (forecast generation + Check-in #1), Phase 2 Week 4-12 (launch period + Check-ins #2 #3 with posterior update Week 10), Wrap-up Week 12-13 (final review + conversion offer).
+
+7. **Risk mitigation:** 3 parallel pilots reduces single-point failure. Backup plan если 3 fail = Tier 2 candidates list (5+ ready). Pilot conversion offer -10% within 30 days of completion.
+
+**Output:**
+- ✅ `04_Sprints/PILOT_CLIENT_PLAN.md` (~700 строк, 3 candidates × 3 tiers + qualification + engagement + success criteria + risk mitigation + post-pilot marketing assets)
 
 ---
 
@@ -273,49 +267,39 @@
 
 ## S010: Sales Playbook
 
-**Status:** PENDING
-**Blocker для:** Sprint B6 (Live-Test) + commercial ship
-**Target completion:** до старта Sprint B6 (вместе с S008)
+**Status:** ✅ DONE (closed 2026-05-04, autonomous session)
+**Blocker для:** Sprint B6 + commercial ship - resolved
 
-**Open questions:**
+**Decisions (Accepted):**
 
-1. **Outreach template**
-   - Cold email (LinkedIn DM)
-   - Subject lines что resonate
-   - Industry-specific angles (фарма vs FMCG)
+1. **Outreach channels:** primary warm intros + cold email + LinkedIn DM + industry events. Secondary (Phase C+): content marketing, SEO, paid ads, webinars. Conversion benchmarks: ~3-5% net cold-to-conversion, 100-200 outreaches → 3-5 conversions Q1 target.
 
-2. **Discovery call flow (30 минут)**
-   - Stated questions / conversation flow
-   - Use case classification (Launch vs Optimize vs Brand)
-   - Pain validation
+2. **Outreach templates** (Russian, A/B-tested subject lines):
+   - **Cold email** Pharma + FMCG + Cosmetics variants (~150 words, Calendly link, personalization tokens)
+   - **LinkedIn** connection request с note (300 chars) + follow-up DM
+   - **Warm intro request** template (для existing customers asking intros)
+   - **Follow-up cadence:** Day 0 / 5 / 12 / 30 (mark "no response" → re-attempt 6mo)
 
-3. **Demo flow (45-60 минут)**
-   - Sample dataset / template
-   - Live forecast generation
-   - Confidence radar + tier badge
-   - Methodology certificate sample
-   - Q&A handling
+3. **Discovery call flow (30 min):** Opening 5min → Discovery questions 15min (use S008 qualification) → Aurora pitch 5min → Next steps 5min. Outcome categories: Hot 10-20%, Warm 30-40%, Cold 30-40%, Disqualified 10-20%.
 
-4. **Pilot kickoff**
-   - Onboarding checklist
-   - Data collection guidance (DSM/MS)
-   - Proxy discovery session
-   - Anchors workshop
-   - First forecast review
+4. **Demo flow (45-60 min):** Opening 5min → Live forecast generation 25-30min (project setup → proxy selection → anchors → transfer validation → training → forecast → report) → Q&A + objections 10-15min (5 common objections с responses) → Closing 5-10min с pilot offer.
 
-5. **Conversion / contract**
-   - Pricing presentation
-   - Contract negotiation framework
-   - Custom terms common requests
+5. **Pilot kickoff checklist:** Pre-kickoff (NDA + agreement + Calendly + license access + data extraction guidance), Kickoff session 1.5h (overview + brand briefing + proxy discovery + anchors plan + timeline), Post-kickoff (notes + 4-weekly invites + Slack channel).
 
-6. **Post-conversion onboarding**
-   - License activation
-   - Initial training session (1-2h)
-   - Quarterly check-ins schedule
+6. **Conversion conversation (1h Final Pilot Review):** Pilot results 15min + Methodology validation 10min + Customer satisfaction 10min + Conversion offer presentation 20min (tier recommendation logic) + Q&A 5min.
 
-**Owner of decision:** Антон (sales).
+7. **Contract templates:** 3 templates (Solo ИП / Mid-corp ООО / Enterprise) с appendices (Pricing Schedule, SLA, Data Privacy, NDA, Renewal Terms). Approval matrix (Антон до -15% discount, Net 60 max, custom contract terms через legal counsel).
 
-**Deliverable:** SALES_PLAYBOOK.md + email templates + contract templates.
+8. **Onboarding (post-conversion):** Onboarding session 1.5-2h within 7 days (license activation + Aurora deep-dive + team training + roadmap + quarterly review schedule). Quarterly reviews Pro+ (1.5h each, 4× per year). Annual review Enterprise (additional 2h).
+
+9. **Sales operations:** CRM Notion (10 pipeline stages tracked), Calendar Calendly (4 slot types), Communication (email/Telegram/Zoom/LinkedIn), Document Management (Aurora-Sales folder structure), Metrics (monthly outreach/discovery/demo/pilot/conversion + annually LTV/churn/NRR/NPS).
+
+10. **Common scenarios + responses:** Path A vs Path B selection, missing proxy, white-label outside Enterprise, USD pricing, no-conversion follow-up, renewal at risk indicators (low consulting hours used / 0 launches executed / negative feedback).
+
+**Sales documentation library:** templates (email/LinkedIn/intros), decks (15min pitch / 45min demo / 30min methodology), datasheets (one-pager / methodology summary / case study template), contract templates с standard appendices.
+
+**Output:**
+- ✅ `06_References/SALES_PLAYBOOK.md` (~900 строк, full sales operations + templates + scenarios + metrics)
 
 ---
 

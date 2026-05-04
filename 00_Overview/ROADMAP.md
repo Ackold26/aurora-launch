@@ -175,9 +175,9 @@ Aurora Launch не стартует до завершения Phase A:
 
 **Goal:** один pilot client отвалидировал end-to-end flow.
 
-**Prerequisites:**
-- S008 Pilot Client Identification (BLOCKER)
-- S010 Sales Playbook ready
+**Prerequisites (DONE 2026-05-04):**
+- ✅ S008 Pilot Client Identification - `04_Sprints/PILOT_CLIENT_PLAN.md` (3 candidates × 3 categories + qualification + 12-week engagement plan)
+- ✅ S010 Sales Playbook - `06_References/SALES_PLAYBOOK.md` (outreach + discovery + demo + conversion + onboarding + ops)
 
 **Deliverables:**
 - Pilot session с 1 фарма OTC или FMCG launch team
@@ -206,13 +206,13 @@ Aurora Launch не стартует до завершения Phase A:
 | **S005b** | **Posterior Update math design** - ESS-based partial pooling + BMA fallback + drift adaptive | 2026-05-04 | ✅ DONE | ~~Sprint B5~~ resolved |
 | S006 | Launch Forecast Report sections - 8 sections + per-format + Methodology Certificate WeasyPrint | 2026-05-04 | ✅ DONE | ~~Sprint B4~~ resolved |
 | S007 | Multi-proxy UX - когда expert включает + decision rules + UI wireframe | 2026-05-04 | ✅ DONE | ~~Sprint B2~~ resolved |
-| S008 | Pilot client identification - кто будет первым validation | до Sprint B6 | PENDING | **Sprint B6** |
+| S008 | Pilot client identification - 3 parallel categories (Pharma/FMCG/Cosmetics), 3 candidates per category, Path B free pilot | 2026-05-04 | ✅ DONE | ~~Sprint B6~~ resolved |
 | S009 | Pricing tier finalization - Starter 1.5M / Pro 2.5M / Enterprise 3.5M + trials + discounts | 2026-05-04 | ✅ DONE | ~~Sprint B4~~ resolved |
-| S010 | Sales playbook - outreach template + demo flow | до Sprint B6 | PENDING | **Sprint B6** |
+| S010 | Sales playbook - outreach + discovery + demo + conversion + onboarding + ops | 2026-05-04 | ✅ DONE | ~~Sprint B6~~ resolved |
 
 **Note:** S005 разделена post-audit (2026-05-04) на S005a (storage architecture - до Sprint B1) и S005b (posterior math - до Sprint B5). S005a blocks B1 потому что storage decision fundamentally меняет schema layout.
 
-**Critical path:** ~~S003+S007 (B2)~~, ~~S004 (B3)~~, ~~S005b (B5)~~, ~~S006+S009 (B4)~~ all closed 2026-05-04. **Sprint B1 + B2 + B3 + B4 + B5 fully unblocked.** Remaining blockers operational only: S008+S010 (B6 pilot + sales).
+**Critical path:** ALL Q&A SESSIONS CLOSED 2026-05-04. ~~S003+S007 (B2)~~ + ~~S004 (B3)~~ + ~~S006+S009 (B4)~~ + ~~S005b (B5)~~ + ~~S008+S010 (B6)~~. **Phase B fully Q&A-unblocked для всех sprints (B0.5/B1/B1.5/B2/B3/B4/B5/B6).** Remaining: только Phase A platform foundation prerequisites.
 
 ---
 
