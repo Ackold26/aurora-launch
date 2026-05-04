@@ -145,42 +145,26 @@
 
 ## S006: Launch Forecast Report Sections
 
-**Status:** PENDING
-**Blocker для:** Sprint B4 (Report Template)
-**Target completion:** до старта Sprint B4
+**Status:** ✅ DONE (closed 2026-05-04, autonomous session)
+**Blocker для:** Sprint B4 - resolved
 
-**Open questions:**
+**Decisions (Accepted):**
 
-1. **8 sections - что именно в каждой**
-   - Section 1: Cover - что включаем (project name, date, version, hash, Aurora seal, recipient brand, proxy used)
-   - Section 2: Executive Summary - tier badge, key metrics (forecast 1-year sales, CI), CFO framing language
-   - Section 3: Proxy Quality - similarity radar, dimensions table, verdict, what doesn't transfer
-   - Section 4: Transfer Caveats - что переносится / не переносится, uncertainty decomposition
-   - Section 5: Forecast 12 weeks - tight CI, immediate launch period
-   - Section 6: Forecast 26 weeks - 6-month ramp
-   - Section 7: Forecast 52 weeks - year planning, expanding cone
-   - Section 8: Methodology + References + Model Card + Hash signature
+1. **8 sections finalized** (16-20 slides PPTX premium pacing): Cover (1) + Executive Summary (1-2) + Proxy Quality (2-3, multi-proxy variant +1) + Transfer Caveats (1-2) + Forecast 12w/26w/52w (3-4 each) + Methodology + References (2). Structure scalable.
 
-2. **Должны ли быть decomposition + optimization sections?**
-   - Пока не в 8-section template
-   - Add as optional appendix?
+2. **Optional appendices (Pro+ tier only):**
+   - Appendix A - Decomposition (per-channel contribution + ROI)
+   - Appendix B - Optimization Scenario (budget reallocation suggestion)
+   - Appendix C - Sensitivity Analysis (always included, audit reproducibility)
 
-3. **Visualizations per section**
-   - PPTX vs HTML vs XLSX format-specific?
-   - Charts через ECharts (HTML) vs python-pptx (PPTX) vs Rust XLSX
+3. **Per-format implementation:** PPTX (premium presentation, board-room), HTML (interactive ECharts, animations с prefers-reduced-motion), XLSX 8-sheet workbook (analyst drill-down), PDF Methodology Certificate (single или 2-page audit doc).
 
-4. **Methodology Certificate PDF (audit C10)**
-   - Standalone document или часть report?
-   - Какие fields обязательны (Aurora seal, version, hash, proxy used, methodology version)
+4. **Methodology Certificate PDF locked:** WeasyPrint generator, single-page (Starter) or 2-page Pro+ (math + diagnostics). Hash signature embedded в PDF metadata + visible. Aurora wordmark letterhead. Антон signature line.
 
-5. **Customer-facing language tone**
-   - CFO-friendly framing
-   - Reusable phrases / templates
-   - Plain-language vs technical balance
+5. **Customer-facing language:** CFO-friendly framing, plain language defaults, reusable phrases catalog (headline forecast, tier verdicts, transfer caveat boilerplate, posterior update reminder, methodology cross-reference). Forbidden phrases listed (anti-patterns: "гарантированный результат", "точный прогноз", "превзойдёт конкурентов").
 
-**Owner of decision:** Маша (design) + Антон (customer perspective).
-
-**Deliverable:** REPORT_SECTIONS_SPEC.md в `02_Data_Spec/` + Methodology Certificate template.
+**Output:**
+- ✅ `02_Data_Spec/REPORT_SECTIONS_SPEC.md` (master spec, ~600 строк, per-format guidance + Methodology Certificate spec + customer language phrases + acceptance criteria)
 
 ---
 
@@ -245,44 +229,45 @@
 
 ## S009: Pricing Tier Finalization
 
-**Status:** PENDING
-**Blocker для:** Sprint B4 (moved up - audit A15) + commercial ship
-**Target completion:** до старта Sprint B4
+**Status:** ✅ DONE (closed 2026-05-04, autonomous session)
+**Blocker для:** Sprint B4 + commercial ship - resolved
 
-**Open questions:**
+**Decisions (Accepted):**
 
-1. **Tier numbers финал**
-   - Starter: 1.5M / год + 20h consulting?
-   - Pro: 2.5M / год + 30h + priority support?
-   - Enterprise: 3M+ / год + 40h + custom training + on-site?
+1. **Tier numbers finalized:**
+   - **Starter** 1,500,000 ₽/год: unlimited launches + 20h consulting + 48h email support + 2 seats + Methodology Certificate single-page
+   - **Pro** 2,500,000 ₽/год: 30h consulting + 24h priority + 5 seats + 2-page Methodology Certificate + quarterly review + creative pre-test integration
+   - **Enterprise** 3,500,000 ₽/год: 40h + dedicated success manager + unlimited seats + on-site training + custom dashboards + white-label + API (Phase C+) + custom contract terms
 
-2. **What's in / what's out per tier**
-   - All tiers: unlimited launches, all features
-   - Pro+: priority support, methodology certificate volumes
-   - Enterprise+: custom training, on-site sessions, multi-user license
+2. **Free trial / pilot:** TWO paths offered, customer chooses:
+   - **Path A** 60-day evaluation (full Pro features, 5h consulting included pro-rata, up to 1 launch executed)
+   - **Path B** Pilot first launch FREE с case-study consent (~12 weeks duration)
 
-3. **Free trial / pilot offer**
-   - 30 / 60 / 90 дней?
-   - Pilot first launch free с case-study consent?
-   - Combined option
+3. **Discount policy:**
+   - Multi-year: 1y standard, 2y -5%, 3y -10%, 4y+ -15% (Enterprise only)
+   - Suite bundle: Launch + Optimize -25%, Launch + Optimize + Brand -40%, +10% incremental для Phase C+ products
+   - Loyalty renewal: -10% / -15% / -20% (Starter / Pro / Enterprise) compounds yearly capped at 30% Enterprise
+   - Pilot conversion: -10% on first year (within 30 days of pilot completion)
+   - Volume (parallel projects): -10% incremental Enterprise seats при 5+ parallel
 
-4. **Discount policy**
-   - Multi-year discount (5% / 10% / 15%)?
-   - Suite bundle discount (40% per Suite strategy)
-   - Loyalty discount renewal
+4. **Payment structure:**
+   - Currencies: RUB primary, USD optional Enterprise
+   - Annual upfront default (most cost-effective)
+   - Quarterly billing Pro+ only (5% surcharge)
+   - Custom milestones Enterprise (no surcharge if total annual within calendar year)
+   - Net 30 days, 1.5%/month late interest
 
-5. **Payment structure**
-   - Annual upfront vs quarterly billing?
-   - Currency (RUB primary, USD optional?)
+5. **Renewal logic:**
+   - Auto-renewal ON by default
+   - 90-day renewal notice
+   - 60-day non-renewal notice required (opt-out)
+   - Tier upgrade anytime (pro-rated), downgrade from next billing cycle (30-day notice)
+   - 30-day grace period для late payment, then suspension, 90-day total non-payment → closure
 
-6. **Renewal logic**
-   - Auto-renewal default or opt-in?
-   - 60-day notice for non-renewal
-   - Grace period for late payment
+**Phase C revision triggers:** scale (1000+ customers, sales automation), white-label demand strength, inflation indexing.
 
-**Owner of decision:** Антон (commercial).
-
-**Deliverable:** PRICING_TIERS.md + контрактные templates.
+**Output:**
+- ✅ `06_References/PRICING_TIERS.md` (master spec, ~410 строк, tiers + trials + discounts + payment + renewal + pricing rationale + Sprint B6 pilot pricing)
 
 ---
 

@@ -135,9 +135,9 @@ Aurora Launch не стартует до завершения Phase A:
 
 **Goal:** PPTX/HTML/XLSX отчёт launch-specific.
 
-**Prerequisites:**
-- S006 Report Sections session (BLOCKER)
-- S009 Pricing tier session (для footer references)
+**Prerequisites (DONE 2026-05-04):**
+- ✅ S006 Report Sections - `02_Data_Spec/REPORT_SECTIONS_SPEC.md` (8 sections + per-format + Methodology Certificate)
+- ✅ S009 Pricing tier - `06_References/PRICING_TIERS.md` (Starter 1.5M / Pro 2.5M / Enterprise 3.5M + trials + discounts)
 
 **Deliverables:**
 - `aurora_pptx/launch_forecast/` - 8-section template:
@@ -204,15 +204,15 @@ Aurora Launch не стартует до завершения Phase A:
 | S004 | Adaptation Rules detail - 5 shape params + magnitude calibration + cross-category matrix + ADR-003 pre-train | 2026-05-04 | ✅ DONE | ~~Sprint B3~~ resolved |
 | **S005a** | **Storage Layer Decision: ZIP archive container (Option D)** | 2026-05-04 | ✅ DONE (ADR-002) | ~~Sprint B1~~ resolved |
 | **S005b** | **Posterior Update math design** - ESS-based partial pooling + BMA fallback + drift adaptive | 2026-05-04 | ✅ DONE | ~~Sprint B5~~ resolved |
-| S006 | Launch Forecast Report sections - что в каждой section + PDF tool decision | до Sprint B4 | PENDING | **Sprint B4** |
+| S006 | Launch Forecast Report sections - 8 sections + per-format + Methodology Certificate WeasyPrint | 2026-05-04 | ✅ DONE | ~~Sprint B4~~ resolved |
 | S007 | Multi-proxy UX - когда expert включает + decision rules + UI wireframe | 2026-05-04 | ✅ DONE | ~~Sprint B2~~ resolved |
 | S008 | Pilot client identification - кто будет первым validation | до Sprint B6 | PENDING | **Sprint B6** |
-| S009 | Pricing tier finalization - Starter/Pro/Enterprise threshold | до Sprint B4 (moved up) | PENDING | **Sprint B4** |
+| S009 | Pricing tier finalization - Starter 1.5M / Pro 2.5M / Enterprise 3.5M + trials + discounts | 2026-05-04 | ✅ DONE | ~~Sprint B4~~ resolved |
 | S010 | Sales playbook - outreach template + demo flow | до Sprint B6 | PENDING | **Sprint B6** |
 
 **Note:** S005 разделена post-audit (2026-05-04) на S005a (storage architecture - до Sprint B1) и S005b (posterior math - до Sprint B5). S005a blocks B1 потому что storage decision fundamentally меняет schema layout.
 
-**Critical path:** ~~S003 + S007 (до B2)~~, ~~S004 (до B3)~~, ~~S005b (до B5)~~ all closed 2026-05-04. S006 + S009 (до B4), S008 + S010 (до B6). All math/architecture sessions closed. **Sprint B1 + B2 + B3 + B5 unblocked.** Remaining blockers commercial/operational: S006/S009 (B4), S008/S010 (B6).
+**Critical path:** ~~S003+S007 (B2)~~, ~~S004 (B3)~~, ~~S005b (B5)~~, ~~S006+S009 (B4)~~ all closed 2026-05-04. **Sprint B1 + B2 + B3 + B4 + B5 fully unblocked.** Remaining blockers operational only: S008+S010 (B6 pilot + sales).
 
 ---
 
