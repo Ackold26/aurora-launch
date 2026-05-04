@@ -1,0 +1,40 @@
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*~
+
+# Backup files
+*.bak
+*.tmp
+~$*
+
+# Office locks
+.~lock.*
+
+# Future: build artifacts (Phase B+ when code added)
+__pycache__/
+*.pyc
+node_modules/
+target/
+dist/
+build/
+.venv/
+
+# Future: secrets / local configs (do not commit)
+.env
+.env.local
+*.key
+*.pem
+license.json
+aurora-secrets.env
+
+# Future: project test data with client info (privacy)
+TestData/
+fixtures/private/
+*.aurora

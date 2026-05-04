@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://auroraai.pro/schemas/launch/recipient_anchors_v1.json",
+  "title": "RecipientAnchorsV1",
+  "description": "Recipient brand anchors для Aurora Launch transfer modeling. Single source of truth - все Pydantic models и TypeScript interfaces генерируются из этого файла.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "market_size_rub",
+    "planned_share_pct",
+    "distribution_target_pct",
+    "distribution_ramp_weeks",
+    "sov_planned_pct",
+    "pricing_index_vs_proxy",
+    "launch_date",
+    "media_plan",
+    "category_trend"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Schema version. Required for forward-compatibility."
+    },
+    "market_size_rub": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Размер всей категории в рублях, год (на момент launch)"
+    },
+    "planned_share_pct": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 100,
+      "description": "Планируемая доля рынка к концу 1 года, %"
+    },
+    "distribution_target_pct": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 100,
+      "description": "Целевая численная дистрибуция к запуску, %"
+    },
+    "distribution_ramp_weeks": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 52,
+      "description": "За сколько недель достигается целевая дистрибуция"
+    },
+    "sov_planned_pct": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 100,
+      "description": "Планируемая доля голоса в категории за launch period, %"
+    },
+    "pricing_index_vs_proxy": {
+      "type": "number",
+      "minimum": 0.3,
+      "maximum": 3.0,
+      "description": "Цена recipient'а / Цена прокси (0.3-3.0, soft warning при extreme)"
+    },
+    "launch_date": {
+      "type": "string",
+      "format": "date",
+      "description": "ISO date старта рекламы"
+    },
+    "media_plan": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/MediaPlanItem"
+      },
+      "description": "Список media plan items (channel × period × budget × units)"
+    },
+    "category_trend": {
+      "type": "string",
+      "enum": ["growing", "stable", "declining"],
+      "description": "Категорийный тренд"
+    },
+    "is_paused_brand": {
+      "type": "boolean",
+      "default": false,
+      "description": "true если paused brand case (есть organic baseline)"
+    },
+    "pause_duration_months": {
+      "type": "integer",
+      "minimum": 6,
+      "description": "Если paused - сколько месяцев без рекламы (>=6, only valid when is_paused_brand=true)"
+    },
+    "creative_quality_benchmark": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Pre-test score (Kantar Link / Ipsos copytest), 0..1"
+    },
+    "creative_test_methodology": {
+      "type": "string",
+      "description": "Methodology name (Kantar_Link / Ipsos_Copytest / Internal)"
+    },
+    "target_kpi_sales": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Бизнес-цель по продажам, ₽"
+    },
+    "target_kpi_packs": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "description": "Бизнес-цель по упаковкам"
+    },
+    "target_period": {
+      "type": "string",
+      "enum": ["first_year", "first_half", "first_quarter"],
+      "description": "Period для target KPI"
+    },
+    "competitive_response_assumption": {
+      "type": "string",
+      "enum": ["passive", "moderate_increase", "aggressive_response"],
+      "description": "Ожидаемая реакция конкурентов"
+    },
+    "top3_competitors": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "maxItems": 5,
+      "description": "Top 3-5 конкурентов в категории"
+    },
+    "category_consolidation": {
+      "type": "string",
+      "enum": ["top1_dominant", "top3_dominant", "fragmented"],
+      "description": "Концентрация рынка"
+    },
+    "seasonal_pattern": {
+      "type": "string",
+      "enum": ["summer_peak", "winter_peak", "holiday_peak", "uniform"],
+      "description": "Сезонность категории"
+    }
+  },
+  "$defs": {
+    "MediaPlanItem": {
+      "type": "object",
+      "required": ["channel", "period_start", "period_end", "budget_rub"],
+      "additionalProperties": false,
+      "properties": {
+        "channel": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical channel name (см. MEDIASCOPE_FIELDS.md)"
+        },
+        "period_start": {
+          "type": "string",
+          "format": "date"
+        },
+        "period_end": {
+          "type": "string",
+          "format": "date"
+        },
+        "budget_rub": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "units": {
+          "type": "number",
+          "minimum": 0,
+          "description": "TRP / impressions"
+        },
+        "placement_type": {
+          "type": "string",
+          "enum": [
+            "spot",
+            "sponsorship",
+            "display",
+            "video",
+            "native",
+            "context"
+          ]
+        }
+      }
+    }
+  }
+}
