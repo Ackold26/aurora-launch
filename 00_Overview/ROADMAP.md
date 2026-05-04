@@ -114,8 +114,8 @@ Aurora Launch не стартует до завершения Phase A:
 
 **Goal:** recipient anchors собраны, transfer validated.
 
-**Prerequisites:**
-- S004 Adaptation Rules session (BLOCKER)
+**Prerequisites (DONE 2026-05-04):**
+- ✅ S004 Adaptation Rules - `03_Architecture/ADAPTATION_RULES.md` + ADR-003 (pre-train + transfer locked)
 
 **Deliverables:**
 - Cabinet `RecipientAnchorsStep.svelte` (form по anchors spec)
@@ -200,7 +200,7 @@ Aurora Launch не стартует до завершения Phase A:
 | S001 | Concept finalization (10 principles) | 2026-05-04 | DONE | - |
 | S002 | Data Requirements Spec deep-dive (этой сессии Variant 2) | 2026-05-04 | DONE | - |
 | S003 | Proxy Similarity Framework - 6 dimensions + scoring + weights + multi-aggregation | 2026-05-04 | ✅ DONE | ~~Sprint B2~~ resolved |
-| S004 | Adaptation Rules detail - какие параметры переносим precisely | до Sprint B3 | PENDING | **Sprint B3** |
+| S004 | Adaptation Rules detail - 5 shape params + magnitude calibration + cross-category matrix + ADR-003 pre-train | 2026-05-04 | ✅ DONE | ~~Sprint B3~~ resolved |
 | **S005a** | **Storage Layer Decision: ZIP archive container (Option D)** | 2026-05-04 | ✅ DONE (ADR-002) | ~~Sprint B1~~ resolved |
 | **S005b** | **Posterior Update math design** (formula + weight schedule) | до Sprint B5 | PENDING | Sprint B5 |
 | S006 | Launch Forecast Report sections - что в каждой section + PDF tool decision | до Sprint B4 | PENDING | **Sprint B4** |
@@ -211,7 +211,7 @@ Aurora Launch не стартует до завершения Phase A:
 
 **Note:** S005 разделена post-audit (2026-05-04) на S005a (storage architecture - до Sprint B1) и S005b (posterior math - до Sprint B5). S005a blocks B1 потому что storage decision fundamentally меняет schema layout.
 
-**Critical path:** ~~S003 + S007 (до B2)~~ closed 2026-05-04, S004 (до B3), S006 + S009 (до B4), S005b (до B5), S008 + S010 (до B6). S005a + S003 + S007 closed 2026-05-04. **Sprint B2 unblocked.**
+**Critical path:** ~~S003 + S007 (до B2)~~ closed 2026-05-04, ~~S004 (до B3)~~ closed 2026-05-04, S006 + S009 (до B4), S005b (до B5), S008 + S010 (до B6). S005a + S003 + S007 + S004 closed 2026-05-04. **Sprint B1 + B2 + B3 unblocked.** Remaining blockers: only S006/S009 (B4), S005b (B5), S008/S010 (B6).
 
 ---
 

@@ -44,48 +44,35 @@
 
 ## S004: Adaptation Rules Detail
 
-**Status:** PENDING
-**Blocker для:** Sprint B3 (Adaptation Layer)
-**Target completion:** до старта Sprint B3
+**Status:** ✅ DONE (closed 2026-05-04, autonomous session, mandate Антон)
+**Blocker для:** Sprint B3 (Adaptation Layer) - resolved
 
-**Open questions:**
+**Decisions (Accepted):**
 
-1. **Точный список параметров для transfer**
-   - Что именно из proxy model переносится?
-     - Adstock decay rate (single value vs per-channel?)
-     - Hill saturation shape (alpha + gamma vs sqrt-form?)
-     - Reach-frequency response curve shape
-     - Категорийная сезонность как deviation pattern
-     - Long-term trend (linear vs other)
-   - **Что НЕ переносится:**
-     - β coefficients (точно)
-     - Baseline magnitude
-     - ROI levels
-     - CPP / CPM levels (ROBYN-style normalization)
+1. **Transfer parameter list:** 5 shape parameters transferred (adstock_decay_per_channel + hill_shape_gamma_per_channel + hill_half_saturation_per_channel + category_seasonality 52-vector + long_term_trend_slope) + 1 optional (reach_frequency_curve_shape если fitted, skip otherwise). NOT transferred: β coefficients, baseline, residual variance, cross-category controls, promo coefficients.
 
-2. **Magnitude calibration logic**
-   - Как из anchors восстанавливаются β magnitudes?
-   - Формула baseline calibration: baseline = (market_size × planned_share × pricing_index)?
-   - Уверенность в calibrated magnitude (variance из anchor uncertainty)
+2. **Magnitude calibration formulas locked:**
+   - Baseline = market_size × seasonality_t × planned_share(t) × distribution(t) × pricing_factor
+   - Pricing factor = (1/pricing_index)^elasticity, с category-specific elasticities (FMCG_impulse 0.7, OTC 0.2, premium cosmetics 0.3, default 0.5)
+   - β prior = (proxy_β / proxy_baseline) × recipient_baseline × similarity_factor (1.0/0.85/0.70 for High/Medium/Low)
+   - σ_β = β_mean × (CV_proxy + similarity_inflation_addon 0.0/0.15/0.30)
 
-3. **Sensitivity to anchor quality**
-   - Что если recipient anchor incomplete?
-   - Hard requirement vs soft warnings
-   - Default values для missing optional fields
+3. **Anchor quality rules:** mandatory missing → block, recommended missing → defaults + warn (creative_quality_benchmark=1.0, competitive_response="moderate_increase", etc.). Anchor uncertainty propagation: ±10% market_size, ±25% planned_share, ±15% distribution, ±5% pricing.
 
-4. **Cross-category transfer rules**
-   - Можно ли transfer FMCG snacks proxy для FMCG sweets recipient (соседняя sub-categория)?
-   - Adjustments при cross-category transfer?
-   - Tier discount?
+4. **Cross-category matrix:**
+   - L3 exact: full transfer all 5 parameters
+   - L2 match: full transfer all 5
+   - L1 match: only adstock + hill (seasonality + trend → category prior fallback)
+   - Adjacent L1 (FMCG_food↔FMCG_beverage, OTC_pharma↔OTC_supplements, etc.): only adstock decay, +50% extra inflation
+   - Cross L1 non-adjacent: BLOCKED at similarity verdict layer (Insufficient)
 
-5. **Pre-train vs post-train transfer**
-   - Сейчас design предполагает: train proxy model отдельно → extract priors → train recipient с priors
-   - Alternative: joint training с partial pooling из start
-   - Trade-offs
+5. **Workflow:** **pre-train + transfer locked в ADR-003** (joint Bayesian = Phase D consideration). Three-step workflow: train proxy standalone → extract structural priors → train recipient с priors + anchor magnitudes. Reuses Aurora Econometrica modeler.py (P9 80%+ reuse).
 
-**Owner of decision:** Маша (math) + Антон (domain validation)
+**Paused brand integration:** organic baseline DSM history weighted с formula trajectory (organic weight 0.7/0.4/0.2 для pause 0-12mo / 12-24mo / 24+mo). σ_anchor reduced до 40% при quality organic data.
 
-**Deliverable:** ADAPTATION_RULES.md в `01_Concept/` или `03_Architecture/`.
+**Output:**
+- ✅ `03_Architecture/ADAPTATION_RULES.md` (master spec ~1100 строк, code snippets, sensitivity tests Sprint B5 plan, 3 worked examples)
+- ✅ `03_Architecture/decisions/ADR-003-pretrain-vs-joint-training.md` (Accepted, locks workflow choice + Phase D revisit triggers)
 
 ---
 
