@@ -954,7 +954,321 @@ Existing Aurora Эконометрика `error_codes.py` registry (numeric erro
 
 ## Component 4: Tauri shell template
 
-> **Status:** spec pending — будет в следующей итерации.
+**Goal:** Boilerplate-репозиторий, из которого новые Aurora apps (Launch / Brand / Optimize / Pricing / Promo / Studio standalone) spawn'ятся за **дни, не недели**. Шаблон собирает: Tauri shell с Rust сторону, Svelte 5 runes frontend, Python sidecar pipe IPC, Aurora Hybrid Design System tokens, NSIS installer, auto-update pipeline, theme switching, help system framework, Sentry-style error reporting (если opt-in). Per-app кастомизация = N cabinets + per-app accent + per-app workflow YAML, остальное shared.
+
+### 4.1 Scope
+
+**Входит:**
+
+#### 4.1.A Repository scaffolding
+
+`aurora-shell-template` — отдельный GitHub repo (private). Cookiecutter-style template:
+
+```
+aurora-shell-template/
+├── README.md                          # how to spawn new app
+├── cookiecutter.json                  # config: app_id, app_name, accent_color, ...
+├── {{cookiecutter.app_id}}/           # rendered template
+│   ├── README.md
+│   ├── package.json                   # name = {{cookiecutter.app_name}}
+│   ├── pnpm-lock.yaml
+│   ├── svelte.config.js
+│   ├── vite.config.js
+│   ├── tsconfig.json
+│   ├── src/                           # Svelte 5 runes
+│   │   ├── App.svelte
+│   │   ├── routes/                    # default cabinets: Home, Settings, Help
+│   │   ├── components/                # imports Aurora Hybrid DS
+│   │   ├── stores/                    # state stores (license, theme, locale)
+│   │   └── lib/sidecar_client.ts      # IPC pipe wrapper
+│   ├── src-tauri/
+│   │   ├── Cargo.toml
+│   │   ├── tauri.conf.json
+│   │   ├── build.rs
+│   │   ├── src/
+│   │   │   ├── main.rs
+│   │   │   ├── lib.rs
+│   │   │   ├── commands/              # Tauri commands (frontend → Rust IPC)
+│   │   │   ├── econ_sidecar.rs        # → renamed to sidecar_runtime.rs
+│   │   │   ├── crypto/
+│   │   │   ├── session/
+│   │   │   ├── metrics/
+│   │   │   └── errors.rs
+│   │   ├── installer_hooks.nsh        # NSIS pre-install kill sidecar (per project_econometrica_install_lock_2026_05_04)
+│   │   ├── icons/                     # placeholder, replaced per-app
+│   │   ├── help/                      # placeholder, replaced per-app
+│   │   └── capabilities/              # Tauri 2.0 capabilities files
+│   ├── sidecar/                       # Python sidecar
+│   │   ├── {{cookiecutter.app_id}}_sidecar/
+│   │   │   ├── server.py              # FastAPI app, mounts workflow router
+│   │   │   ├── build_sidecar.py       # PyInstaller spec
+│   │   │   └── requirements.txt       # base deps + aurora-platform-core
+│   │   └── tests/
+│   ├── deploy/                        # release pipeline scripts
+│   ├── docs/
+│   │   ├── INSTALL.md
+│   │   ├── ARCHITECTURE.md
+│   │   └── per_app_customization.md
+│   ├── .github/workflows/
+│   │   ├── build-and-release.yml      # cross-platform (initially Windows)
+│   │   └── pytest-frontend-tests.yml
+│   ├── lefthook.yml
+│   └── pytest.ini
+└── docs/
+    ├── HOW_TO_SPAWN.md               # шаг-за-шагом
+    └── DESIGN_DECISIONS.md
+```
+
+#### 4.1.B Cookiecutter parameters
+
+```json
+{
+  "app_id": "aurora_launch",
+  "app_name": "Aurora Launch",
+  "app_title_ru": "Aurora Launch",
+  "app_description": "MMM-прогноз для новых брендов и брендов с длительной паузой",
+  "app_accent_color": "#0EA5E9",
+  "app_accent_token_ref": "electric-blue-500",
+  "app_icon_set": "default_aurora_seal",
+  "default_locale": "ru",
+  "supported_locales": ["ru", "en"],
+  "tauri_app_identifier": "pro.auroraai.launch",
+  "tauri_window_title": "Aurora Launch",
+  "default_window_size": "1280x800",
+  "min_window_size": "1024x600",
+  "supabase_project_ref": "<filled at install>",
+  "rosst_updates_endpoint": "<filled at install>",
+  "license_app_key": "aurora_launch",
+  "ship_includes_phi_model": false,
+  "telemetry_default": "off"
+}
+```
+
+**Result:** `cookiecutter aurora-shell-template` за ~5 минут спавнит ready-to-build Tauri app.
+
+#### 4.1.C Default cabinets (shared shell)
+
+Per Aurora Эконометрика production pattern:
+
+| Cabinet | Purpose | Customization scope |
+|---|---|---|
+| `Home` | Welcome / project list / "Open recent" | Per-app: hero copy + CTA. |
+| `Settings` | Theme, locale, telemetry opt-in, cloud opt-in (если applicable), license info | Universal — same across apps. |
+| `Help` | FTS5-searchable help docs (existing pattern с BRAND_HINTS auto-injection) | Per-app: help docs content. |
+| `About` | Version + signature + links | Per-app: text. |
+| `License` | Activation, online status, slot usage (для floating license apps) | Per-app для cross_app_license tier. |
+
+**App-specific cabinets** добавляются через cookiecutter `extra_cabinets` config + Svelte components.
+
+#### 4.1.D Sidecar Python pipe IPC
+
+Same pattern как Aurora Эконометрика (`sidecar_runtime.rs` ↔ FastAPI `server.py`):
+- Tauri Rust spawn'ит sidecar exe at app start.
+- Subprocess pipe communication (stdin/stdout) для bidirectional IPC.
+- HTTP fallback (FastAPI on `127.0.0.1:RANDOM_PORT`) для streaming responses (SSE для long_running_callable progress).
+- Error codes registry shared (см. C3.1.G).
+
+**Phase A enhancement:** sidecar lifecycle hardened per `project_econometrica_install_lock_2026_05_04`:
+- NSIS preinstall hook kills sidecar before file overwrite (eliminates v1.0.16→v1.2.0 silent install lock).
+- Sidecar binary deployed в `%LOCALAPPDATA%\<app_id>\sidecar-{version}\econ_sidecar.exe` (per-version, no Program Files locks).
+- Tauri JS pre-update hook: graceful shutdown call `/shutdown` endpoint before update install.
+
+#### 4.1.E Aurora Hybrid Design System integration
+
+Per Aurora Launch REUSE Section 1.3:
+- `tokens.json` SSOT в `D:\Docs\Aurora_Ai\Standards\tokens\` — vendored copy в shell template.
+- `Standards/build.py` runs at build time → generates CSS variables + Tauri theme + HTML report tokens.
+- `--check` drift detection in CI (anchored timestamp regex per audit fix 2026-04-28).
+- 4 Hybrid Design System TSX components imported.
+- Lora display + Inter body + JetBrains Mono fonts (WOFF2).
+- Aurora wordmark (custom letterforms) в `assets/`.
+- Per-app accent overrides default Sacred Lime → `cookiecutter.app_accent_color`.
+
+#### 4.1.F Theme switching (light / dark / fun)
+
+Existing Aurora Эконометрика implementation extracted в shared store + tokens:
+- Light theme — default.
+- Dark theme — Sacred Lime + Aurora Deep dim.
+- Fun theme — extra accent saturation + custom motion (used as Easter egg / customer satisfaction signal).
+
+`prefers-reduced-motion` honored.
+
+#### 4.1.G Help system framework
+
+Existing pattern (FTS5 + BRAND_HINTS auto-injection через `sync_help_lists.py`):
+- Markdown source в `src-tauri/help/<app_id>-source/*.md`.
+- Lefthook hook auto-rebuilds HTML on Markdown change.
+- Cross-link с aurora-platform-core help (для cross-app navigation).
+
+#### 4.1.H NSIS installer + auto-update
+
+Per Aurora Эконометрика production:
+- NSIS script template (parametrized для cookiecutter app_id).
+- SHA-256 signature verification.
+- rosst-updates `latest.json` + Supabase `app_versions` table integration.
+- Auto-update check at startup (configurable interval).
+- **Phase A fix:** preinstall hook kill sidecar (cross-product fix, см. 4.1.D).
+
+#### 4.1.I CI/CD pipeline (GitHub Actions)
+
+Composite action `aurora-build-tauri-app`:
+- Inputs: app_id, version, optional artifacts (Phi model bundle).
+- Outputs: NSIS installer .exe + SHA-256 + release notes.
+- Triggers: `push` to `main` tag `v*`.
+- Cross-platform initially Windows-only; macOS/Linux scaffolding stubs Phase D+.
+
+#### 4.1.J Spawning new app from template (developer journey)
+
+```bash
+# 1. Clone template
+git clone github.com/Ackold26/aurora-shell-template
+
+# 2. Run cookiecutter
+cd aurora-shell-template
+cookiecutter . --output-dir ../
+
+# 3. Answer prompts (app_id, app_name, accent, ...)
+
+# 4. cd into spawned repo
+cd ../aurora_launch
+
+# 5. Initial setup
+pnpm install
+cd src-tauri && cargo check
+cd ../sidecar && pip install -r requirements.txt
+
+# 6. Run dev
+pnpm tauri dev
+
+# 7. Add app-specific cabinets (per app workflow YAML)
+# 8. Customize Help docs
+# 9. Replace icons (см. project_aurora_unified_app_icon.md)
+# 10. First build
+pnpm tauri build
+```
+
+**Не входит:**
+- ❌ Mobile / iOS / Android — Phase D+.
+- ❌ Cross-platform Mac/Linux production builds — Phase D+ (template scaffolding только).
+- ❌ App store / Microsoft Store distribution — Phase C+.
+- ❌ Visual app builder (drag-drop UI generator) — out-of-scope ever.
+- ❌ Dynamic plugin system (apps loadable at runtime) — Phase D+.
+
+### 4.2 Acceptance Criteria
+
+**AC4.1 — Cookiecutter render produces buildable Tauri app.**
+- GIVEN clean dev environment (Node 20 + Rust 1.75 + Python 3.11 + MSVC).
+- WHEN developer runs `cookiecutter aurora-shell-template` с valid params.
+- THEN spawned repo: `pnpm install` succeeds, `cargo check` passes в src-tauri/, `pip install -r requirements.txt` succeeds в sidecar/, `pnpm tauri build` produces functional NSIS installer within 20 минут на reference machine (i7 / 16 GB).
+
+**AC4.2 — Default cabinets functional out-of-box.**
+- GIVEN fresh-spawned `aurora_launch` shell.
+- WHEN user runs the binary.
+- THEN: Home cabinet displays welcome + recent projects (empty list); Settings shows theme switcher (3 options) + locale switcher (RU/EN); Help cabinet opens FTS5-searchable docs (placeholder content); License cabinet shows "Not activated" state с link на activation flow.
+
+**AC4.3 — Sidecar IPC reliable.**
+- GIVEN running shell с sidecar.
+- WHEN frontend invokes `sidecar_client.call("/health")`.
+- THEN HTTP 200 response within 2 sec; sidecar process listed в task manager; killing sidecar process triggers Tauri shell graceful error UI ("sidecar disconnected, restart app").
+
+**AC4.4 — Theme switching live without restart.**
+- GIVEN running shell.
+- WHEN user clicks theme switcher in Settings.
+- THEN UI re-renders in new theme < 200 ms; tokens.json values applied (e.g., Sacred Lime active accent in light → Aurora Deep dim in dark); user preference persisted across restarts.
+
+**AC4.5 — NSIS installer install lock fix.**
+- GIVEN existing installed `aurora_launch v1.0.0` running (sidecar process active, holding `_internal/*.pyd` lock).
+- WHEN auto-update kicks in to install `v1.0.1`.
+- THEN preinstall hook kills sidecar process; install completes successfully (no "file in use" errors); shell restarts с new sidecar version (per `project_econometrica_install_lock_2026_05_04` Phase 3.1 fix).
+
+**AC4.6 — Aurora Hybrid Design System drift detection.**
+- GIVEN spawned shell с vendored `tokens.json`.
+- WHEN `python Standards/build.py --check` runs in CI.
+- THEN exits 0 (no drift); if developer manually edits vendored `tokens.json` → exits 1 с anchored timestamp regex showing diff; CI gate blocks merge.
+
+**AC4.7 — Help system FTS5 search.**
+- GIVEN populated help docs (e.g., placeholder Markdown 5+ pages).
+- WHEN user types query "license activation" в help cabinet search.
+- THEN FTS5 returns relevance-ranked snippets within 100 ms; click → full doc displayed с highlighted matches.
+
+**AC4.8 — Auto-update verifies SHA-256 signature.**
+- GIVEN tampered installer (modified bytes after build).
+- WHEN auto-update downloads + verifies.
+- THEN signature mismatch detected; UI displays "Update verification failed, please contact support"; tampered installer не запускается.
+
+**AC4.9 — Workflow engine integration.**
+- GIVEN spawned shell with workflow YAML in `aurora-platform-core/workflows/aurora_launch.new_brand_forecast.v1.workflow.yaml`.
+- WHEN sidecar starts.
+- THEN sidecar `server.py` auto-loads workflow + mounts FastAPI router (per C3); frontend `sidecar_client` connects + can execute workflow steps.
+
+**AC4.10 — Production parity с Aurora Эконометрика.**
+- GIVEN `aurora_optimize` (Эконометрика rebrand) spawned from template.
+- WHEN running side-by-side с current production v1.0.16.
+- THEN UX equivalent (same window size, theming, help system, license flow, auto-update); regression suite from Эконометрика passes на rebrand build.
+
+### 4.3 Definition of Done
+
+- [ ] **AC4.1–AC4.10 все pass.**
+- [ ] **`aurora-shell-template` repo published** на GitHub (private), HEAD tagged `v1.0.0`.
+- [ ] **3 spawned apps Phase A:** `aurora-launch` (existing), `aurora-data-studio` (existing), Aurora Эконометрика → `aurora-optimize` (rebrand). All spawn from template successfully + ship NSIS installers.
+- [ ] **Cookiecutter HOW_TO_SPAWN.md** documented с screenshots / asciinema recording.
+- [ ] **Pytest + Vitest suites** в template: 30+ tests verifying default cabinets, theme switching, IPC client, license stub, help system.
+- [ ] **CI workflow `aurora-build-tauri-app`** action published в `.github/actions/`.
+- [ ] **Migration guide для Aurora Эконометрика → Aurora Optimize:** stepwise refactor (rename + workflow YAML adoption + branding update + license tier scaffolding).
+- [ ] **Install lock fix verified** на real prod scenario (forced auto-update v1.0.16→v1.2.0 reproduction test, per memory).
+- [ ] **CHANGELOG entry** в `aurora-shell-template/CHANGELOG.md`.
+- [ ] **ADR:** `aurora-knowledge/Decisions/aurora-shell-template-cookiecutter.md` (rationale: cookiecutter chosen vs Yeoman / custom CLI / monorepo).
+
+### 4.4 Test Data Requirements
+
+**Smoke test fixtures:**
+- 3 cookiecutter param combinations (Aurora Launch, Aurora Optimize, Aurora Studio) → render → build → run smoke test.
+- Tampered installer (modified bytes) for AC4.8.
+- Mock auto-update server (rosst-updates simulator).
+- Mock Supabase project_ref (license flow).
+
+**Regression suite:**
+- Aurora Эконометрика production test cases run against `aurora_optimize` rebrand.
+
+**Manual / live tests (cannot fully automate):**
+- Visual UI / accessibility / screen reader (manual QA checklist).
+- Cross-version auto-update сценарий (требует physical install / уpdate).
+
+### 4.5 Зависимости
+
+**Внутренние:**
+- **Зависит от:** C5 Common Services (license + auth + auto-update — shell embeds), C3 Workflow Engine (sidecar mounts workflow router), C1 Inference Core (sidecar deps include `aurora-platform-core`).
+- **Не зависит от:** C2 (Studio = standalone Tauri app, использует shell template как любой другой spawned app), C6 (используется через C5 license flow), C7 (web verifier — отдельный WASM, не Tauri).
+
+**Блокирует:**
+- All Phase A app spawns: Aurora Launch / Studio / Optimize rebrand.
+- All Phase B/C/D new app spawns (Brand / Pricing / Promo / Portfolio).
+
+**Внешние:**
+- **Tauri 2.0** (current Эконометрика production version).
+- **Svelte 5 runes** (current).
+- **Cookiecutter 2.5+** (Python).
+- **Node 20 + Rust 1.75 + Python 3.11 + MSVC** (build deps).
+- **NSIS 3.09** (Windows installer).
+- **Supabase project** (license + app_versions table, существующая).
+- **rosst-updates GitHub repo** (existing).
+
+**Координационные:**
+- **Антон approval:** decision на cookiecutter vs custom CLI (Антон может предпочесть простой CLI скрипт как менее tooling-heavy).
+- **Маша небесная ADR sign-off.**
+- **Aurora Эконометрика maintainer:** confirm that rebrand к Aurora Optimize via shell template = zero customer-visible regression.
+
+### 4.6 Open questions для Маши небесной
+
+1. **Cookiecutter vs custom CLI:** cookiecutter — стандартный Python tool, но тянет Jinja2 + dep на pip-install. Альтернатива: bash-script с rsync + sed substitution (no deps, но grosser). Default proposal: cookiecutter (cleaner DX, dev-only tool).
+
+2. **Mac/Linux scaffolding в template:** включить early stubs (cargo features for cross-platform) для Phase D+ или строго Windows-only? Default: include scaffolding но disable build configs (`#[cfg(target_os="windows")]`); Phase D+ enable.
+
+3. **Per-app icon set delivery:** Aurora Эконометрика unified icon = brand standard (per `project_aurora_unified_app_icon`). Template ships placeholder Aurora seal — каждый app overrides. Кто ownит icon design — Дима (per `project_aurora_design_system_hub`)? Default: per-app icon = required field cookiecutter, без placeholder fallback на ship.
+
+4. **PyInstaller spec в template:** Эконометрика production использует custom PyInstaller spec для sidecar. Vendor it в template или каждый app пишет свой? Default: shared spec в template, override-able через extras.
+
+5. **Localization (locales):** template supports RU + EN. Markets и контент разные per app (Studio = primarily РФ, Launch = primarily РФ). Phase A scope: ship RU только, EN scaffolding но не translate (deferred Phase B). Confirm?
 
 ---
 
