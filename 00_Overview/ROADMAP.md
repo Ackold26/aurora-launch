@@ -76,7 +76,7 @@ Aurora Launch не стартует до завершения Phase A:
 - KPI registry дополнение для launch use case (sales-only)
 - BC tests against B0.5 corpus PASS
 
-**Decision needed S005:** SQLite hybrid vs pure pickle (audit B3).
+**Decision DONE S005a (2026-05-04):** ADR-002 - `.aurora` = ZIP archive container (Option D), не SQLite hybrid. См. `03_Architecture/decisions/ADR-002-storage-layer.md` + finalized `03_Architecture/SCHEMA_DESIGN.md`.
 
 ### Sprint B1.5: Customer Success Lite (3 дня, parallel с B1) - ADDED AFTER AUDIT
 
@@ -158,7 +158,7 @@ Aurora Launch не стартует до завершения Phase A:
 **Goal:** клиент может re-fit модель с новыми recipient данными.
 
 **Prerequisites:**
-- S005 Posterior Math design session (BLOCKER) + Architecture decision SQLite/pickle
+- S005b Posterior Math design session (BLOCKER). S005a (storage architecture) closed 2026-05-04 via ADR-002.
 
 **Deliverables:**
 - `engines/launch_posterior_update.py` - partial pooling weight schedule
@@ -201,7 +201,7 @@ Aurora Launch не стартует до завершения Phase A:
 | S002 | Data Requirements Spec deep-dive (этой сессии Variant 2) | 2026-05-04 | DONE | - |
 | S003 | Proxy Similarity Framework - точные 6+ measurements + scoring + weights | до Sprint B2 | PENDING | **Sprint B2** |
 | S004 | Adaptation Rules detail - какие параметры переносим precisely | до Sprint B3 | PENDING | **Sprint B3** |
-| **S005a** | **Storage Layer Decision: SQLite hybrid vs pure pickle** (architectural blocker) | **до Sprint B1** | PENDING | **Sprint B1** |
+| **S005a** | **Storage Layer Decision: ZIP archive container (Option D)** | 2026-05-04 | ✅ DONE (ADR-002) | ~~Sprint B1~~ resolved |
 | **S005b** | **Posterior Update math design** (formula + weight schedule) | до Sprint B5 | PENDING | Sprint B5 |
 | S006 | Launch Forecast Report sections - что в каждой section + PDF tool decision | до Sprint B4 | PENDING | **Sprint B4** |
 | S007 | Multi-proxy UX - когда expert включает + decision rules | до Sprint B2 | PENDING | **Sprint B2** |
@@ -211,7 +211,7 @@ Aurora Launch не стартует до завершения Phase A:
 
 **Note:** S005 разделена post-audit (2026-05-04) на S005a (storage architecture - до Sprint B1) и S005b (posterior math - до Sprint B5). S005a blocks B1 потому что storage decision fundamentally меняет schema layout.
 
-**Critical path:** S003 + S007 (до B2), S004 (до B3), S006 + S009 (до B4), S005 (до B5), S008 + S010 (до B6).
+**Critical path:** S003 + S007 (до B2), S004 (до B3), S006 + S009 (до B4), S005b (до B5), S008 + S010 (до B6). S005a closed 2026-05-04.
 
 ---
 

@@ -102,18 +102,28 @@
 
 ## S005a: Storage Layer Decision (Architectural blocker)
 
-**Status:** PENDING (post-audit 2026-05-04 split из S005)
-**Blocker для:** **Sprint B1** (schema design)
-**Target completion:** **до старта Sprint B1** (early decision - storage choice fundamentally меняет schema layout)
+**Status:** ✅ DONE (closed 2026-05-04, autonomous session, mandate Антон)
+**Blocker для:** Sprint B1 (schema design) - resolved
 
-**Decision options:**
-- A) Pure pickle (как Aurora Econometrica) - simpler, breaking change при migrations
-- B) Pure SQLite - human-readable, query-able, harder migration
-- C) Hybrid: SQLite для metadata + pickle BLOBs для math artifacts (RECOMMENDED)
+**Decision (Accepted):** **Option D - ZIP archive container** (overrides initial draft Option C SQLite hybrid).
 
-**Owner:** Маша (technical) + Антон (operational impact).
+`.aurora` файл = ZIP archive с layout:
+- `manifest.json` (SSoT schema versions + integrity hashes)
+- `metadata.json`, `proxy_brand_metadata.json`, `recipient_anchors.json`, `transfer_provenance.json`, `posterior_update_log.json`, `consulting_hours_log.json` (structured Pydantic models в JSON для human inspectability)
+- `models/*.pickle`, `forecasts/horizon_NNw.pickle`, `cache/*.pickle` (math artifacts pickle preserved для 100% reuse Econometrica engines)
+- Atomic save через `.aurora.tmp` + rename + rolling 4 backups
+- Industry pattern (.docx/.xlsx/.pptx)
+- Zero new dependencies (Python stdlib zipfile)
+- Migration path Econometrica v2 pickle → v3 zip (transparent, через SchemaRegistry BFS)
 
-**Deliverable:** ADR-002 "Storage Layer Choice" + initial SCHEMA_DESIGN.md.
+**Rejected alternatives:**
+- A (pure pickle): no human inspectability, BC fragile
+- B (pure SQLite): math BLOB columns = pickle anyway, no real benefit, +10 MB deps
+- C (SQLite hybrid - initial recommendation): 2 paradigms complexity, deps overhead, breaking pattern с Econometrica, real driver analysis показал что D delivers same benefits cleaner
+
+**Output:**
+- ✅ `03_Architecture/decisions/ADR-002-storage-layer.md` (Accepted)
+- ✅ `03_Architecture/SCHEMA_DESIGN.md` (status Draft → Accepted, full layout)
 
 ---
 
