@@ -20,36 +20,25 @@
 
 ## S003: Proxy Similarity Framework
 
-**Status:** PENDING
-**Blocker для:** Sprint B2 (Proxy Selection cabinet)
-**Target completion:** до старта Sprint B2
+**Status:** ✅ DONE (closed 2026-05-04, autonomous session, mandate Антон)
+**Blocker для:** Sprint B2 - resolved
 
-**Open questions:**
+**Decisions (Accepted):**
 
-1. **Точные веса 6 dimensions** в aggregate similarity score
-   - Default proposal: category 30%, pricing 20%, brand size 15%, distribution 10%, media maturity 15%, lifecycle 10%
-   - Calibration: synthetic transfers с known truth → adjust weights
+1. **Default weights** locked: category 0.30, pricing 0.20, media_maturity 0.15, brand_size 0.15, distribution 0.10, lifecycle 0.10 (sum 1.00). Rationale в SIMILARITY_FRAMEWORK Section 3.1.
 
-2. **Threshold values** для verdict tiers
-   - High >= 0.85 / Medium 0.65-0.85 / Low 0.50-0.65 / Insufficient < 0.50
-   - Validated на synthetic transfers?
+2. **Threshold values** locked: High >= 0.85 (inflation 1.2×), Medium 0.65-0.85 (1.5×), Low 0.50-0.65 (2.0×), Insufficient < 0.50 (forecast blocked).
 
-3. **Per-dimension scoring rules** (как именно превращать "категория совпадает" в score)
-   - Exact = 1.0, soeдний tier = X, через tier = Y - конкретные numbers
-   - Cross-category - всегда 0 или partial credit для adjacent (FMCG snacks vs sweets)?
+3. **Per-dimension scoring rules** finalized с three-level taxonomic structure (L1/L2/L3 categories), 4-tier pricing (ECONOMY/MAINSTREAM/PREMIUM/LUXURY), 3-tier brand size (LEADER/CHALLENGER/NICHE), 3-tier distribution (NATIONAL/REGIONAL/NICHE), 4-tier media maturity (ALWAYS-ON/PULSING/PROMO-DRIVEN/DORMANT), 4-tier lifecycle (NEW/GROWING/MATURE/DECLINING). Tier-distance scoring per dimension.
 
-4. **Asymmetric weights** возможны для разных recipient типов?
-   - Pharma OTC: ATC class match критично (weight 40%)
-   - FMCG: ценовой tier важнее (weight 30%)
-   - Default vs category-specific weights
+4. **Category-specific weight profiles** (asymmetric): OTC_PHARMA (category 0.40), RX_PHARMA (category 0.45 + lifecycle 0.15), FMCG_IMPULSE (pricing 0.25), FMCG_STAPLES (distribution 0.15), PREMIUM_COSMETICS (pricing 0.30), TELECOM_BANKING (media maturity + brand size 0.20 each), B2B (category 0.35 + brand size 0.20). Auto-loaded по recipient L1+L2.
 
-5. **Multi-proxy aggregation logic**
-   - Как комбинировать 2-3 similarity scores в aggregate?
-   - Average / max / weighted by partial pooling weight?
+5. **Multi-proxy aggregation:** weighted average S × pooling_weight + multi penalty 1 + 0.05×(N-1) на inflation factor. Floor warnings: any individual S<0.5 → warn, spread max-min > 0.3 → warn heterogeneous.
 
-**Owner of decision:** Антон (domain expert) + Маша (math design)
-
-**Deliverable:** SIMILARITY_FRAMEWORK.md в `02_Data_Spec/` с calibrated weights + thresholds + scoring rules.
+**Output:**
+- ✅ `02_Data_Spec/SIMILARITY_FRAMEWORK.md` (master spec, ~870 строк)
+- Synthetic validation плановый в Sprint B5 tests
+- Iterative refinement Phase C+ (>10 pilot launches)
 
 ---
 
@@ -201,41 +190,25 @@
 
 ## S007: Multi-Proxy UX
 
-**Status:** PENDING
-**Blocker для:** Sprint B2 (Proxy Selection cabinet UI)
-**Target completion:** до старта Sprint B2 (вместе с S003)
+**Status:** ✅ DONE (closed 2026-05-04, autonomous session, mandate Антон)
+**Blocker для:** Sprint B2 - resolved
 
-**Open questions:**
+**Decisions (Accepted):**
 
-1. **Когда expert включает multi-proxy?**
-   - Decision rules:
-     - Volatile lead brand (sharp swings в SoV)
-     - Recent brand ownership change
-     - Categorical merger / ownership consolidation
-     - Multiple plausible proxies без чёткого "лучшего"
-   - UX: tooltip / wizard / explicit decision
+1. **5 trigger conditions** для включения multi-proxy: (1) volatile category leader (SoV CV > 50%), (2) no clear single proxy (top-2 within 0.05 difference), (3) categorical heterogeneity, (4) high-stakes launch (>=5M ₽ budget), (5) sensitivity analysis demand. ≥1 → consider, ≥2 → strongly recommend. Decision tree в UI tooltip + help system.
 
-2. **Multi-proxy weight assignment**
-   - Equal weights default?
-   - Manual weights с slider?
-   - Calculated from individual similarity scores?
+2. **Anti-patterns explicit:** не использовать multi-proxy для (a) "fix bad data" (weak candidates не help), (b) "more proxies = better" с already-similar proxies, (c) time-pressed launches (training 2-3× slower), (d) без эксперт review.
 
-3. **Number of proxies allowed**
-   - Min 2, max 3? Or 4?
-   - Computational cost growth с N
+3. **Weight assignment:** equal default (1/N), manual sliders с auto-rebalance (sum=100%), Phase C+ AI-suggested weights based on individual S scores.
 
-4. **UI form для multi-proxy**
-   - Tabs (proxy 1, 2, 3) или vertical list?
-   - Aggregate similarity radar (per proxy + combined)
-   - Confidence verdict per proxy + combined
+4. **N bounds:** min 2 (single = different engine), max 3 (computational cost + UI complexity beyond 3 не justifies).
 
-5. **Decision rules в documentation**
-   - "Включай multi-proxy когда..."
-   - Tooltip с links к knowledge base
+5. **UI form layout:** tabs (Proxy 1 / Proxy 2 / + Add Proxy) для each proxy form, sticky sidebar с pooling weights sliders + combined aggregate panel (S_combined, verdict, inflation, warnings, estimated training time). ASCII wireframes в deliverable Section 5.
 
-**Owner of decision:** Антон (domain expert) + Маша (UX).
+6. **Inline hints + tooltips:** suggestion sidebar в heterogeneous categories (Phase C+), warning if user toggles multi с too-similar proxies (>0.9 between them), tooltips on pooling weights + combined aggregate explaining math.
 
-**Deliverable:** MULTI_PROXY_UX_DECISION_RULES.md в `01_Concept/` + UI wireframe.
+**Output:**
+- ✅ `01_Concept/MULTI_PROXY_UX_DECISION_RULES.md` (full decision rules + ASCII wireframes + 3 worked examples + implementation notes Sprint B2, ~620 строк)
 
 ---
 

@@ -94,9 +94,9 @@ Aurora Launch не стартует до завершения Phase A:
 
 **Goal:** клиент может выбрать прокси и заполнить similarity scores.
 
-**Prerequisites:**
-- S003 Similarity Framework session (BLOCKER)
-- S007 Multi-proxy UX session (BLOCKER)
+**Prerequisites (all DONE 2026-05-04):**
+- ✅ S003 Similarity Framework - `02_Data_Spec/SIMILARITY_FRAMEWORK.md`
+- ✅ S007 Multi-proxy UX - `01_Concept/MULTI_PROXY_UX_DECISION_RULES.md`
 
 **Deliverables:**
 - Svelte cabinet `ProxySelectionStep.svelte`:
@@ -199,19 +199,19 @@ Aurora Launch не стартует до завершения Phase A:
 |---|---|---|---|---|
 | S001 | Concept finalization (10 principles) | 2026-05-04 | DONE | - |
 | S002 | Data Requirements Spec deep-dive (этой сессии Variant 2) | 2026-05-04 | DONE | - |
-| S003 | Proxy Similarity Framework - точные 6+ measurements + scoring + weights | до Sprint B2 | PENDING | **Sprint B2** |
+| S003 | Proxy Similarity Framework - 6 dimensions + scoring + weights + multi-aggregation | 2026-05-04 | ✅ DONE | ~~Sprint B2~~ resolved |
 | S004 | Adaptation Rules detail - какие параметры переносим precisely | до Sprint B3 | PENDING | **Sprint B3** |
 | **S005a** | **Storage Layer Decision: ZIP archive container (Option D)** | 2026-05-04 | ✅ DONE (ADR-002) | ~~Sprint B1~~ resolved |
 | **S005b** | **Posterior Update math design** (formula + weight schedule) | до Sprint B5 | PENDING | Sprint B5 |
 | S006 | Launch Forecast Report sections - что в каждой section + PDF tool decision | до Sprint B4 | PENDING | **Sprint B4** |
-| S007 | Multi-proxy UX - когда expert включает + decision rules | до Sprint B2 | PENDING | **Sprint B2** |
+| S007 | Multi-proxy UX - когда expert включает + decision rules + UI wireframe | 2026-05-04 | ✅ DONE | ~~Sprint B2~~ resolved |
 | S008 | Pilot client identification - кто будет первым validation | до Sprint B6 | PENDING | **Sprint B6** |
 | S009 | Pricing tier finalization - Starter/Pro/Enterprise threshold | до Sprint B4 (moved up) | PENDING | **Sprint B4** |
 | S010 | Sales playbook - outreach template + demo flow | до Sprint B6 | PENDING | **Sprint B6** |
 
 **Note:** S005 разделена post-audit (2026-05-04) на S005a (storage architecture - до Sprint B1) и S005b (posterior math - до Sprint B5). S005a blocks B1 потому что storage decision fundamentally меняет schema layout.
 
-**Critical path:** S003 + S007 (до B2), S004 (до B3), S006 + S009 (до B4), S005b (до B5), S008 + S010 (до B6). S005a closed 2026-05-04.
+**Critical path:** ~~S003 + S007 (до B2)~~ closed 2026-05-04, S004 (до B3), S006 + S009 (до B4), S005b (до B5), S008 + S010 (до B6). S005a + S003 + S007 closed 2026-05-04. **Sprint B2 unblocked.**
 
 ---
 
