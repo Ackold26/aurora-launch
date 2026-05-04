@@ -1598,7 +1598,386 @@ DEFAULT_FLAGS = {
 
 ## Component 6: Schema Registry + cross_app_license
 
-> **Status:** spec pending — будет в следующей итерации.
+**Goal:** Foundation layer для всех остальных компонентов. Schema Registry — централизованная versioned миграция pickle / `.aurora` / workflow_state файлов через BFS migration path; cross_app_license — relational schema в Supabase для license tier scaffolding (free/pro/team/agency) с самого начала, чтобы избежать breaking changes Этапа 2. Этот компонент собирается ПЕРВЫМ (build order foundation — всё остальное от него depend'ится).
+
+### 6.1 Scope
+
+#### 6.1.A Schema Registry — module API
+
+`aurora_platform_core.schema_registry`:
+
+```python
+from typing import Callable, Dict, List, Tuple
+
+MigrationFn = Callable[[dict], dict]
+
+class SchemaRegistry:
+    """Versioned schema migration via BFS path resolution.
+
+    Supports multiple schema kinds: pickle/.aurora/workflow_state/license/etc.
+    Each kind has independent version graph.
+    """
+
+    _migrations: Dict[str, Dict[Tuple[str, str], MigrationFn]] = {}
+    _kind_target_versions: Dict[str, str] = {}
+
+    @classmethod
+    def register(cls, kind: str, from_version: str, to_version: str):
+        """Decorator to register migration."""
+        def decorator(fn: MigrationFn):
+            cls._migrations.setdefault(kind, {})[(from_version, to_version)] = fn
+            return fn
+        return decorator
+
+    @classmethod
+    def set_target(cls, kind: str, version: str):
+        """Set current target version for a kind. Apps call once at module load."""
+        cls._kind_target_versions[kind] = version
+
+    @classmethod
+    def migrate(cls, data: dict, kind: str = "aurora_bundle", target_version: str | None = None) -> dict:
+        """Migrate `data` to target_version (default = registered target for kind).
+
+        BFS through migration graph. Raises:
+            UnknownSchemaVersion: data["schema_version"] not in graph
+            NoMigrationPath: cannot reach target_version
+            CircularMigration: cycle detected (registry validation step)
+        """
+
+    @classmethod
+    def find_path(cls, kind: str, start: str, end: str) -> list[Tuple[str, str]] | None:
+        """Public: BFS search returning list of (from, to) tuples or None."""
+
+    @classmethod
+    def validate_registry(cls, kind: str) -> RegistryValidationResult:
+        """Pre-flight: detect cycles, dead-ends, unreachable versions, and
+        validate that all registered migrations are pure functions (idempotency)."""
+```
+
+**Schema kinds в Phase A:**
+- `aurora_bundle` — `.aurora` ZIP container (manifest.json + pickle artifacts).
+- `pickle_model` — `.pickle` model files (Aurora Эконометрика legacy + new).
+- `workflow_state` — `.workflow_state.json` engine state.
+- `license` — Supabase license rows (для backwards compat при schema changes).
+- `recipient_anchors` — Aurora Launch RecipientAnchorsV1 + future versions.
+- `task_spec` — Aurora Studio YAML task profiles.
+
+#### 6.1.B Combined v3.0 schema (aurora_bundle kind)
+
+Per Aurora Launch REUSE Section 2.1 + Studio REUSE «Pickle additive schema» + coordination doc Section 5.
+
+**Migration registry для `aurora_bundle`:**
+
+```python
+@SchemaRegistry.register("aurora_bundle", "1.0", "2.0")
+def migrate_aurora_v1_to_v2(data: dict) -> dict:
+    """v1.0 -> v2.0: Robyn-style normalization (Эконометрика 2026-04-25)."""
+    data.setdefault("intercept_mean", None)
+    data.setdefault("control_betas_mean", None)
+    data.pop("media_stds", None)  # replaced by spend/mean normalization
+    return data
+
+@SchemaRegistry.register("aurora_bundle", "2.0", "3.0")
+def migrate_aurora_v2_to_v3(data: dict) -> dict:
+    """v2.0 -> v3.0: combined Launch + Studio additive fields."""
+    # Studio fields
+    data.setdefault("bundle_metadata", None)
+    data.setdefault("provenance", None)
+    data.setdefault("quality_gates_results", None)
+    data.setdefault("signature", None)
+    # Launch fields
+    data.setdefault("proxy_brand_metadata", None)
+    data.setdefault("recipient_anchors", None)
+    data.setdefault("transfer_provenance", None)
+    data.setdefault("forecast_horizons", None)
+    data.setdefault("posterior_update_log", [])
+    data.setdefault("consulting_hours_log", None)
+    return data
+
+SchemaRegistry.set_target("aurora_bundle", "3.0")
+```
+
+**Forward-compat helper** (per Aurora Launch REUSE):
+
+```python
+from packaging import version
+
+MIN_APP_FOR_SCHEMA: dict[str, dict[str, str]] = {
+    "aurora_bundle": {
+        "1.0": "1.0.0",
+        "2.0": "1.0.10",
+        "3.0": "1.4.0",  # Phase A → Phase B Suite v1.4.0
+    },
+    "pickle_model": {...},
+    # ...
+}
+
+class CompatResult(BaseModel):
+    can_open: bool
+    reason: str | None = None
+    suggested_action: Literal["update_app", "use_compatible_version", "ignore_warning"] | None = None
+
+def check_forward_compatibility(
+    data: dict, kind: str, current_app_version: str
+) -> CompatResult: ...
+```
+
+#### 6.1.C cross_app_license schema (Supabase)
+
+Per C5 Section 5.1.B + Studio ADR-003 (floating license).
+
+**Tables:**
+
+```sql
+-- Existing (extended)
+CREATE TABLE user_accounts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT UNIQUE NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  metadata JSONB
+);
+
+-- NEW
+CREATE TABLE license_tiers (
+  id TEXT PRIMARY KEY,                -- "free", "pro", "team", "agency", "enterprise"
+  display_name TEXT NOT NULL,
+  description TEXT,
+  is_paid BOOLEAN NOT NULL,
+  seats_default INT NOT NULL DEFAULT 1,
+  features JSONB NOT NULL DEFAULT '[]'::jsonb,    -- list of feature_id strings
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE app_licenses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES user_accounts(id) NOT NULL,
+  app_id TEXT NOT NULL,                            -- "aurora_launch", "aurora_optimize", ...
+  tier_id TEXT REFERENCES license_tiers(id) NOT NULL,
+  seats_total INT NOT NULL DEFAULT 1,
+  valid_from TIMESTAMPTZ NOT NULL DEFAULT now(),
+  valid_until TIMESTAMPTZ,                         -- NULL = perpetual
+  metadata JSONB,
+  schema_version TEXT NOT NULL DEFAULT '1.0',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (user_id, app_id, valid_from)
+);
+
+CREATE TABLE license_slots (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  license_id UUID REFERENCES app_licenses(id) NOT NULL,
+  user_id UUID REFERENCES user_accounts(id) NOT NULL,
+  machine_fingerprint TEXT NOT NULL,
+  acquired_at TIMESTAMPTZ DEFAULT now(),
+  last_heartbeat_at TIMESTAMPTZ DEFAULT now(),
+  released_at TIMESTAMPTZ,
+  UNIQUE (license_id, user_id, machine_fingerprint, released_at)
+);
+
+CREATE TABLE license_features (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tier_id TEXT REFERENCES license_tiers(id) NOT NULL,
+  feature_id TEXT NOT NULL,                        -- e.g., "studio.feature.advanced_charts"
+  enabled BOOLEAN NOT NULL DEFAULT true,
+  metadata JSONB,
+  UNIQUE (tier_id, feature_id)
+);
+
+-- INDEX'ы
+CREATE INDEX idx_app_licenses_user_app ON app_licenses(user_id, app_id);
+CREATE INDEX idx_license_slots_license_active ON license_slots(license_id) WHERE released_at IS NULL;
+CREATE INDEX idx_license_slots_heartbeat ON license_slots(last_heartbeat_at) WHERE released_at IS NULL;
+```
+
+**Default seed (Phase A):**
+
+```sql
+INSERT INTO license_tiers (id, display_name, is_paid, seats_default, features) VALUES
+  ('free', 'Free', false, 1, '[]'::jsonb),
+  ('pro', 'Pro', true, 1, '[]'::jsonb),
+  ('team', 'Team', true, 3, '[]'::jsonb),
+  ('agency', 'Agency', true, 10, '[]'::jsonb),
+  ('enterprise', 'Enterprise', true, 9999, '[]'::jsonb);
+
+-- Studio Этап 1: все features в free (per стратегия 2026-05-05).
+INSERT INTO license_features (tier_id, feature_id, enabled) VALUES
+  ('free', 'studio.feature.multi_project_workspace', true),
+  ('free', 'studio.feature.advanced_charts', true),
+  ('free', 'studio.feature.pdf_export_quality_report', true),
+  ('free', 'studio.feature.team_collaboration', true),
+  ('free', 'studio.feature.tier3_cloud_unlimited', true),
+  -- Aurora Launch features (per S009 PRICING_TIERS)
+  ('pro', 'launch.feature.multi_proxy', true),
+  ('pro', 'launch.feature.posterior_update', true),
+  ('pro', 'launch.feature.consulting_hours_quarterly_review', true),
+  ('enterprise', 'launch.feature.white_label', true),
+  ('enterprise', 'launch.feature.api_access', true),
+  ('enterprise', 'launch.feature.dedicated_success_manager', true);
+```
+
+**Migration mechanism:** schema bumps applied through Supabase migrations folder (Alembic-style versioning). Versioned via Supabase CLI. Backwards compat: existing v1.0.16 license keys auto-migrate (license rows updated with default tier_id="pro").
+
+#### 6.1.D Edge Functions (per Studio ADR-003)
+
+```
+supabase/functions/
+├── acquire-slot/index.ts        # POST: { license_id, machine_fingerprint } -> slot_token
+├── heartbeat/index.ts           # POST: { slot_token } -> { ok, expires_in_seconds }
+├── release-slot/index.ts        # POST: { slot_token }
+├── status/index.ts              # GET: { license_id } -> { seats_total, seats_available, active_machines[] }
+├── reclaim-stale-slots/index.ts # CRON every minute: release slots с last_heartbeat > 5 min ago
+└── activate-bundle/index.ts     # POST: { app_id_purchased } -> auto-create Solo licenses for related apps
+```
+
+#### 6.1.E Validators / pre-flight checks
+
+`aurora_platform_core.schema_registry.validators`:
+
+```python
+def validate_registry_health() -> ValidationReport:
+    """Run at app startup. Detect:
+    - Cycles in any kind's migration graph.
+    - Dead-end versions (registered but unreachable).
+    - Missing target_version setting for declared kinds.
+    - Migrations that produce data with schema_version != to_version.
+    """
+
+def validate_data_integrity(data: dict, kind: str) -> bool:
+    """Check that data["schema_version"] field exists + valid."""
+
+def hash_canonical(data: dict) -> str:
+    """Stable SHA-256 hash of canonical JSON for tamper detection."""
+```
+
+**Не входит:**
+- ❌ GUI for migration management (visual schema editor) — out-of-scope ever.
+- ❌ Multi-tenancy в license tables (separate orgs / workspaces) — Phase D+.
+- ❌ Audit log table для license changes — Phase B+ enhancement.
+- ❌ License renewal automation (Stripe / Robokassa integration) — Phase C+.
+- ❌ Per-feature usage metering — Phase B+ (telemetry covers это).
+- ❌ License delegation / sub-licenses (agency assigns sub-seats к brand клиентам) — Phase B+.
+
+### 6.2 Acceptance Criteria
+
+**AC6.1 — BFS migration v1.0 → v3.0 chains через v2.0.**
+- GIVEN data dict с `schema_version="1.0"` + legacy fields (e.g., `media_stds`).
+- WHEN `SchemaRegistry.migrate(data, kind="aurora_bundle")`.
+- THEN returns data с `schema_version="3.0"`, `media_stds` removed (v1→v2), Launch + Studio combined fields added (v2→v3).
+
+**AC6.2 — Migration idempotency.**
+- GIVEN v3.0 data.
+- WHEN `migrate(migrate(data))` invoked.
+- THEN result equals `migrate(data)` (no double-processing); migration registry validation confirms purity.
+
+**AC6.3 — Cycle detection at registry validation.**
+- GIVEN registry with cycle (e.g., 1.0→2.0→1.0 hypothetical bug).
+- WHEN `validate_registry_health()` runs at startup.
+- THEN raises `CircularMigration("kind=aurora_bundle, cycle: 1.0→2.0→1.0")`.
+
+**AC6.4 — Forward-compat check graceful warning.**
+- GIVEN `.aurora` bundle с schema_version="3.0", current app version 1.0.10 (которая supports max v2.0).
+- WHEN `check_forward_compatibility(data, "aurora_bundle", "1.0.10")`.
+- THEN returns `CompatResult(can_open=False, reason="требует Aurora >= 1.4.0", suggested_action="update_app")`.
+
+**AC6.5 — License tier seed correctness.**
+- GIVEN fresh Supabase project with migrations applied.
+- WHEN `SELECT * FROM license_tiers ORDER BY id`.
+- THEN returns 5 rows: free / pro / team / agency / enterprise с правильными seats_default + is_paid.
+
+**AC6.6 — Cross-app bundle activation Edge Function.**
+- GIVEN user purchases Aurora Optimize (Эконометрика rebrand).
+- WHEN `activate-bundle` Edge Function called с `app_id_purchased="aurora_optimize"`.
+- THEN auto-creates Solo Studio license for same user (per ADR-002 bundle-activation primary path); license row has tier="free"; user immediately accessible Studio.
+
+**AC6.7 — Floating slot acquire concurrency safety.**
+- GIVEN 3-seat Team license, 2 active slots.
+- WHEN 5 users simultaneously call `acquire-slot` Edge Function.
+- THEN exactly 1 succeeds (atomic INSERT с UNIQUE constraint); 4 receive `NoSlotsAvailable` 409 Conflict response; no race conditions corrupt slot count.
+
+**AC6.8 — Slot reclamation cron correctness.**
+- GIVEN slot с `last_heartbeat_at = now() - 6 minutes`.
+- WHEN `reclaim-stale-slots` cron runs.
+- THEN slot's `released_at` set to current time; new acquire-slot succeeds for that license.
+
+**AC6.9 — Aurora Эконометрика legacy license auto-migration.**
+- GIVEN Эконометрика v1.0.16 user with existing license row (pre-tier schema).
+- WHEN database migration applied + cross_app_license deployed.
+- THEN existing license row updated с `tier_id="pro"` default (existing behavior preserved); user opening Эконометрика → no flow changes; license check still passes.
+
+**AC6.10 — Hash canonical determinism.**
+- GIVEN identical data dict в two different orderings (key insertion order varies).
+- WHEN `hash_canonical(data)` called on both.
+- THEN identical SHA-256 hashes (canonical JSON sort_keys=True).
+
+### 6.3 Definition of Done
+
+- [ ] **AC6.1–AC6.10 все pass.**
+- [ ] **Code merged в `aurora-platform-core/schema_registry/`** + tagged.
+- [ ] **Migration registry** for 6 kinds: `aurora_bundle`, `pickle_model`, `workflow_state`, `license`, `recipient_anchors`, `task_spec` — at least v1.0 → current target documented + tested.
+- [ ] **Supabase migrations applied** в production project: 5 new tables (license_tiers, app_licenses extended, license_slots, license_features) + 5 Edge Functions deployed.
+- [ ] **`MIN_APP_FOR_SCHEMA` registry** + `check_forward_compatibility` helper documented.
+- [ ] **Pytest suite ≥ 80 tests:** BFS path resolution, idempotency, cycle detection, forward compat, schema bump roundtrips.
+- [ ] **Property-based tests:** random valid migration graphs (Hypothesis) → BFS finds shortest path always.
+- [ ] **Integration test с Aurora Эконометрика fixture:** legacy `.pickle` v1.0 → load through Schema Registry → migrate to v3.0 → save → reload — no data loss.
+- [ ] **License migration test:** Aurora Эконометрика v1.0.16 production-like license rows → applied schema migrations → backwards compat verified (existing licenses still pass `check_license`).
+- [ ] **Edge Function tests:** acquire/heartbeat/release/reclaim concurrency tested на staging Supabase project.
+- [ ] **API docs:** `aurora-platform-core/docs/schema_registry.md` + `aurora-platform-core/docs/cross_app_license.md`.
+- [ ] **CHANGELOG entry.**
+- [ ] **ADRs:**
+  - `aurora-knowledge/Decisions/aurora-schema-registry-bfs-migration.md`
+  - `aurora-knowledge/Decisions/aurora-cross-app-license-tier-scaffolding.md` (Studio ADR-003 superseded или extended).
+
+### 6.4 Test Data Requirements
+
+**Synthetic schema fixtures:**
+- `tests/fixtures/schemas/aurora_bundle/v1.0_minimal.json`
+- `tests/fixtures/schemas/aurora_bundle/v2.0_with_robyn.json`
+- `tests/fixtures/schemas/aurora_bundle/v3.0_full_launch_studio.json`
+- Round-trip: v1.0 → migrate → v3.0 vs handcrafted v3.0 expected → equal.
+
+**Real Aurora Эконометрика regression:**
+- `tests/fixtures/real/aurora_v1.0.16_kagocel.pickle` — load through Schema Registry, migrate to current target.
+
+**Supabase staging project:**
+- Test project ref для Edge Function integration tests (separate from production).
+
+**Concurrency fixtures:**
+- 5+ test users for slot acquisition AC6.7.
+
+**Property-based:**
+- Hypothesis strategies для random migration graphs + random data dicts.
+
+### 6.5 Зависимости
+
+**Внутренние:**
+- **Зависит от:** ничего из Phase A. C6 — foundation, собирается ПЕРВЫМ.
+- **Используется:** C1 (persistence layer), C3 (workflow state), C5 (license schema, telemetry endpoint), C2 (bundle composer), C7 (signature verification).
+
+**Блокирует:**
+- ВСЕ остальные 6 компонентов Phase A. Build order: C6 first.
+
+**Внешние:**
+- **Pydantic v2** — все schemas.
+- **packaging >= 23.0** — version comparison.
+- **Supabase CLI** — migrations management.
+- **Deno** (для Edge Functions runtime).
+
+**Координационные:**
+- **Антон approval:** schema_version strategy (single combined "3.0" for Studio + Launch vs separate). Default: combined (per coordination doc decision).
+- **Маша небесная ADR sign-offs.**
+- **Aurora Эконометрика maintainer:** legacy license auto-migration verified против production data.
+
+### 6.6 Open questions для Маши небесной
+
+1. **Migration rollback strategy:** если v2.0→v3.0 migration fails mid-way (e.g., disk full at file write), rollback к v2.0 или surface error? Default: rollback (atomic write paradigm). Phase A scope: file-level atomicity (temp file + rename), не in-process transactional rollback.
+
+2. **License schema migration script для Эконометрика clients:** demo customers получают free 6mo Suite trial per memory `project_econometrica_target_architecture_v3.md`. Это applied как INSERT INTO app_licenses со специальным tier="trial_6mo"? Или extend "free" tier valid_until 6 месяцев? Default: new tier `trial_6mo` для clarity в analytics.
+
+3. **schema_version в pickle vs `.aurora` bundle manifest.json:** pickle файл содержит schema_version в pickled dict; .aurora ZIP manifest.json также. Если они расходятся (corruption / manual editing), какой priority? Default: manifest.json wins (canonical для bundle), pickle field warning logged.
+
+4. **Edge Function deployment orchestration:** Studio + Launch sharing same Supabase project → 5 Edge Functions deployed once. Studio team owns acquire/heartbeat/release/reclaim, Launch / Optimize own activate-bundle? Or all owned by platform team? Default: platform team owns all (Маша + Антон), per-app teams contribute changes through ADR.
+
+5. **Schema versioning bump cadence:** combined v3.0 freezes Phase A. Когда v4.0 (Pro tier features Этап 2)? Per Studio strategic correction Q4 2026 / Q1 2027. Phase A scope = v3.0 frozen until pilot data lands. Confirm.
 
 ---
 
