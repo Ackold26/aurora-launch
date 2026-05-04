@@ -1983,4 +1983,270 @@ def hash_canonical(data: dict) -> str:
 
 ## Component 7: Web verifier (Methodology Certificate)
 
-> **Status:** spec pending — будет в следующей итерации.
+**Goal:** Public web tool `verify.auroraai.pro` — статический WebAssembly client, который позволяет любой стороне (регулятор / customer's CFO / customer's юрист / external audit) verify integrity Aurora's Methodology Certificate PDF + связанного `.aurora` файла **без отправки данных на сервер**. Это критичный trust-builder для фарма ICP — данные не покидают браузер пользователя, гарантировано через open-source WASM client.
+
+### 7.1 Scope
+
+**Входит:**
+
+#### 7.1.A Methodology Certificate format spec
+
+Per Aurora Launch ADR-002 + Sprint B4 deliverable spec (`02_Data_Spec/REPORT_SECTIONS_SPEC.md` Section 8 + Methodology Certificate PDF block).
+
+**PDF structure:**
+- **Page 1 (Starter / Pro tiers):** Aurora seal header + project metadata + headline forecast + tier badge (Gold/Silver/Bronze) + signature panel (visible hash) + version stamps + методология footer.
+- **Page 2 (Pro+ tier only):** detailed math (priors used, sampler diagnostics, Gelman-Rubin, ESS, divergent transitions count, posterior predictive p-value) + audit trail summary.
+
+**Embedded metadata (PDF info dictionary):**
+```json
+{
+  "Title": "Aurora Methodology Certificate",
+  "Subject": "<project_name>",
+  "Producer": "Aurora <app_id> v<engine_version>",
+  "Keywords": "AURORA_METHODOLOGY_CERT_v1",
+  "/AuroraSignature": "<sha256_hex>",
+  "/AuroraEngineVersion": "aurora-platform-core==0.1.0; aurora-launch==1.4.0",
+  "/AuroraGeneratedAt": "2026-05-XX T HH:MM:SS UTC",
+  "/AuroraSchemaVersion": "3.0",
+  "/AuroraBundleHash": "<sha256_of_companion_aurora_bundle>"
+}
+```
+
+**Companion `.aurora` file:** must be supplied вместе с PDF при verification (drag-drop both). Bundle's manifest.json contains:
+```json
+{
+  "schema_version": "3.0",
+  "bundle_metadata": {
+    "target_app": "aurora_launch",
+    "target_task": "new_brand_forecast",
+    "engine_version": "aurora-platform-core==0.1.0; aurora-launch==1.4.0",
+    "generated_at": "2026-05-XX T HH:MM:SS UTC"
+  },
+  "signature": "<sha256_hex>"
+}
+```
+
+**Hash signature reproducibility invariant:** identical inputs (config + deterministic seeds) → identical hash. Verifier compares PDF embedded `/AuroraSignature` против recomputed hash от bundle contents + canonical JSON of bundle_metadata.
+
+#### 7.1.B WebAssembly verifier client
+
+**Stack:** Rust + `wasm-pack` → static JS bundle deployed на `verify.auroraai.pro`.
+
+**Bundle target size:** ≤ 500 KB gzipped (per Aurora Launch REUSE WASM bundle ≤ 200 KB target — но verifier needs ZIP + PDF parsers + SHA-256). Actual estimate: 350-450 KB gzipped.
+
+**Functionality:**
+
+```
+User opens verify.auroraai.pro
+  ↓
+Drag-drop PDF + .aurora ZIP (both required)
+  ↓
+WASM client:
+  1. Parses PDF info dictionary → extracts /AuroraSignature, /AuroraEngineVersion, /AuroraGeneratedAt, /AuroraBundleHash
+  2. Reads .aurora ZIP → extracts manifest.json
+  3. Verifies bundle's "signature" field == recomputed SHA-256 of canonical manifest.json bytes
+  4. Verifies PDF /AuroraBundleHash == bundle's signature
+  5. Displays результат:
+     ✓ Verified — signatures match. Engine version: <ver>. Generated: <ts>.
+     ✗ Mismatch — explanation of which check failed.
+```
+
+**Deliberately NO network calls** during verification (verified via CSP headers + open-source code review).
+
+#### 7.1.C UI Layout
+
+Static HTML page (no SPA framework) с минималистичной UI per Aurora Hybrid Design System:
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  [Aurora seal]   verify.auroraai.pro                              │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│   Verify Aurora Methodology Certificate                            │
+│   Проверьте подлинность отчёта без отправки данных на сервер.     │
+│                                                                    │
+│   ┌──────────────────────┐    ┌──────────────────────┐            │
+│   │  📄  Drop PDF here    │    │  📦  Drop .aurora    │            │
+│   │  Methodology Cert     │    │      bundle here     │            │
+│   └──────────────────────┘    └──────────────────────┘            │
+│                                                                    │
+│   [Verify]                                                         │
+│                                                                    │
+│   ─────────────────────────────────────────────────────────       │
+│                                                                    │
+│   Result:                                                          │
+│   ✓  Verified — signatures match.                                 │
+│       Engine: aurora-platform-core==0.1.0; aurora-launch==1.4.0   │
+│       Generated: 2026-05-15 14:23 UTC                             │
+│       Project hash: a1b2c3...d4e5f6                               │
+│                                                                    │
+│   [Privacy Notice] All processing in your browser. No upload.      │
+│                                                                    │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Locales:** RU + EN (toggle in header).
+
+**a11y:** WCAG AA contrast verification, keyboard-navigable drop zones (file input fallback), screen reader announcements для verification results.
+
+**Privacy banner:** prominent "All processing in your browser. No data leaves your device. Open-source: <link>." с clickable link to GitHub repo of WASM verifier.
+
+#### 7.1.D Hosting / deployment
+
+**Hosting:** Vercel (consistent с auroraai.pro static site).
+
+**DNS:** `verify.auroraai.pro` CNAME к Vercel; existing auroraai.pro DNS provider unchanged.
+
+**Build:** GitHub Actions:
+- Trigger: push to `main` of `aurora-verifier-wasm` repo (new repo).
+- Steps: cargo build wasm32 + wasm-pack pack + bundle JS + deploy Vercel.
+- Output: static directory с `index.html`, `verifier.wasm`, `verifier.js`, locale strings.
+
+**Open source:** entire WASM verifier repo public on GitHub (`Ackold26/aurora-verifier`), MIT license. Audit-friendly — anyone can build from source + verify deployed bundle = source.
+
+#### 7.1.E Phase A scaffolding ↔ Phase B integration
+
+**Phase A deliverable:**
+- Static `verify.auroraai.pro` site live.
+- WASM verifier handles PDF + `.aurora` v3.0 schema.
+- Methodology Certificate PDF generation hook в `aurora_inference.persistence` (signature embedding).
+
+**Phase B (Aurora Launch B4):** Methodology Certificate PDF generation per launch forecast (WeasyPrint per Aurora Launch S006 PDF generator decision). Phase A WASM verifier already supports this format.
+
+**Не входит:**
+- ❌ Server-side verification API (`POST /verify` endpoint) — explicitly NOT для privacy invariant.
+- ❌ Verification audit log (server-side history of verifications) — NOT для privacy.
+- ❌ PDF generation в WASM — Phase A scope = verifier only, generation = Inference Core / Aurora Launch B4.
+- ❌ Signature signing с асимметричной криптографией (Ed25519) — Phase A = symmetric SHA-256 hashing (deterministic reproducibility focus). Asymmetric signing — Phase D consideration if customer demand (e.g., customer wants Aurora's private key to sign, customer verifies с public key). 
+- ❌ Web verifier для других файлов (audit logs, other formats) — out-of-scope.
+- ❌ Multi-tab / batch verification — single PDF + single bundle at a time.
+
+### 7.2 Acceptance Criteria
+
+**AC7.1 — Static site deployed + DNS resolves.**
+- GIVEN production deployment.
+- WHEN user opens https://verify.auroraai.pro в browser.
+- THEN page loads within 2 sec; HTML render within 500 ms; WASM module fetched + initialized within 3 sec; UI fully interactive.
+
+**AC7.2 — Drag-drop happy path.**
+- GIVEN valid Methodology Certificate PDF + companion `.aurora` bundle.
+- WHEN user drags PDF к first dropzone + bundle к second + clicks Verify.
+- THEN within 5 sec на reference machine: result displays "✓ Verified" + engine version + generated timestamp + project hash; no network calls observed (verified via DevTools Network tab).
+
+**AC7.3 — Detect tampered PDF (signature mismatch).**
+- GIVEN PDF где байт изменён (e.g., narrative text edited).
+- WHEN verified против untampered bundle.
+- THEN result "✗ Signature mismatch" + specific reason "PDF /AuroraSignature does not match recomputed hash".
+
+**AC7.4 — Detect tampered bundle (manifest mismatch).**
+- GIVEN bundle where manifest.json edited (e.g., adversary меняет engine_version).
+- WHEN verified против untampered PDF.
+- THEN result "✗ Bundle integrity failure" + reason "Recomputed bundle hash does not match manifest's signature field".
+
+**AC7.5 — Detect mismatched PDF + bundle pair.**
+- GIVEN PDF от project A + bundle от project B (different projects).
+- WHEN verified.
+- THEN result "✗ Pair mismatch" + reason "PDF /AuroraBundleHash does not match supplied bundle's hash".
+
+**AC7.6 — Privacy invariant (no network calls).**
+- GIVEN any verification flow (success или mismatch).
+- WHEN DevTools Network tab open during entire process.
+- THEN: only initial static asset fetches (HTML + WASM + CSS + i18n strings); zero requests during verification; CSP header `connect-src 'self'` set + verified.
+
+**AC7.7 — Error messages constructive (no false-positives).**
+- GIVEN incompatible PDF (e.g., regular non-Aurora PDF).
+- WHEN dropped + Verify clicked.
+- THEN result "Not an Aurora Methodology Certificate" (detection by absence of `/AuroraSignature` PDF metadata key); does NOT say "verification failed" (would be misleading).
+
+**AC7.8 — i18n RU + EN.**
+- GIVEN browser language preference RU.
+- WHEN page first opens.
+- THEN UI strings в RU; toggle "EN" в header.
+- WHEN toggle clicked.
+- THEN strings switch live к EN; preference saved в localStorage.
+
+**AC7.9 — a11y compliance.**
+- GIVEN keyboard-only navigation (Tab, Enter).
+- WHEN user navigates с keyboard.
+- THEN: drop zones reachable via Tab; pressing Enter opens file picker (fallback); verification result announced via screen reader (`aria-live="polite"`); WCAG AA contrast verified with auto-tools (axe-core или Lighthouse).
+
+**AC7.10 — Reproducibility test.**
+- GIVEN same Aurora project trained twice with identical inputs + deterministic seeds (NumPyro `random.PRNGKey(42)`).
+- WHEN both runs export Methodology Certificate + bundle.
+- THEN signatures of both PDFs match byte-by-byte (verifies hash signature reproducibility per Aurora Launch ADR-002).
+
+### 7.3 Definition of Done
+
+- [ ] **AC7.1–AC7.10 все pass.**
+- [ ] **`aurora-verifier-wasm` GitHub repo published** (Ackold26/aurora-verifier), MIT license, README с build instructions.
+- [ ] **WASM bundle ≤ 500 KB gzipped** (measured + documented).
+- [ ] **`verify.auroraai.pro` live** через Vercel + DNS configured + HTTPS verified.
+- [ ] **PDF info dictionary writer** в `aurora_inference.persistence` (или `aurora_reporting`): `embed_methodology_signature(pdf_path, signature, engine_version, ...)`.
+- [ ] **`.aurora` manifest.json schema v3.0** finalized с `signature` field — coordinated с C2 bundle composer.
+- [ ] **Pytest для verifier** (Rust unit tests на WASM module): hash computation, ZIP parsing, PDF info dict parsing, mismatch detection. ≥ 30 tests.
+- [ ] **E2E browser test** (Playwright): drag-drop PDF + bundle, verify success/mismatch flows. 5+ scenarios.
+- [ ] **Privacy CSP audit:** `connect-src 'self'` strict, verified via response headers + manual audit.
+- [ ] **a11y audit report** (axe-core или Lighthouse) — passes WCAG AA.
+- [ ] **i18n strings** (RU + EN) frozen + reviewed by native speaker.
+- [ ] **CHANGELOG entry.**
+- [ ] **ADR:**
+  - `aurora-knowledge/Decisions/methodology-certificate-public-web-verifier.md` (Маша небесная pending) — verified Accepted.
+  - `aurora-knowledge/Decisions/aurora-pdf-signature-deterministic-sha256.md` (new) — rationale: SHA-256 vs Ed25519 trade-off для Phase A.
+
+### 7.4 Test Data Requirements
+
+**Reference Aurora project pairs (PDF + bundle):**
+- `tests/fixtures/verifier/valid_kagocel/` — PDF + bundle (from Aurora Эконометрика production-like flow).
+- `tests/fixtures/verifier/valid_launch_synthetic/` — PDF + bundle (from Aurora Launch Phase B test flow).
+
+**Tampered cases:**
+- `tests/fixtures/verifier/tampered_pdf_text.pdf` — narrative byte-edited.
+- `tests/fixtures/verifier/tampered_pdf_metadata.pdf` — info dict edited.
+- `tests/fixtures/verifier/tampered_bundle_manifest.aurora` — manifest.json edited.
+- `tests/fixtures/verifier/mismatched_pair/` — PDF от project A + bundle от project B.
+
+**Edge cases:**
+- Non-Aurora PDF (regular invoice / random PDF).
+- Corrupted ZIP (invalid bytes).
+- Empty bundle.
+- Future schema_version="4.0" (backwards compat: should fail gracefully с "newer schema, please update verifier").
+
+**Reproducibility test:**
+- Two Aurora project runs с identical inputs + seeds → produced PDFs match byte-by-byte (per AC7.10).
+
+**Browser compatibility matrix:**
+- Chrome 120+, Firefox 121+, Edge 120+, Safari 17+ (manual smoke test).
+
+### 7.5 Зависимости
+
+**Внутренние:**
+- **Зависит от:** C1 Inference Core (`aurora_inference.persistence` для PDF info embedding hook), C2 Data Studio (bundle composer producing `signature` field), C6 Schema Registry (forward-compat для bundle schema version).
+- **Не зависит от:** C3 (workflow engine), C4 (Tauri shell), C5 (no auth required для verifier — public tool).
+
+**Блокирует:**
+- Aurora Launch Sprint B4 — Methodology Certificate ship requires verifier live (otherwise customer gets PDF без verification path).
+- Trust-builder для фарма pilot kickoffs (per S008 PILOT_CLIENT_PLAN — verifier mentioned in pilot trust-building materials).
+
+**Внешние:**
+- **Rust + wasm-pack** для WASM build.
+- **lopdf или pdfium-render Rust crate** для PDF info dict parsing.
+- **zip Rust crate** для ZIP parsing.
+- **sha2 Rust crate** для SHA-256.
+- **Vercel** hosting (free tier для static — Phase A; Pro tier ~$20/mo если бandwidth growth).
+
+**Координационные:**
+- **Маша небесная ADR sign-off:** `methodology-certificate-public-web-verifier.md`.
+- **Антон approval:** verifier scope (deterministic SHA-256 vs Ed25519 — Phase A choice). Confirmed default: SHA-256 для Phase A simplicity.
+- **Аntoн approval:** Vercel hosting cost projection (likely free для Phase A, scales to ~$20-50/mo при customer growth).
+
+### 7.6 Open questions для Маши небесной
+
+1. **SHA-256 vs Ed25519 для signing:** Phase A default = SHA-256 deterministic hashing (no signing keys, no PKI). Это позволяет любой стороне reproduce signature если они имеют bundle data + canonical hashing function. Ed25519 signing предполагает Aurora's private key — verification confirms "Aurora signed this", не just "data is intact". Для фарма ICP regulatory trust — Ed25519 stronger guarantee (proof of origin), но complicates PKI / key rotation. Default Phase A: SHA-256, Ed25519 — Phase D consideration on customer demand.
+
+2. **Scope of `bundle_metadata` в hash:** какие поля из manifest.json включаются в canonical hash computation? Default proposal: `target_app`, `target_task`, `engine_version`, `generated_at`, `schema_version`, `data_provenance`. Изменение reasons / human comments — не входит (allows customer-side annotations без breaking signature).
+
+3. **Verifier UX flow для multi-page certificate (Pro+ tier):** Pro+ Methodology Certificate = 2 страницы (math + diagnostics). Single signature covers оба или per-page signatures? Default: single signature (entire PDF is one artifact).
+
+4. **Локаль для verifier по умолчанию:** RU primary (фарма ICP в РФ). Если browser language = EN (международные регуляторы / external auditors) — auto-switch к EN. Default: detect navigator.language, fallback к RU.
+
+5. **Verifier versioning:** verifier WASM version coupled с schema_version it supports. Если customer тестирует bundle v3.1 в verifier built for v3.0 → graceful "newer schema, please update verifier при https://verify.auroraai.pro" message. Phase A scope = single deployed version (latest); old verifier versions не archived. Confirm.
