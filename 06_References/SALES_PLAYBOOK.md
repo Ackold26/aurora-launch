@@ -7,7 +7,17 @@
 
 ## Контекст
 
-Aurora Launch sales = solo (Антон), РФ-рынок, premium-tier subscription (1.5-3.5M ₽/год). Этот документ финализирует:
+Aurora Launch sales = solo (Антон), РФ-рынок, premium-tier subscription (1.5-3.5M ₽/год).
+
+**Sales motion priority (per ADR launch-as-econometrica-upsell):**
+
+1. **PRIMARY (Phase B первый сезон):** upsell к существующим клиентам Aurora Эконометрика. Клиент уже видел качество, доверяет математике, готов к next step (новый запуск). Conversion rates ожидаемо высокие (50%+ в первый сезон).
+
+2. **SECONDARY (Phase B+ stabilization):** warm intros от existing customers - peer recommendations внутри industry segments.
+
+3. **TERTIARY (Phase C+):** cold outreach (Pharma / FMCG broader market) - после стабилизации первичного канала + наличия ≥3 case studies.
+
+Этот документ финализирует:
 
 1. **Outreach channels** + templates (cold email + LinkedIn DM + warm intros)
 2. **Discovery call flow** (30 min) + qualifying questions
@@ -42,12 +52,14 @@ Conversion Offer → Subscription Contract → Onboarding → Quarterly Reviews
 
 ### 2.1 Channel Mix
 
-**Primary channels (Phase B):**
+**Primary channels (Phase B первый сезон, in priority order):**
 
-1. **Warm intros (highest conversion)** - existing Aurora Econometrica customers, industry peers, mutual LinkedIn connections.
-2. **Cold email** - direct к decision-makers (marketing director, brand manager, head of new products).
-3. **LinkedIn DM** - direct к profiles, complementary к email.
+1. **Эконометрика upsell conversation (highest conversion - 50%+)** - existing Aurora Эконометрика clients завершают свой текущий проект и обсуждают next step. "У вас планируется новый запуск? Aurora Launch - естественное расширение того, что вы уже видели в Эконометрике. Те же команды, та же методология, те же отчёты."
+2. **Warm intros от existing customers** - peer recommendations within industry segments (например, Materia Medica → ATC peer brand).
+3. **Cold email + LinkedIn DM** - secondary channels, активируются после Sprint B6 ship + ≥1 case study.
 4. **Industry events** - АКАР, IAA Russia, FMCG conferences, pharma events (Антон attends 2-4 events/year).
+
+**Phase C+ (после стабилизации):** cold outreach становится primary через broader market entry.
 
 **Secondary (Phase C+):**
 - Content marketing (blog posts, case studies, methodology articles)
@@ -55,9 +67,47 @@ Conversion Offer → Subscription Contract → Onboarding → Quarterly Reviews
 - Paid ads (Yandex Direct - test budget 50K/мес для разных segments)
 - Webinars (methodology deep-dives, ~quarterly)
 
-### 2.2 Cold Email Template (Russian)
+### 2.1.1 Эконометрика Upsell Conversation (PRIMARY channel)
 
-**Subject lines (A/B testing):**
+**Контекст:** клиент завершает свой Эконометрика-проект (например quarterly review session) - естественный момент для upsell-разговора про Aurora Launch.
+
+**Template (in-session conversation, не email):**
+
+> "Спасибо за работу над [текущий проект]. Видим что у вас в pipeline новый запуск [бренд / продукт] в [период] - правильно?
+>
+> Aurora Launch - расширение того, что вы уже видели в Эконометрике, для нового бренда без исторических данных. Используется индивидуально подобранный proxy-бренд + recipient anchors. Methodology Certificate в том же формате что вы знаете.
+>
+> Ключевая интеграция: ваш текущий Эконометрика-проект [бренд] может стать proxy для нового запуска - lossless transfer adstock + hill параметров. Не нужно собирать новые DSM/Mediascope данные.
+>
+> Subscription 1.5-3M ₽/год + 20-40h consulting. Pilot первого launch FREE с case-study consent.
+>
+> Готовы рассмотреть на следующей сессии?"
+
+**Follow-up email (через 24h):**
+
+```
+Здравствуйте, [имя],
+
+Спасибо за разговор. Прикрепляю one-pager Aurora Launch + Methodology
+Certificate sample.
+
+Если интересно попробовать на пилоте вашего следующего запуска:
+1. NDA + pilot agreement (можем подписать на этой неделе)
+2. Kickoff session 1.5h - подбор proxy-бренда (логично использовать
+   ваш текущий Эконометрика-проект)
+3. 12-week pilot, free, с case-study consent
+
+[Calendly: kickoff slot]
+
+С уважением,
+Антон
+```
+
+### 2.2 Cold Email Template (Russian) - SECONDARY channel
+
+**ВАЖНО:** cold outreach = secondary channel. Primary - Эконометрика upsell conversation (раздел 2.1.1 ниже). Cold templates ниже activate после стабилизации primary канала + наличия ≥1 case study.
+
+**Subject lines для cold (A/B testing):**
 - "Прогноз запуска [бренд] - 2 недели вместо 3 месяцев"
 - "MMM-прогноз для нового бренда без исторических данных"
 - "Как [конкурент] запускался в вашей категории - методология Aurora"
@@ -256,8 +306,19 @@ Brief framing:
 
 ### 4.1 Pre-Demo Preparation
 
+**Primary demo path: real client data** (per ADR launch-demo-strategy-real-client-data-first):
+- Если prospect = existing Эконометрика-клиент → демо на ЕГО собственном проекте (perfect fit, максимальный impact)
+- Если prospect = warm intro → запросить у refer'ера согласие показать его данные (anonymized brand name)
+- Если prospect = cold + категория совпадает с существующим case study → анонимизированная копия real проекта
+
+**Secondary demo path: synthetic** (только когда нужен):
+- Cold outreach к новой категории без case study
+- Конференция / контент-маркетинг
+- 2-3 дня работы (lightweight, не неделя)
+- ОБЯЗАТЕЛЬНО помечать "Demo data" в углу слайдов - не выдавать за реальный кейс
+
 Антон prepares:
-- Sample dataset (anonymized real or synthetic) близкий к prospect's category
+- Real client project (ОПТИМАЛЬНО) или anonymized real или synthetic
 - Recipient anchors filled-in example matching prospect's launch context
 - Similarity radar pre-computed (showing realistic verdict for prospect's likely scenario)
 - Sample Methodology Certificate PDF (printed if in-person)

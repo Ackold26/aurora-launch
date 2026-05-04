@@ -168,8 +168,10 @@ Aurora Launch не стартует до завершения Phase A:
   - Sensitivity testing на synthetic data
 - UI flow: user uploads new recipient data -> sees pooling weight reduce
 - Integration tests на synthetic data (proxy -> recipient transfer accuracy)
-- Pilot dataset preparation
+- **Эконометрика → Launch migration flow** (primary demo path - см. ADR launch-demo-strategy-real-client-data-first): импорт `.aurora` от Эконометрика-клиента в Launch как proxy candidate, демо на real-данных клиента (с его согласия) или анонимизированной копии
 - Property-based tests (monotonic CI growth с horizon, consistent transfers)
+
+**Note:** обязательный синтетический demo-кейс УБРАН из B5 scope. Synthetic кейс - secondary, делается lightweight (2-3 дня) только когда нужен для конкретной активности (cold outreach, конференция, контент). Primary demo = real client data Эконометрика.
 
 ### Sprint B6: Pilot Live-Test + Polish (1 неделя)
 
@@ -180,7 +182,8 @@ Aurora Launch не стартует до завершения Phase A:
 - ✅ S010 Sales Playbook - `06_References/SALES_PLAYBOOK.md` (outreach + discovery + demo + conversion + onboarding + ops)
 
 **Deliverables:**
-- Pilot session с 1 фарма OTC или FMCG launch team
+- Pilot session с 3 parallel клиентами (Pharma OTC + FMCG + Cosmetics, Tier 1 prioritized = existing Эконометрика clients)
+- **Эконометрика → Launch project migration integration** (UI-кнопка в Эконометрике "Использовать как proxy в Aurora Launch", lossless transfer recipient_brand_metadata + recent posterior как proxy_priors)
 - Bug fixes по live-test findings
 - Onboarding tour (Welcome experience, glossary, sample dataset)
 - Templates library (FMCG Snacks, OTC Pharma, Premium Cosmetic, Energy Drink)

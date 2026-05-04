@@ -3,6 +3,22 @@
 **Status:** v1.0 (2026-05-04)
 **Authority:** P8 в `PRINCIPLES.md`
 
+## Позиционирование (sales motion)
+
+**Aurora Launch — upsell к Aurora Эконометрика, не cold market entry.**
+
+Sales-логика:
+- Клиент пришёл на Эконометрику → понял качество → купил Launch для следующего запуска
+- Конкурентное преимущество: воспроизводимость + математика уже доказаны на real-проекте Эконометрики
+- Cold outreach к Launch без Эконометрики = secondary channel (после стабилизации первого)
+
+**Aurora Data Studio = часть инфраструктуры платформы Aurora**, доступна всем покупателям Suite (Эконометрика / Launch / Brand / Optimize / Pricing / Promo). Не "бесплатный продукт", а инфраструктурный компонент.
+
+**ICP сегментация Phase B:**
+1. Existing Aurora Эконометрика clients (Tier 1) - upsell первый запуск Launch
+2. Warm intros от existing clients - secondary
+3. Cold market entry (фарма / FMCG broader) - Phase C+ priority
+
 ## Что Aurora Launch покрывает
 
 ### KPI scope: Sales only

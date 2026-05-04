@@ -141,13 +141,28 @@ Payment options для multi-year:
 
 ### 3.2 Suite Bundle Discount
 
-При покупке нескольких Aurora products (per Suite strategy):
+При покупке нескольких Aurora econometric apps (per Suite strategy):
 
 - Aurora Launch + Aurora Optimize: -25% off combined
 - Aurora Launch + Aurora Optimize + Aurora Brand: -40% off combined (Suite Bundle)
 - Add-ons (Pricing/Promo Phase C+): -10% incremental к existing bundle
 
 **Example:** Pro tier Aurora Launch (2.5M) + Pro tier Aurora Optimize (estimated 1.5M) + Pro tier Aurora Brand (estimated 2.0M) = 6.0M individually → 3.6M Suite Bundle (40% off).
+
+**Aurora Data Studio - инфраструктура платформы (Этап 1 freemium):**
+
+Aurora Data Studio = часть инфраструктуры Aurora platform, доступна всем покупателям любого Suite app (Эконометрика / Launch / Brand / Optimize / Pricing / Promo). Не bundle discount, не add-on - **базовый компонент** purchased Suite.
+
+Что включает Studio инфраструктура (Этап 1):
+- Импортёры DSM / Mediascope AdEx / Mediascope TV Index / DigitalBudget
+- Базовое column mapping
+- Format adapters (multi-version XLSX detection)
+- Валидация данных + preview
+- Bundle export к `.aurora` формату
+
+**Маркетинг language:** "Aurora Data Studio - часть инфраструктуры платформы Aurora" / "Покупатели Aurora Suite получают полный доступ к Data Studio" / "Powered by Aurora Эконометрика engine". НЕ "Studio бесплатно", НЕ "Free Studio with Launch" (B2B-фарма читает "free" как "несерьёзно / не пройдёт регуляторный аудит").
+
+**Этап 2 (Q4 2026 / Q1 2027 после пилота Launch):** standalone коммерциализация Studio (Solo / Team / Agency tiers) - решение принимается после реальных данных по использованию (telemetry). Этап 2 pricing TBD, не входит в этот документ.
 
 ### 3.3 Loyalty Renewal Discount
 

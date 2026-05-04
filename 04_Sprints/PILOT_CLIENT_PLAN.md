@@ -63,15 +63,19 @@ Sprint B6 требует pilot client для end-to-end validation Aurora Launch
 
 ### 2.1 Category A - Pharma OTC (3 candidates)
 
-**Tier 1 (warm leads - prioritize):**
+**Tier 1 (existing Aurora Эконометрика clients - PRIMARY upsell, per ADR launch-as-econometrica-upsell):**
 
-1. **Materia Medica Holding** - new OTC launch (extension of existing Кагоцел relationship через Aurora Econometrica). Most likely warm intro available. Decision-maker: marketing director or new product launch lead.
+1. **Materia Medica Holding (Кагоцел team)** - existing Aurora Эконометрика client (Trust 3 hierarchical Bayesian validated на Кагоцел data v1.0.16). Highest priority: новый OTC-launch проходит как natural upsell + Кагоцел project можно использовать как proxy в Launch (lossless migration через Эконометрика → Launch flow Sprint B6). Decision-maker: marketing director / new product launch lead. Conversion expectation 60%+ (warm relationship).
 
-2. **Stada CIS** - mid-tier OTC pharma manufacturer, multiple new launches per year. Moderately warm (industry peer of Materia Medica). Decision-maker: head of Russia marketing.
+2. **Венарус team / Materia Medica peer brands** - similar relationship logic. Если есть другие OTC-бренды в pipeline - same upsell story.
 
-**Tier 2 (cold but plausible):**
+**Tier 2 (warm intros от Tier 1 + adjacent Эконометрика clients):**
 
-3. **Биннофарм Group** - Russian pharma, expanding OTC portfolio post-2022. Cold contact, requires LinkedIn intro or industry event meeting.
+3. **Stada CIS** - mid-tier OTC pharma manufacturer, multiple new launches per year. Warm intro candidate (industry peer of Materia Medica). Decision-maker: head of Russia marketing.
+
+**Tier 3 (cold - secondary, после стабилизации Tier 1):**
+
+4. **Биннофарм Group** - Russian pharma, expanding OTC portfolio post-2022. Cold contact, requires LinkedIn intro or industry event meeting. Активировать после ≥1 case study от Tier 1.
 
 ### 2.2 Category B - FMCG Impulse (3 candidates)
 
@@ -103,15 +107,16 @@ Sprint B6 требует pilot client для end-to-end validation Aurora Launch
 
 Антон prioritizes pilot prospects по этим signals:
 
-1. **Warm intro available** (existing relationship, mutual connection): +3 priority points
-2. **New brand launch in pipeline within 4-8 weeks** (Aurora can validate forecast before launch): +2 points
-3. **Category data infrastructure exists** (DSM Pharma / DSM Retail / Mediascope subscription у клиента): +2 points (can move fast)
-4. **Decision-maker accessible** (LinkedIn / email / phone known): +2 points
-5. **Marketing team sophistication** (uses MMM, knows similarity concept, values methodology): +1 point
-6. **Budget signals** (>=2.5M ₽ Pro tier feasible): +1 point
-7. **Case study consent flexibility** (PR-friendly organization): +1 point
+1. **Existing Aurora Эконометрика client** (already trusts methodology, easiest upsell): **+5 priority points (PRIMARY)**
+2. **Warm intro available** (existing relationship, mutual connection): +3 priority points
+3. **New brand launch in pipeline within 4-8 weeks** (Aurora can validate forecast before launch): +2 points
+4. **Category data infrastructure exists** (DSM Pharma / DSM Retail / Mediascope subscription у клиента): +2 points (can move fast)
+5. **Decision-maker accessible** (LinkedIn / email / phone known): +2 points
+6. **Marketing team sophistication** (uses MMM, knows similarity concept, values methodology): +1 point
+7. **Budget signals** (>=2.5M ₽ Pro tier feasible): +1 point
+8. **Case study consent flexibility** (PR-friendly organization): +1 point
 
-**Pilot kickoff target:** top 3 candidates (one per category) by total score.
+**Pilot kickoff target:** top 3 candidates (one per category) by total score. Existing Aurora Эконометрика clients автоматически получают +5 - они должны быть Tier 1 prospects если новый запуск в pipeline.
 
 ---
 
