@@ -1274,7 +1274,325 @@ pnpm tauri build
 
 ## Component 5: Common Services
 
-> **Status:** spec pending — будет в следующей итерации.
+**Goal:** 5 shared cross-app сервисов в одном пакете `aurora-platform-core/common_services/` — Auth (Supabase), License (cross_app_license framework + tier scaffolding free/pro/team/agency), Updates (auto-updater), Telemetry (opt-in event collection для Этап 2 monetization decisions), Feature Flags (gate Pro candidate features). Цель — каждый Aurora app использует identical infrastructure, без дублирования кода.
+
+### 5.1 Scope
+
+#### 5.1.A Auth (Supabase)
+
+`common_services.auth`:
+
+API:
+```python
+class AuthClient:
+    def sign_up(email: str) -> SignUpResult                # email + magic link
+    def sign_in_with_magic_link(email: str) -> SignInResult
+    def verify_magic_link(token: str) -> Session
+    def get_session() -> Session | None                    # cached locally
+    def refresh_session() -> Session
+    def sign_out() -> None
+    def on_auth_state_change(callback) -> Unsubscribe
+```
+
+**Existing pattern** (Aurora Эконометрика uses Supabase auth + `feedback_online_only_license`). Phase A enhancement: extract в shared package.
+
+**Session storage:** locally encrypted (per-machine key, OS DPAPI Windows / Keychain Mac / libsecret Linux). Default to OS-native; fallback to AES-256 + key file in `%APPDATA%\Aurora\session.bin`.
+
+#### 5.1.B License framework (cross_app_license)
+
+`common_services.license`:
+
+**Schema (Supabase tables):**
+- `user_accounts` — Supabase auth user.
+- `app_licenses` — per-user x per-app license assignments.
+- `license_tiers` — tier definitions (free / pro / team / agency / enterprise).
+- `license_slots` — для floating concurrent license (Studio Team/Agency tiers).
+- `license_features` — tier × feature flag matrix.
+
+**Tier model (Phase A scaffolding, per Маша небесная monetization scaffold):**
+
+```python
+class LicenseTier(str, Enum):
+    FREE = "free"        # default fallback (e.g., Studio Этап 1, no payment)
+    PRO = "pro"          # paid tier 1
+    TEAM = "team"        # paid tier 2 (multi-seat)
+    AGENCY = "agency"    # paid tier 3 (multi-seat + cross-tenant)
+    ENTERPRISE = "enterprise"  # custom contract
+
+class LicenseScope(BaseModel):
+    user_id: str
+    app_id: str           # "aurora_launch", "aurora_optimize", "aurora_data_studio", ...
+    tier: LicenseTier
+    features: list[str]   # e.g., ["studio.feature.advanced_charts"]
+    valid_from: datetime
+    valid_until: datetime | None  # None = perpetual
+    seats_total: int = 1
+    seats_available: int = 1      # для floating concurrent
+```
+
+**API:**
+```python
+class LicenseClient:
+    def check_license(app_id: str) -> LicenseResult
+    def has_feature(feature_id: str) -> bool
+    def acquire_slot(app_id: str) -> SlotToken            # для floating
+    def heartbeat(slot_token: str) -> None                # 60s interval
+    def release_slot(slot_token: str) -> None
+    def get_tier(app_id: str) -> LicenseTier
+    def upgrade_tier_url(target_tier: LicenseTier) -> str  # checkout URL
+
+@license_required(app_id="aurora_launch", feature="train_model")
+def train_model(...): ...                                  # decorator
+```
+
+**Floating license heartbeat / TTL** (per Studio ADR-003):
+- Heartbeat каждые 60 сек.
+- Server-side TTL 5 минут (slot reclaimable если 3 missed heartbeats).
+- Cron cleanup runs every minute on Supabase Edge Function.
+
+**Cross-app license activation:**
+- Аutomatic при purchase any econometric app: Studio Solo activated (per Studio bundle-activation primary path).
+- В Этапе 1: всё Suite tier-equivalent (free для Studio scope = full access всем покупателям).
+- Этап 2 (Q4 2026 / Q1 2027): tier gates activated через feature flags.
+
+#### 5.1.C Auto-updater
+
+`common_services.updates`:
+
+Per Aurora Эконометрика production pattern:
+- rosst-updates `latest.json` polled at startup + interval (configurable, default 24h).
+- Supabase `app_versions` table SOURCE OF TRUTH.
+- Edge Function PATCH on release.
+- SHA-256 verification before install.
+- NSIS installer download + execute.
+- Tauri JS pre-update hook: graceful sidecar shutdown (per `project_econometrica_install_lock_2026_05_04` Phase 3.1).
+
+**API:**
+```python
+class UpdateClient:
+    def check_for_update(app_id: str, current_version: str) -> UpdateInfo | None
+    def download_update(info: UpdateInfo, progress_callback) -> Path
+    def verify_signature(installer_path: Path, expected_hash: str) -> bool
+    def install_update(installer_path: Path) -> None      # graceful shutdown + exec installer
+```
+
+**Phase A enhancement:** sidecar deployed в `%LOCALAPPDATA%\<app_id>\sidecar-{version}\` (per-version, no Program Files locks per memory).
+
+#### 5.1.D Telemetry
+
+`common_services.telemetry`:
+
+Per coordination doc Section 4 + `phase-a-future-monetization-scaffold.md` (Маша небесная pending):
+
+```python
+class TelemetryClient:
+    def emit(event_name: str, app: str, feature: str, metadata: dict) -> None
+    def flush() -> None                                    # send buffered batch
+    def is_opt_in() -> bool
+    def opt_in() -> None
+    def opt_out() -> None
+
+class TelemetryEvent(BaseModel):
+    event_name: str
+    user_id_anon: str       # UUID per install
+    app: str
+    feature: str
+    timestamp: datetime
+    metadata: dict[str, str | int | float]
+```
+
+**Storage / transport:**
+- Local: append-only `~/.aurora/telemetry/events.jsonl`, rotated daily, 90-day retention.
+- Server (если opt-in): batch upload к `https://telemetry.auroraai.pro/events` каждые 60 минут или при flush().
+- Anonymized user_id_anon (UUID per install, не tied к Supabase user_id).
+- No PII, no data content. Feature usage signals only.
+
+**Default state:** OFF (фарма ICP privacy concern). User opts-in через Settings → Telemetry → "Help us improve Aurora".
+
+**Storage retention:** server side aggregated indefinite (для Этап 2 analysis). Individual events retain 90 дней.
+
+#### 5.1.E Feature flags
+
+`common_services.feature_flags`:
+
+```python
+class FeatureFlags:
+    @classmethod
+    def is_enabled(feature_id: str, app_id: str | None = None) -> bool
+    @classmethod
+    def get_all() -> dict[str, bool]
+
+    # Decorators:
+    @classmethod
+    def require(feature_id: str): ...  # raises FeatureDisabled if off
+```
+
+**Default flags для Phase A** (per Маша небесная monetization scaffold + Studio + Launch needs):
+
+```python
+DEFAULT_FLAGS = {
+    # Studio Этап 1 (all on)
+    "studio.feature.multi_project_workspace": True,
+    "studio.feature.advanced_charts": True,
+    "studio.feature.pdf_export_quality_report": True,
+    "studio.feature.team_collaboration": True,
+    "studio.feature.tier3_cloud_unlimited": True,
+
+    # Launch (all on)
+    "launch.feature.multi_proxy": True,
+    "launch.feature.posterior_update": True,
+    "launch.feature.consulting_hours_widget": True,
+
+    # Common
+    "common.telemetry.opt_in_default": False,  # OFF default (фарма ICP)
+    "common.theme.fun_mode": True,
+    "common.cloud_llm.opt_in_default": False,  # OFF default
+
+    # Этап 2 candidates (currently на)
+    "studio.tier.gates_active": False,           # Этап 2 = True
+    "launch.tier.gates_active": False,           # Этап 2 = True (если standalone tier)
+}
+```
+
+**Override mechanism:**
+- Flags могут быть overridden license tier (Этап 2): `license_features` table.
+- Local override через env var (dev only): `AURORA_FF_<flag_id>=true`.
+- Remote config (Phase B+) — not Phase A.
+
+### 5.2 Acceptance Criteria
+
+**AC5.1 — Auth flow end-to-end.**
+- GIVEN clean install, no session.
+- WHEN user enters email → magic link sent → clicks link in email.
+- THEN session token persisted (encrypted local storage); `get_session()` returns valid session; user signed in across all Aurora apps на same machine (cross-app shared session).
+
+**AC5.2 — License check на startup.**
+- GIVEN signed-in user without active Aurora app license.
+- WHEN spawning aurora_launch.
+- THEN License cabinet shows "Not licensed" + "Activate" button; train_model() decorator raises `LicenseError`; UI redirects to activation flow.
+
+**AC5.3 — Cross-app license activation.**
+- GIVEN user purchases Aurora Optimize → Supabase license created с tier=PRO.
+- WHEN user opens Aurora Data Studio.
+- THEN Studio автоматически Solo tier activated (per ADR-002 bundle-activation primary path); `get_tier("aurora_data_studio")` returns SOLO; full Studio scope accessible.
+
+**AC5.4 — Floating license slot acquisition.**
+- GIVEN Studio Team license (3 slots), 2 пользователя already connected.
+- WHEN 3rd user opens Studio.
+- THEN `acquire_slot()` succeeds; heartbeat starts; `seats_available=0` reported.
+- WHEN 4th user opens Studio.
+- THEN `acquire_slot()` raises `NoSlotsAvailable` + UI message "All Team seats occupied, ..."
+
+**AC5.5 — TTL slot reclamation.**
+- GIVEN floating slot with last heartbeat 6 минут назад.
+- WHEN cron cleanup runs.
+- THEN slot released; `seats_available` incremented; new user может acquire.
+
+**AC5.6 — Auto-update verifies + installs.**
+- GIVEN current_version=1.0.0, server side `latest.json` for v1.1.0.
+- WHEN startup check_for_update() runs.
+- THEN UpdateInfo returned (URL, hash, release_notes); user clicks "Install"; downloaded; signature verified; pre-update hook fires (sidecar shutdown); NSIS installer launches.
+
+**AC5.7 — Telemetry default OFF + opt-in functional.**
+- GIVEN clean install.
+- WHEN `is_opt_in()` checked.
+- THEN returns False; `emit()` calls written к local jsonl но НЕ uploaded.
+- WHEN user opts in via Settings.
+- THEN `is_opt_in()` returns True; next `flush()` uploads buffered events; future events upload в batches.
+
+**AC5.8 — Feature flags decorator gate.**
+- GIVEN feature `studio.feature.advanced_charts` = False (mock Этап 2 state).
+- WHEN code attempts `@FeatureFlags.require("studio.feature.advanced_charts")` call.
+- THEN raises `FeatureDisabled("studio.feature.advanced_charts")`; UI graceful handling показывает upgrade prompt.
+
+**AC5.9 — Encrypted session storage.**
+- GIVEN authenticated session.
+- WHEN session.bin file inspected на disk.
+- THEN content NOT plain JSON (cannot extract token via `cat`); requires either OS DPAPI/Keychain access OR per-machine key.
+
+**AC5.10 — Privacy в telemetry payload.**
+- GIVEN any emitted telemetry event.
+- WHEN inspected via Wireshark (if uploaded).
+- THEN payload contains anonymized user_id (UUID), event_name, app, feature, timestamp, metadata; NO email, NO Supabase user_id, NO file content, NO PII.
+
+### 5.3 Definition of Done
+
+- [ ] **AC5.1–AC5.10 все pass.**
+- [ ] **Code merged в `aurora-platform-core/common_services/`** + tagged.
+- [ ] **Supabase schema migrations** applied: `user_accounts` (existing), `app_licenses` (extended schema), `license_tiers` (new), `license_slots` (new), `license_features` (new), `app_versions` (existing — verified consistency).
+- [ ] **Edge Functions:** acquire-slot, heartbeat, release-slot, status (per Studio ADR-003) + cron cleanup. All deployed.
+- [ ] **rosst-updates `latest.json`** integration verified для 3 apps (Launch / Studio / Optimize rebrand).
+- [ ] **Pytest + integration tests:** 80+ tests. Coverage ≥ 80%.
+- [ ] **Telemetry endpoint** `https://telemetry.auroraai.pro/events` functional (FastAPI on Yandex.Cloud or Vercel).
+- [ ] **Feature flags registry** finalized + frozen + documented.
+- [ ] **Migration guide для Aurora Эконометрика:** existing licensing → cross_app_license framework. Backwards compat: Эконометрика v1.0.16 license keys auto-migrate.
+- [ ] **API docs:** `aurora-platform-core/docs/common_services.md`.
+- [ ] **CHANGELOG entry.**
+- [ ] **ADRs:**
+  - `aurora-knowledge/Decisions/aurora-cross-app-license-framework.md`
+  - `aurora-knowledge/Decisions/aurora-telemetry-opt-in-default.md`
+  - `aurora-knowledge/Decisions/aurora-feature-flags-default-on-stage1.md`
+
+### 5.4 Test Data Requirements
+
+**Synthetic license fixtures:**
+- `tests/fixtures/licenses/free_solo.json` — minimal license.
+- `tests/fixtures/licenses/team_3seats_2used.json` — for AC5.4.
+- `tests/fixtures/licenses/agency_10seats.json` — for slot tests.
+- `tests/fixtures/licenses/expired.json` — for renewal flow.
+
+**Mock auth flow:**
+- Mock Supabase server (or test project ref) для magic link flow.
+- Mock email delivery (capture link without sending).
+
+**Mock telemetry receiver:**
+- Local FastAPI receiver simulating `telemetry.auroraai.pro/events`.
+
+**Mock auto-update server:**
+- Local rosst-updates simulator с `latest.json`.
+- Test installers (valid + tampered).
+
+**Property-based tests:**
+- Slot acquisition concurrency: random N concurrent acquire/release пар → state consistency.
+- TTL math: random heartbeat sequences → correct reclamation timing.
+
+### 5.5 Зависимости
+
+**Внутренние:**
+- **Зависит от:** C6 Schema Registry (license schema versioning).
+- **Не зависит от:** C1, C2, C3, C4, C7. Common Services — pure infrastructure layer, не имеет UI/math зависимостей.
+
+**Блокирует:**
+- C4 Tauri shell template (license/auth/update embedded в shell).
+- C3 Workflow engine (`@license_required` decorator).
+- C1 Inference Core (gating wraps `train_model` etc.).
+- All Aurora apps Phase A/B/C.
+
+**Внешние:**
+- **Supabase project** (existing, used by Aurora Эконометрика).
+- **supabase-py >= 2.0** SDK.
+- **httpx >= 0.26** для telemetry transport.
+- **cryptography >= 42** for session storage encryption.
+- **pywin32 (Windows)** для DPAPI native API.
+
+**Координационные:**
+- **Маша небесная ADRs** (3 sign-offs).
+- **Антон approval:**
+  - Tier 3 cloud LLM cap policy (Studio AC2.x).
+  - Telemetry server hosting (Vercel vs Yandex.Cloud — RU-data-localization concern для фарма ICP).
+- **Aurora Эконометрика maintainer:** license migration confirmation.
+
+### 5.6 Open questions для Маши небесной
+
+1. **Telemetry server hosting:** Vercel (consistent с auroraai.pro static) или Yandex.Cloud (data-localization для РФ)? Default proposal: Yandex.Cloud для compliance + Russian data residency. Cost trade-off: ~3000₽/мес минимум.
+
+2. **License key storage architecture:** Supabase server-side primary + cached client-side. Какой fallback при offline (нет интернета at startup)? Default: cached license valid 7 days offline, then "Please connect к internet" UI.
+
+3. **Pro tier feature gating timeline:** Phase A — все flags ON, Этап 2 (Q4 2026 / Q1 2027) — некоторые OFF for free tier. Migration guide требуется. Default: Phase A flags не actively gated; Этап 2 introduces `license.tier.gates_active` flag = True, активируя per-tier matrix.
+
+4. **Cross-app session sharing UX:** signed in to Aurora Optimize → opening Aurora Studio = automatic sign-in (shared session). Confirm? Default: yes, single sign-on across Aurora apps на same machine. Different machine = re-sign-in.
+
+5. **Telemetry events frequency cap:** local jsonl size cap (e.g., 100 MB)? Если flush() failed (offline), buffered events accumulate. Default: hard cap 50 MB local, oldest events dropped at cap with warning log.
 
 ---
 
