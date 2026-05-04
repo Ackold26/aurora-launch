@@ -157,8 +157,9 @@ Aurora Launch не стартует до завершения Phase A:
 
 **Goal:** клиент может re-fit модель с новыми recipient данными.
 
-**Prerequisites:**
-- S005b Posterior Math design session (BLOCKER). S005a (storage architecture) closed 2026-05-04 via ADR-002.
+**Prerequisites (DONE 2026-05-04):**
+- ✅ S005b Posterior Math design - `03_Architecture/POSTERIOR_UPDATE_DESIGN.md` + ADR-004 (ESS-based partial pooling + BMA fallback)
+- ✅ S005a (storage architecture) - ADR-002 ZIP archive
 
 **Deliverables:**
 - `engines/launch_posterior_update.py` - partial pooling weight schedule
@@ -202,7 +203,7 @@ Aurora Launch не стартует до завершения Phase A:
 | S003 | Proxy Similarity Framework - 6 dimensions + scoring + weights + multi-aggregation | 2026-05-04 | ✅ DONE | ~~Sprint B2~~ resolved |
 | S004 | Adaptation Rules detail - 5 shape params + magnitude calibration + cross-category matrix + ADR-003 pre-train | 2026-05-04 | ✅ DONE | ~~Sprint B3~~ resolved |
 | **S005a** | **Storage Layer Decision: ZIP archive container (Option D)** | 2026-05-04 | ✅ DONE (ADR-002) | ~~Sprint B1~~ resolved |
-| **S005b** | **Posterior Update math design** (formula + weight schedule) | до Sprint B5 | PENDING | Sprint B5 |
+| **S005b** | **Posterior Update math design** - ESS-based partial pooling + BMA fallback + drift adaptive | 2026-05-04 | ✅ DONE | ~~Sprint B5~~ resolved |
 | S006 | Launch Forecast Report sections - что в каждой section + PDF tool decision | до Sprint B4 | PENDING | **Sprint B4** |
 | S007 | Multi-proxy UX - когда expert включает + decision rules + UI wireframe | 2026-05-04 | ✅ DONE | ~~Sprint B2~~ resolved |
 | S008 | Pilot client identification - кто будет первым validation | до Sprint B6 | PENDING | **Sprint B6** |
@@ -211,7 +212,7 @@ Aurora Launch не стартует до завершения Phase A:
 
 **Note:** S005 разделена post-audit (2026-05-04) на S005a (storage architecture - до Sprint B1) и S005b (posterior math - до Sprint B5). S005a blocks B1 потому что storage decision fundamentally меняет schema layout.
 
-**Critical path:** ~~S003 + S007 (до B2)~~ closed 2026-05-04, ~~S004 (до B3)~~ closed 2026-05-04, S006 + S009 (до B4), S005b (до B5), S008 + S010 (до B6). S005a + S003 + S007 + S004 closed 2026-05-04. **Sprint B1 + B2 + B3 unblocked.** Remaining blockers: only S006/S009 (B4), S005b (B5), S008/S010 (B6).
+**Critical path:** ~~S003 + S007 (до B2)~~, ~~S004 (до B3)~~, ~~S005b (до B5)~~ all closed 2026-05-04. S006 + S009 (до B4), S008 + S010 (до B6). All math/architecture sessions closed. **Sprint B1 + B2 + B3 + B5 unblocked.** Remaining blockers commercial/operational: S006/S009 (B4), S008/S010 (B6).
 
 ---
 

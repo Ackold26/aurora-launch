@@ -105,32 +105,41 @@
 
 ## S005b: Posterior Update Math Design
 
-**Status:** PENDING (post-audit 2026-05-04 split из S005)
-**Blocker для:** Sprint B5 (Posterior Update workflow)
-**Target completion:** до старта Sprint B5
+**Status:** ✅ DONE (closed 2026-05-04, autonomous session, mandate Антон)
+**Blocker для:** Sprint B5 - resolved
 
-**Open questions:**
+**Decisions (Accepted):**
 
-### S005b.1: Weight schedule formula
+1. **ESS-based weight schedule formula locked** (ADR-004):
+   ```
+   w_proxy(t) = ESS_proxy_adj / (ESS_proxy_adj + ESS_recipient(t))
+   ESS_PROXY_BASE = 50 × similarity_factor (1.0/0.7/0.5 для High/Medium/Low)
+   ESS_recipient(t) = t × recipient_obs_value (categorical: FMCG impulse 4.0, FMCG staples 3.0-3.5, OTC 2.5, Telecom/Banking 2.0, B2B 1.5, Rx 1.5, default 3.5)
+   ```
+   Worked schedule (FMCG High): t=12 w=0.51, t=26 w=0.32, t=52 w=0.19, t=104 w=0.11.
 
-1. **Weight schedule formula**
-   - ESS-based: weight = proxy_ESS / (proxy_ESS + recipient_ESS)
-   - Bayesian Model Averaging: model weights from posterior log-likelihood
-   - Linear / exponential decay
-   - Threshold для "proxy released" - когда weight < 0.05 → standalone model
+2. **Architecture: partial pooling primary** (single Bayesian model, prior strength controlled by w_proxy через std multiplier 1/w_proxy). **BMA fallback** только при severe drift (coverage <0.60).
 
-2. **Validation на synthetic data**
-   - Generate synthetic recipient evolved from proxy
-   - Test что model converges к recipient truth
-   - Sensitivity to weight schedule choice
+3. **Drift detection adaptive policy:**
+   - Coverage 0.90-0.95: normal schedule
+   - 0.80-0.90: mild (recipient_obs_value × 1.5)
+   - 0.60-0.80: moderate (× 3.0)
+   - <0.60: severe → switch к BMA mode (two-model averaging)
 
-3. **Identifiability при partial pooling**
-   - Если recipient data short - модель может застрять в proxy local minimum
-   - Когда обнаружить и предупредить пользователя
+4. **Identifiability mitigations:**
+   - Min 4 weeks recipient data перед refit
+   - Max shrinkage cap: weeks <12 → w_proxy >=0.40, weeks <24 → w_proxy >=0.20
+   - Diagnostic checks (Gelman-Rubin <1.05, ESS >=400, divergent_transitions=0, posterior predictive p-value 0.05-0.95)
 
-**Owner of decision:** Маша (math) + Антон (domain validation).
+5. **Proxy release threshold:** 0.05. Cross-app handoff trigger: w_proxy <0.05 + 52+ weeks → suggest Aurora Optimize transition.
 
-**Deliverable:** POSTERIOR_UPDATE_DESIGN.md в `03_Architecture/` + ADR-003 для weight schedule.
+6. **Audit trail:** `PosteriorUpdateEvent` per refit captures full state (weights, coverage, drift severity, ESS values, diagnostics, triggering data hash, user note). Methodology Certificate PDF includes full posterior update history table.
+
+**Multi-proxy edge case:** each proxy own ESS reduction schedule, hierarchical model re-fit с new individual weights, pooling weights между proxies preserved.
+
+**Output:**
+- ✅ `03_Architecture/POSTERIOR_UPDATE_DESIGN.md` (master spec ~1100 строк, calibrated formulas + worked schedules + UI flow + sensitivity tests Sprint B5 plan)
+- ✅ `03_Architecture/decisions/ADR-004-ess-based-weight-schedule.md` (Accepted, locks formula + alternatives rejected + Phase D revisit triggers)
 
 ---
 
