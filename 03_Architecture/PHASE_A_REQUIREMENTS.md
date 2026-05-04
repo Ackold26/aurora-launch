@@ -560,7 +560,395 @@ Per `aurora-knowledge/Architecture/phase-a-future-monetization-scaffold.md` (М�
 
 ## Component 3: Workflow Engine
 
-> **Status:** spec pending — будет в следующей итерации.
+**Goal:** Заменить hardcoded server.py FastAPI handlers Aurora Эконометрика config-driven YAML pipeline orchestrator. Workflow Engine читает декларативный YAML («какие шаги, в каком порядке, какие validators, какие callable refs»), выполняет state machine, публикует HTTP/IPC routes автоматически. Это позволяет spawn новых Aurora apps (Launch / Brand / Optimize) **без копирования server.py logic** — каждый app имеет свой `<app>.workflow.yaml` поверх shared engine.
+
+### 3.1 Scope
+
+**Входит:**
+
+#### 3.1.A YAML schema (Pydantic v2)
+
+Канонический workflow descriptor:
+
+```yaml
+id: aurora_launch.new_brand_forecast.v1
+schema_version: "1.0"
+app: aurora_launch
+title: "Прогноз для нового бренда через прокси"
+description: |
+  Multi-step launch forecasting workflow с proxy adaptation,
+  recipient anchors validation, transfer scenarios, posterior update.
+
+# Glob state shared между шагами:
+state:
+  - name: project_dir
+    type: Path
+    persistence: project_local
+  - name: trained_model_hash
+    type: str
+    persistence: derivable
+
+steps:
+  - id: project_setup
+    type: form
+    title: "Метаданные проекта"
+    schema_ref: aurora_launch.schemas.ProjectMetadata
+    transitions:
+      success: proxy_selection
+      cancelled: __end__
+
+  - id: proxy_selection
+    type: cabinet_step
+    title: "Выбор прокси-бренда"
+    cabinet_ref: ProxySelectionStep      # Svelte component
+    requires: [project_setup]
+    actions:
+      - id: upload_dsm
+        type: file_upload
+        adapter_ref: aurora_data_studio.source_adapters.dsm_group
+        accept: ["xlsx"]
+      - id: compute_similarity
+        type: callable
+        callable_ref: aurora_launch.engines.similarity_calculator.compute
+        args_from_state: [proxy_metadata, recipient_metadata]
+    validators:
+      - validator_ref: aurora_launch.engines.launch_validators.ProxyDataValidator
+        on_failure: stay
+    transitions:
+      success: recipient_anchors
+      retry: proxy_selection
+
+  - id: recipient_anchors
+    type: form
+    schema_ref: aurora_launch.schemas.RecipientAnchorsV1
+    requires: [proxy_selection]
+    transitions:
+      success: transfer_validate
+
+  - id: transfer_validate
+    type: composite
+    sub_steps:
+      - id: extract_priors
+        type: callable
+        callable_ref: aurora_launch.engines.launch_adapt.extract_proxy_priors
+      - id: apply_magnitudes
+        type: callable
+        callable_ref: aurora_launch.engines.launch_adapt.apply_recipient_magnitudes
+      - id: prior_predictive
+        type: callable
+        callable_ref: aurora_inference.modeler.posterior_predictive
+    on_partial_failure: rollback_to_previous_step
+    transitions:
+      success: train
+
+  - id: train
+    type: long_running_callable
+    callable_ref: aurora_inference.modeler.train_model
+    progress_streaming: enabled
+    cancellable: true
+    timeout_seconds: 1800
+    transitions:
+      success: forecast
+      timeout: train_recovery
+
+  - id: forecast
+    type: callable
+    callable_ref: aurora_launch.engines.launch_forecast.generate
+    args:
+      horizons: [12, 26, 52]
+    transitions:
+      success: report
+
+  - id: report
+    type: artifact_export
+    artifact_kind: launch_forecast_report
+    formats: [pptx, html, xlsx, pdf_methodology_certificate]
+    transitions:
+      success: __end__
+
+error_codes:
+  ranges:
+    - prefix: "L"           # Launch-specific 1000-1999
+      from: 1000
+      to: 1999
+  shared:
+    - aurora_inference.error_codes  # Inference Core registry
+    - aurora_data_studio.error_codes
+```
+
+**Pydantic v2 schema** (`aurora_workflow.schema.WorkflowDefinition`):
+- Versioned (`schema_version` field, currently "1.0").
+- Strict validation: unknown keys → error; callable_ref / cabinet_ref / adapter_ref must resolve at load time.
+- Transitions form a directed graph; cycle detection at load (warn если есть cycles, fail если нет terminal `__end__`).
+
+**Step types:**
+
+| Type | Purpose | Input | Output |
+|---|---|---|---|
+| `form` | Pydantic schema-validated user input | UI form values | validated dict, persisted в state |
+| `cabinet_step` | Svelte UI component с custom interactions | UI events (file upload, button clicks) | side-effects: file uploads, callable invocations |
+| `callable` | Single function invocation (synchronous) | args from state / step inputs | dict result, persisted |
+| `long_running_callable` | Background task с progress streaming | same as callable | streaming progress + final result |
+| `composite` | Sequence of sub-steps в одной transactional unit | inputs to first sub-step | output of last sub-step + on_partial_failure rollback |
+| `decision` | Branch на condition (jinja2-style expression evaluating state) | condition expression | next step id |
+| `artifact_export` | Write report files | model_data + format list | file paths списком |
+| `__end__` | Terminal state | — | — |
+
+#### 3.1.B Workflow Engine API
+
+```python
+# aurora_workflow.engine
+
+from pathlib import Path
+from typing import Any, Callable, Iterator
+
+class WorkflowEngine:
+    """Stateful executor of WorkflowDefinition."""
+
+    @classmethod
+    def load(cls, yaml_path: Path) -> "WorkflowEngine":
+        """Parse + validate YAML, resolve all *_ref'ы, return engine."""
+
+    def start(self, project_dir: Path) -> WorkflowState:
+        """Initialize fresh state, save .workflow_state.json в project_dir."""
+
+    def resume(self, project_dir: Path) -> WorkflowState:
+        """Load saved state, validate not corrupted, return state."""
+
+    def current_step(self) -> StepDefinition:
+        """Return current active step."""
+
+    def execute_step(self, step_id: str, inputs: dict) -> StepResult:
+        """Run single step. Validates pre-conditions (requires), runs validators,
+        executes step type's logic, persists state. Returns StepResult."""
+
+    def stream_progress(self, step_id: str) -> Iterator[ProgressEvent]:
+        """For long_running_callable steps. Yields ProgressEvent chunks."""
+
+    def cancel_step(self, step_id: str) -> None:
+        """Cooperative cancel for long_running_callable."""
+
+    def progress_summary(self) -> ProgressSummary:
+        """Total steps, completed, current, estimated_remaining_seconds."""
+
+class StepResult:
+    step_id: str
+    status: Literal["completed", "failed", "validation_failed", "cancelled"]
+    outputs: dict
+    next_step_id: str | None
+    error_code: int | None      # from registry
+    error_message: str | None
+    elapsed_seconds: float
+```
+
+#### 3.1.C HTTP/IPC adapter
+
+`aurora_workflow.adapters.fastapi`:
+
+```python
+def generate_router(workflow: WorkflowDefinition) -> APIRouter:
+    """Auto-generate FastAPI router from workflow YAML.
+
+    Routes:
+    - POST /workflow/{wf_id}/start                       # → engine.start()
+    - POST /workflow/{wf_id}/resume                       # → engine.resume()
+    - GET  /workflow/{wf_id}/current                      # → engine.current_step()
+    - POST /workflow/{wf_id}/step/{step_id}/execute       # → engine.execute_step()
+    - GET  /workflow/{wf_id}/step/{step_id}/progress      # SSE stream → stream_progress()
+    - POST /workflow/{wf_id}/step/{step_id}/cancel        # → engine.cancel_step()
+    - GET  /workflow/{wf_id}/state                        # → state JSON
+    """
+```
+
+Это **replaces** existing Aurora Эконометрика server.py FastAPI handlers (`/compute/train`, `/compute/decompose`, etc.) — теперь генерируются из `aurora_optimize.budget_optimization.v1.workflow.yaml`. Эконометрика продолжает работать (backwards compat shim в Phase A): legacy routes proxy к workflow engine.
+
+#### 3.1.D State persistence
+
+`<project_dir>/.workflow_state.json`:
+- `workflow_id` + `schema_version`.
+- `current_step_id` + `completed_steps[]`.
+- `state_dict` (form values, callable outputs, references к saved artifacts).
+- `created_at` + `updated_at` ISO timestamps.
+- `workflow_state_hash` (SHA-256 of canonical JSON, для tamper detection).
+- `error_log[]` — circular buffer last 50 errors с timestamps.
+
+Persisted после каждого `execute_step()` через atomic write + `.bak`.
+
+Compat: state file reading через C6 SchemaRegistry (workflow_state schema versioned alongside `.aurora` bundle).
+
+#### 3.1.E CLI tool
+
+`aurora-workflow` shell command:
+
+```bash
+aurora-workflow list                                    # show available workflows
+aurora-workflow run <wf_id> --project=PATH             # run interactively (REPL prompts)
+aurora-workflow resume --project=PATH                   # resume interrupted
+aurora-workflow status --project=PATH                   # show progress summary
+aurora-workflow validate <yaml_path>                    # validate YAML без execution
+aurora-workflow generate-routes <wf_id> --output=PATH  # generate FastAPI router stub
+```
+
+#### 3.1.F Reference workflows ship'ятся в Phase A
+
+3 reference workflow YAMLs (поверх 7 task profile YAMLs из C2):
+
+| Workflow | Path | App | Purpose |
+|---|---|---|---|
+| `aurora_optimize.budget_optimization.v1.workflow.yaml` | `aurora-platform-core/workflows/` | Optimize | Replicates Aurora Эконометрика current pipeline (validate → train → decompose → optimize → scenario → report) |
+| `aurora_launch.new_brand_forecast.v1.workflow.yaml` | same | Launch | Sprint B2-B6 pipeline (proxy_selection → recipient_anchors → transfer_validate → train → forecast → report) |
+| `aurora_brand.awareness_modeling.v1.workflow.yaml` | same | Brand | Awareness forecasting + dual-posterior bridge |
+
+#### 3.1.G Error codes registry interop
+
+Existing Aurora Эконометрика `error_codes.py` registry (numeric error codes per `project_econometrica_phase2_planning_mode`) — переезжает в `aurora-platform-core/error_codes.py` shared. Workflow YAML декларирует ranges per app:
+- 0-999: Aurora Inference Core (shared).
+- 1000-1999: Aurora Launch.
+- 2000-2999: Aurora Optimize.
+- 3000-3999: Aurora Brand.
+- 4000-4999: Aurora Data Studio.
+- 5000-5999: Aurora Common Services / Workflow Engine.
+
+При validation YAML загрузки: ranges не overlap.
+
+**Не входит (deferred / out-of-scope Phase A):**
+- ❌ Visual workflow editor (drag-drop GUI для YAML construction) — Phase D consideration.
+- ❌ Cross-workflow data sharing (Aurora Launch project → Aurora Optimize without re-export) — Phase B feature.
+- ❌ Distributed execution (workflow steps on remote workers) — Phase D+.
+- ❌ Workflow templating / inheritance (extending base workflow YAML) — Phase B+.
+- ❌ Live workflow modification (hot-reload YAML без restart) — operational nice-to-have, deferred.
+- ❌ Workflow scheduling (cron-style triggers) — out-of-scope Aurora business model (interactive desktop apps, not server-side jobs).
+- ❌ Multi-user simultaneous workflow на same project (collaborative editing) — Phase D+.
+
+### 3.2 Acceptance Criteria
+
+**AC3.1 — YAML schema strict validation.**
+- GIVEN malformed workflow YAML (e.g., unknown step type "magic", or transition references missing step_id, or callable_ref не resolves в installed Python packages).
+- WHEN `WorkflowEngine.load(yaml_path)` invoked.
+- THEN raises `WorkflowValidationError` с specific message (line + column в YAML, what's wrong); no engine instance created.
+
+**AC3.2 — Reference Optimize workflow runs end-to-end.**
+- GIVEN `aurora_optimize.budget_optimization.v1.workflow.yaml` + Кагоцел fixture project.
+- WHEN engine starts → executes all steps → reaches `__end__`.
+- THEN final state matches Aurora Эконометрика v1.0.16 baseline output (model artifacts + report files); no regression vs hardcoded pipeline.
+
+**AC3.3 — State persistence + resume.**
+- GIVEN running Aurora Launch workflow at step `train` (long_running_callable, ~10 min).
+- WHEN process killed at 50% completion.
+- THEN `.workflow_state.json` reflects last completed step (`transfer_validate`); on `resume()`, engine restarts at `train` step (not from beginning); user-visible: "Resuming training from checkpoint" message.
+
+**AC3.4 — Long-running step с progress streaming.**
+- GIVEN `train` step (Bayesian MCMC).
+- WHEN client connects к SSE endpoint `/workflow/.../step/train/progress`.
+- THEN streams ProgressEvent JSON chunks (`{"step": "train", "progress": 0.42, "message": "MCMC sampling chain 2/4", "ts": "..."}`); chunk frequency ≥ every 5 sec; final event `{"status": "completed", "result": {...}}`.
+
+**AC3.5 — Cooperative cancel.**
+- GIVEN `train` step running.
+- WHEN POST `/workflow/.../step/train/cancel` invoked.
+- THEN training stops within 30 sec (cooperative checkpoint); state saved; `current_step` returns `train` status `cancelled`; resume rolls back к previous step.
+
+**AC3.6 — Composite step rollback on partial failure.**
+- GIVEN `transfer_validate` composite step с 3 sub-steps.
+- WHEN sub-step `apply_magnitudes` fails (RecipientAnchors invalid).
+- THEN rollback applied: state at start of `transfer_validate` restored (extract_priors output discarded); next_step = `recipient_anchors` (per `on_partial_failure: rollback_to_previous_step`).
+
+**AC3.7 — FastAPI auto-generation.**
+- GIVEN loaded workflow.
+- WHEN `generate_router(workflow)` called.
+- THEN returns `fastapi.APIRouter` с 7 endpoints (start/resume/current/execute/progress/cancel/state) + auto OpenAPI docs; routes mountable as `app.include_router(router, prefix="/workflow/aurora_launch.new_brand_forecast.v1")`.
+
+**AC3.8 — Error codes namespace isolation.**
+- GIVEN two workflows declaring overlapping ranges (Launch claims 1000-2500, Optimize claims 2000-2999).
+- WHEN both loaded.
+- THEN `WorkflowValidationError: error_code range conflict between aurora_launch (1000-2500) and aurora_optimize (2000-2999)`.
+
+**AC3.9 — Backwards compat shim для Aurora Эконометрика.**
+- GIVEN existing Aurora Эконометрика frontend hitting `/compute/train` legacy route.
+- WHEN backwards compat shim deployed (Phase A interim).
+- THEN request proxied through workflow engine: shim calls `engine.execute_step("train", inputs)` за кулисами, response shape identical к v1.0.16 contract.
+
+**AC3.10 — CLI tool functional smoke test.**
+- GIVEN `aurora-workflow` CLI installed.
+- WHEN user runs `aurora-workflow validate aurora_launch.new_brand_forecast.v1.workflow.yaml`.
+- THEN exits 0 with "Validation OK" message; if invalid YAML — exits 1 с descriptive error.
+
+### 3.3 Definition of Done
+
+- [ ] **AC3.1–AC3.10 все pass.**
+- [ ] **Code merged в `aurora-platform-core`** (sub-package `aurora_workflow`) + tagged.
+- [ ] **YAML schema** finalized + frozen + documented в `aurora-platform-core/docs/workflow_schema.md`.
+- [ ] **3 reference workflow YAMLs** (Optimize budget_optimization + Launch new_brand_forecast + Brand awareness_modeling) — ship'нуты в `aurora-platform-core/workflows/`.
+- [ ] **Pytest suite ≥ 60 tests** parallel-runnable. Fixtures: minimal valid workflow + 10+ invalid variants (missing transitions, type errors, ref errors).
+- [ ] **Property-based tests:** state persistence idempotency (`load(save(state))` == `state`), workflow graph cycle detection, transition resolution determinism.
+- [ ] **Integration test:** Aurora Launch new_brand_forecast workflow runs end-to-end на synthetic recipient + Кагоцел proxy fixture; produces valid `.aurora` bundle.
+- [ ] **Backwards compat:** Aurora Эконометрика v1.0.16 legacy frontend → workflow engine shim — все 838 pytest cases pass via shim layer.
+- [ ] **CLI tool** `aurora-workflow` installable as console script (`pyproject.toml` entrypoint), shipped с `aurora-platform-core`.
+- [ ] **Error codes registry** consolidated в `aurora-platform-core/error_codes.py`, range allocation documented в `aurora-knowledge/Decisions/error-codes-namespace-allocation.md`.
+- [ ] **API docs:** OpenAPI spec auto-generated; per-step type docs.
+- [ ] **CHANGELOG entry.**
+- [ ] **ADR:** `aurora-knowledge/Decisions/aurora-workflow-engine-yaml-driven.md` — rationale + chosen vs alternatives (Airflow / Prefect / Luigi rejected: too heavyweight для desktop app context).
+- [ ] **Migration guide для Aurora Эконометрика maintainer:** `aurora-platform-core/docs/migration_econometrica_to_workflow.md` — пошагово как переключить с hardcoded server.py на workflow engine.
+
+### 3.4 Test Data Requirements
+
+**Synthetic workflows (CI-friendly):**
+- `tests/fixtures/workflows/minimal_valid.yaml` — 2 steps + 1 transition.
+- `tests/fixtures/workflows/all_step_types.yaml` — 1 step per type (form / cabinet / callable / long_running / composite / decision / artifact_export).
+- `tests/fixtures/workflows/invalid_*.yaml` — 10+ variations (each broken in 1 specific way).
+
+**Real workflows (regression):**
+- 3 production reference workflows (Optimize / Launch / Brand) — must validate + execute end-to-end.
+
+**State file fixtures:**
+- `tests/fixtures/states/healthy_state.json` — valid mid-workflow state.
+- `tests/fixtures/states/corrupted_*.json` — tamper detection: bad hash, malformed JSON, missing required keys.
+- Aurora Эконометрика v1.0.16 production project state (for backwards compat shim test).
+
+**Long-running step simulation:**
+- Mock callable that streams progress events at controlled cadence + supports cooperative cancel.
+
+**Property-based tests (Hypothesis):**
+- Workflow graph: random step lists с random transitions → engine should detect cycles + missing terminal `__end__`.
+- State persistence: random state dicts → save → load → equality.
+
+### 3.5 Зависимости
+
+**Внутренние:**
+- **Зависит от:** C1 (Inference Core) — workflow steps reference `aurora_inference.*` callables. Must resolve at load time.
+- **Зависит от:** C6 (Schema Registry) — workflow state persistence через versioned schema; reuse BFS migration path.
+- **Зависит от:** C5 (Common Services) — `@license_required` decorator wraps callable steps execution.
+- **Не зависит от:** C2 (Studio имеет независимый UI flow, не workflow-engine-driven Phase A; возможна интеграция Phase B+ если Studio task profiles адаптируются).
+- **Не зависит от:** C4 (Tauri shell) — workflow engine = Python sidecar layer, shell template integrates engine но не блокируется.
+
+**Блокирует:**
+- Aurora Эконометрика → Aurora Optimize rebrand (Phase A late milestone) — Optimize uses workflow YAML вместо hardcoded server.py.
+- Aurora Launch B2 — Launch UI flow declares в `aurora_launch.new_brand_forecast.v1.workflow.yaml`. B2 ProxySelectionStep cabinet integration через workflow engine.
+- Aurora Brand B (Phase B) — same pattern.
+- Spawn новых apps (Pricing / Promo / Portfolio Phase C/D) — workflow YAML = primary integration mechanism.
+
+**Внешние:**
+- **PyYAML >= 6.0** — YAML parser.
+- **Pydantic v2** — schema validation.
+- **FastAPI >= 0.110** — HTTP adapter (already used by Эконометрика server.py).
+- **SSE-Starlette** — Server-Sent Events для progress streaming.
+- **Click >= 8.1** — CLI framework.
+
+**Координационные:**
+- **Маша небесная ADR sign-off:** `aurora-workflow-engine-yaml-driven.md` decision.
+- **Aurora Эконометрика team:** review backwards compat shim — ensures zero customer-visible regression при v1.0.16 → Optimize rebrand.
+- **Аntoн approval:** workflow YAML = primary contract точка для добавления новых apps. Changes ahead require Антон's strategy alignment (новые workflows = новые apps = новые ICPs).
+
+### 3.6 Open questions для Маши небесной
+
+1. **Step retry policy: per-step или global?** Сейчас в Эконометрике retries hardcoded в frontend (user clicks "retry"). Workflow engine должен иметь declarative retry config? Default proposal: per-step optional `retry: {max_attempts: 3, backoff: exponential, retryable_errors: [TimeoutError]}`. Альтернатива: только UI-driven retry (engine не decides), workflow declares "stay" transition только.
+
+2. **Async / streaming progress reach:** `long_running_callable` streams progress через SSE. Эконометрика currently uses HTTP polling (`/compute/train/progress` GET endpoint). Migration path: оставить poll-style backwards compat в shim layer OR force migrate frontend к SSE? Default: dual-mode (SSE primary + poll-style legacy endpoint maintained 1 minor version, deprecation warning).
+
+3. **Workflow versioning forward/backward compat:** workflow YAML имеет `schema_version`. Если v1.1 adds optional fields, могут ли v1.0 engines загрузить v1.1 YAML (warn ignored fields)? Default: yes, additive only в minor bumps; major bumps strict.
+
+4. **Composite step transactionality vs idempotency:** composite step `transfer_validate` с rollback — если 3rd sub-step fails, нужно ли откатывать file system side-effects (uploaded file persisted в `project_dir/uploads/`)? Default proposal: Phase A — only state dict rollback, file system side effects persist (cleanup deferred). Phase B — full transactional model possible.
+
+5. **Workflow → workflow handoff (cross-app):** Aurora Эконометрика → Aurora Launch handoff (Эконометрика project → Launch proxy candidate) — это новый workflow или extension existing? Default: новый workflow `aurora_launch.import_from_econometrica.v1.workflow.yaml`, Phase B.
 
 ---
 
