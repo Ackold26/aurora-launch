@@ -160,12 +160,23 @@ w_proxy_t = ESS_proxy / (ESS_proxy + ESS_recipient_t)
 w_recipient_t = 1 - w_proxy_t
 ```
 
-**Schedule (предварительный, financialized in S005b):**
-- T=0 (zero recipient data): w_proxy = 1.0
-- T=4 weeks: w_proxy ≈ 0.85
-- T=12 weeks: w_proxy ≈ 0.55
-- T=24 weeks: w_proxy ≈ 0.30
-- T=52 weeks: w_proxy ≈ 0.10 (residual в priors only)
+**Schedule formal calibration:** SUPERSEDED by `POSTERIOR_UPDATE_DESIGN.md` Section 1 + ADR-004 (closed S005b 2026-05-04). ESS-based hyperbolic decay formula:
+
+```
+w_proxy(t) = ESS_proxy_adj / (ESS_proxy_adj + t × recipient_obs_value)
+ESS_proxy_adj = 50 × similarity_factor (1.0 / 0.7 / 0.5 для High / Medium / Low)
+recipient_obs_value: categorical (FMCG impulse 4.0, OTC 2.5, Telecom 2.0, B2B 1.5, default 3.5)
+```
+
+Example schedule (FMCG High similarity):
+- T=0: w_proxy = 1.0
+- T=12 weeks: w_proxy ≈ 0.51
+- T=26 weeks: w_proxy ≈ 0.32
+- T=52 weeks: w_proxy ≈ 0.19
+- T=104 weeks: w_proxy ≈ 0.11
+- Proxy released at threshold 0.10 (~113 weeks)
+
+Preliminary schedule в этом документе (T=12w ≈ 0.55, T=24w ≈ 0.30, T=52w ≈ 0.10) был illustrative ad-hoc - formal ESS-based schedule в POSTERIOR_UPDATE_DESIGN now authoritative.
 
 **Bayesian Model Averaging (BMA) - alternative:**
 ```

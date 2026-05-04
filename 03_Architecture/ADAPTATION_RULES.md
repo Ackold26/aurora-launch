@@ -302,20 +302,17 @@ Per SIMILARITY_FRAMEWORK Section 1.1 + 2.1.
 | **Adjacent L1** (FMCG_food → FMCG_beverage) | 0.2 | Limited transfer: только adstock decay (per channel). Hill shape, seasonality, trend - NOT transferred (category prior fallback). +50% extra inflation на transferred parameters. |
 | **Cross L1** (FMCG → pharma) | 0.0 | Forecast BLOCKED at similarity verdict layer (Insufficient). |
 
-### 4.2 Adjacent L1 Pairs (curated)
+### 4.2 Adjacent L1 Pairs
 
-```python
-ADJACENT_L1_PAIRS = {
-    ("FMCG_food", "FMCG_beverage"),       # similar consumer behavior + retail channels
-    ("OTC_pharma", "OTC_supplements"),     # similar regulation + pharmacy channel
-    ("Cosmetics", "Personal_care"),         # overlapping channels + audiences
-    ("Telecom", "Banking_retail"),          # subscription consumer services
-    ("FMCG_food", "FMCG_household"),        # FMCG retail dynamics
-    ("Cosmetics", "FMCG_personal_care"),    # cross-overs (skincare ↔ shower gels)
-}
-```
+**Source of truth:** `engines/category_taxonomy.yaml` field `adjacent_l1_pairs`. Loaded at runtime through `load_adjacent_l1_pairs()` (см. SIMILARITY_FRAMEWORK Section 2.1). Quarterly review by Антон + Маша - NOT duplicated в этом документе to prevent drift.
 
-Maintained в `engines/category_taxonomy.yaml`. Quarterly review.
+Reference content (for documentation покрытия):
+- FMCG_food ↔ FMCG_beverage (similar consumer behavior + retail channels)
+- FMCG_food ↔ FMCG_household (FMCG retail dynamics)
+- OTC_pharma ↔ OTC_supplements (similar regulation + pharmacy channel)
+- Cosmetics ↔ Personal_care (overlapping channels + audiences)
+- Cosmetics ↔ FMCG_personal_care (cross-overs skincare ↔ shower gels)
+- Telecom ↔ Banking_retail (subscription consumer services)
 
 ### 4.3 Cross-Category Penalty Multipliers
 

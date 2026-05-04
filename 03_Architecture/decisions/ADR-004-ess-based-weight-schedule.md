@@ -43,7 +43,7 @@ ESS_proxy_adj = ESS_PROXY_BASE × similarity_factor
 - `similarity_factor`: High 1.0, Medium 0.7, Low 0.5
 - `recipient_obs_value`: categorical (FMCG impulse 4.0, FMCG staples 3.0-3.5, OTC 2.5, Telecom/Banking 2.0, B2B 1.5, Rx 1.5)
 
-**Proxy release threshold:** 0.05.
+**Proxy release threshold:** 0.10 (calibrated к realistic Aurora Launch → Optimize transition window ~2.2 years for FMCG High similarity, vs 4.6 years при threshold 0.05 - too long для practical handoff).
 
 ### B. Architecture: Partial Pooling Primary
 
@@ -90,7 +90,7 @@ Reconsider this ADR if:
 - **BMA fallback only when justified** - не дефолт (avoiding 2× training overhead), но available при severe drift gives robust handling.
 - **100% reuse Aurora Econometrica modeler.py** (P9) - partial pooling = adjust prior strength, calls existing engine.
 - **Audit trail full** - posterior_update_log.json captures every refit с diagnostics, drift score, weight schedule state. Reproducibility preserved.
-- **Cross-app handoff trigger clean** - proxy_release_threshold = 0.05 + 52+ weeks → suggest Optimize transition.
+- **Cross-app handoff trigger clean** - proxy_release_threshold = 0.10 + 52+ weeks → suggest Optimize transition.
 
 ### Negative
 
@@ -193,7 +193,7 @@ If deviates significantly от model expectations - trigger Phase C+ recalibrati
 # engines/posterior_update_constants.py
 
 ESS_PROXY_BASE = 50  # ADR-004 calibrated
-PROXY_RELEASE_THRESHOLD = 0.05
+PROXY_RELEASE_THRESHOLD = 0.10  # audit-revised from 0.05 (calibrated к ~2.2y FMCG handoff)
 MIN_RECIPIENT_WEEKS_FOR_REFIT = 4
 
 SIMILARITY_TO_ESS_FACTOR = {

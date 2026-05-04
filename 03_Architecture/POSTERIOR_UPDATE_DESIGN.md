@@ -80,7 +80,14 @@ DEFAULT_RECIPIENT_OBS_VALUE = 3.5  # fallback
 
 **Why these values:**
 
-ESS_PROXY_BASE = 50 calibrated так чтобы schedule аппроксимировал target curve из MATH_REFERENCE Section 4 (T=12w → w ≈ 0.55, T=26w → w ≈ 0.30, T=52w → w ≈ 0.19).
+ESS_PROXY_BASE = 50 calibrated через ESS-based Bayesian update math (Konstantinopoulos & Massaro 2014). Schedule shape - hyperbolic decay - theoretically grounded. Value 50 chosen для FMCG midpoint (T=12w → ~0.51), которое matches operational expectation что mid-launch period proxy still informative но recipient signals strengthening.
+
+**Note vs MATH_REFERENCE Section 4:** preliminary schedule в MATH_REFERENCE was illustrative target curve (T=12w ≈ 0.55, T=26w ≈ 0.30, T=40+ ≈ 0.10). This document's ESS-based formula **supersedes** preliminary schedule. ESS-based hyperbolic decay differs slightly - at T=52w it gives 0.19 (preliminary suggested 0.10). Difference reflects:
+- Hyperbolic decay (theoretically derived) is naturally slower at tail vs ad-hoc target
+- Tail values better calibrated by formal Bayesian math чем preliminary intuition
+- PROXY_RELEASE_THRESHOLD = 0.10 hits at t ≈ 113w для FMCG High - acceptable handoff window
+
+MATH_REFERENCE Section 4 will be updated to reference этот document как authority.
 
 RECIPIENT_OBS_VALUE varies categorically because:
 - Impulse purchase data fully informative каждую неделю (стохастическое поведение recipient'а быстро видно)
@@ -105,8 +112,9 @@ t=40:   w_proxy = 50 / (50 + 160) = 0.238
 t=52:   w_proxy = 50 / (50 + 208) = 0.194
 t=78:   w_proxy = 50 / (50 + 312) = 0.138
 t=104:  w_proxy = 50 / (50 + 416) = 0.107
+t=113:  w_proxy = 50 / (50 + 452) ≈ 0.100  # release threshold reached
 t=156:  w_proxy = 50 / (50 + 624) = 0.074
-t=190:  w_proxy = 50 / (50 + 760) = 0.062  # near release threshold
+t=190:  w_proxy = 50 / (50 + 760) = 0.062  # below release threshold (proxy independent)
 t=∞:    w_proxy → 0
 ```
 
@@ -138,15 +146,21 @@ t=104:  w_proxy = 25 / (25 + 156) = 0.138
 ### 1.4 Proxy Release Threshold
 
 ```python
-PROXY_RELEASE_THRESHOLD = 0.05
+PROXY_RELEASE_THRESHOLD = 0.10
 ```
 
-Когда `w_proxy < 0.05` → proxy фактически "released" из модели:
+Когда `w_proxy < 0.10` → proxy фактически "released" из модели:
 - UI shows badge "Proxy independent" (recipient полностью самостоятельный)
 - Methodology Certificate отмечает "Phase: standalone (proxy released)"
 - Re-fit can drop proxy priors completely (use weakly informative defaults)
 
 **Cross-app handoff trigger:** при release threshold + accumulated 52+ weeks data → suggest user transition к Aurora Optimize standalone.
+
+**Release timing examples** (typical FMCG High similarity, ESS_proxy_adj=50, obs_value=4.0):
+- w_proxy = 0.10 reached at t ≈ 113 weeks (~2.2 years)
+- Compares to 0.05 threshold which would require ~237 weeks (~4.6 years) - too long для practical handoff window
+
+Threshold 0.10 calibrated к realistic Aurora Launch → Optimize transition window (~2 years). Customer subscription remains active throughout, transition is opt-in suggestion not forced migration.
 
 ---
 
@@ -159,17 +173,23 @@ PROXY_RELEASE_THRESHOLD = 0.05
 ```python
 # engines/launch_posterior_update.py
 
+import math
+
 def construct_partial_pooled_priors(
     transferred_priors: RecipientPriors,
     w_proxy: float,
 ) -> RecipientPriors:
-    """Adjust prior strength based on proxy weight.
+    """Adjust prior strength based on proxy weight (Bayesian precision math).
     
-    w_proxy=1.0: priors fully informative (как initial transfer)
-    w_proxy=0.5: priors halved strength (std × 2)
-    w_proxy=0.05: priors weakly informative (std × 20, near uninformative)
+    Bayesian derivation: prior precision τ_prior = w_proxy × τ_original (linear weight).
+    Therefore variance σ² scales as 1/w_proxy, std σ scales as 1/√w_proxy.
+    
+    w_proxy=1.0: priors fully informative (как initial transfer, std unchanged)
+    w_proxy=0.5: std × √2 ≈ 1.414 (variance × 2)
+    w_proxy=0.10: std × √10 ≈ 3.16 (variance × 10)
+    w_proxy=0.01: std × 10 (variance × 100, near-uninformative)
     """
-    strength_factor = 1.0 / max(w_proxy, 0.01)  # std multiplier
+    strength_factor = 1.0 / math.sqrt(max(w_proxy, 0.01))  # std multiplier (Bayesian precision)
     return RecipientPriors(
         baseline_trajectory=transferred_priors.baseline_trajectory,
         # baseline as anchor magnitude - не подверженно proxy weight (anchor-driven)
@@ -220,20 +240,79 @@ def bma_combine_forecasts(
     recipient_only_forecast: ForecastHorizon,
     w_proxy: float,
 ) -> ForecastHorizon:
-    """Bayesian Model Averaging."""
+    """Bayesian Model Averaging - combined predictive distribution.
+
+    Math: combined predictive Y* ~ w × N(μ_p, σ_p²) + (1-w) × N(μ_r, σ_r²) (mixture).
+    For CI extraction, use moment-matched Gaussian approximation:
+      μ_combined = w × μ_p + (1-w) × μ_r
+      σ²_combined = w × σ_p² + (1-w) × σ_r² + w × (1-w) × (μ_p - μ_r)²
+      (last term: between-model variance contribution)
+
+    NOTE: linear interpolation of CI bounds (mean ± z × σ) wrong because:
+    - σ_p² ≠ σ_r² in general (heteroscedastic)
+    - mixture variance has between-model term
+    - CI bounds не additive linearly when spreads differ
+    """
+    import math
+    Z_BY_LEVEL = {0.50: 0.674, 0.80: 1.282, 0.95: 1.960}
+
+    horizon_weeks = proxy_priors_forecast.horizon_weeks
+
+    def combined_at(level: float) -> tuple[list[float], list[float]]:
+        z = Z_BY_LEVEL[level]
+        proxy_lo = getattr(proxy_priors_forecast, f"ci_{int(level*100)}_lower")
+        proxy_hi = getattr(proxy_priors_forecast, f"ci_{int(level*100)}_upper")
+        recipient_lo = getattr(recipient_only_forecast, f"ci_{int(level*100)}_lower")
+        recipient_hi = getattr(recipient_only_forecast, f"ci_{int(level*100)}_upper")
+
+        lower_combined: list[float] = []
+        upper_combined: list[float] = []
+        for i in range(horizon_weeks):
+            mu_p = proxy_priors_forecast.mean[i]
+            mu_r = recipient_only_forecast.mean[i]
+            sigma_p = (proxy_hi[i] - proxy_lo[i]) / (2 * z)  # back из CI bounds
+            sigma_r = (recipient_hi[i] - recipient_lo[i]) / (2 * z)
+
+            mu_combined = w_proxy * mu_p + (1 - w_proxy) * mu_r
+            var_combined = (
+                w_proxy * sigma_p ** 2
+                + (1 - w_proxy) * sigma_r ** 2
+                + w_proxy * (1 - w_proxy) * (mu_p - mu_r) ** 2
+            )
+            sigma_combined = math.sqrt(var_combined)
+            lower_combined.append(mu_combined - z * sigma_combined)
+            upper_combined.append(mu_combined + z * sigma_combined)
+        return lower_combined, upper_combined
+
+    ci_50_lower, ci_50_upper = combined_at(0.50)
+    ci_80_lower, ci_80_upper = combined_at(0.80)
+    ci_95_lower, ci_95_upper = combined_at(0.95)
+
+    mean_combined = [
+        w_proxy * mp + (1 - w_proxy) * mr
+        for mp, mr in zip(proxy_priors_forecast.mean, recipient_only_forecast.mean)
+    ]
+
+    # Uncertainty decomposition (proportional к moment-matched variance contributions)
+    decomp_proxy = sum(w_proxy * ((proxy_priors_forecast.ci_95_upper[i] - proxy_priors_forecast.ci_95_lower[i]) / (2 * 1.96)) ** 2 for i in range(horizon_weeks))
+    decomp_recipient = sum((1 - w_proxy) * ((recipient_only_forecast.ci_95_upper[i] - recipient_only_forecast.ci_95_lower[i]) / (2 * 1.96)) ** 2 for i in range(horizon_weeks))
+    decomp_between = sum(w_proxy * (1 - w_proxy) * (proxy_priors_forecast.mean[i] - recipient_only_forecast.mean[i]) ** 2 for i in range(horizon_weeks))
+    total = decomp_proxy + decomp_recipient + decomp_between
+    uncertainty_decomposition = {
+        "proxy_uncertainty": decomp_proxy / total if total > 0 else 0,
+        "recipient_uncertainty": decomp_recipient / total if total > 0 else 0,
+        "between_model_uncertainty": decomp_between / total if total > 0 else 0,
+        "anchor_uncertainty": 0.0,  # accounted for в proxy/recipient priors
+        "sampling_uncertainty": 0.0,  # accounted for в posterior σ
+    }
+
     return ForecastHorizon(
-        horizon_weeks=proxy_priors_forecast.horizon_weeks,
-        mean=[
-            w_proxy * pm + (1 - w_proxy) * rm
-            for pm, rm in zip(proxy_priors_forecast.mean, recipient_only_forecast.mean)
-        ],
-        # Combined CI: variance = w² × var_proxy + (1-w)² × var_recipient + 2×w×(1-w)×cov
-        # cov assumed 0 (independent models)
-        ci_95_lower=[
-            w_proxy * p_lo + (1 - w_proxy) * r_lo
-            for p_lo, r_lo in zip(proxy_priors_forecast.ci_95_lower, recipient_only_forecast.ci_95_lower)
-        ],
-        # ... etc для всех CI levels
+        horizon_weeks=horizon_weeks,
+        mean=mean_combined,
+        ci_50_lower=ci_50_lower, ci_50_upper=ci_50_upper,
+        ci_80_lower=ci_80_lower, ci_80_upper=ci_80_upper,
+        ci_95_lower=ci_95_lower, ci_95_upper=ci_95_upper,
+        uncertainty_decomposition=uncertainty_decomposition,
     )
 ```
 
@@ -291,34 +370,62 @@ User can trigger refit anytime:
 После refit, compute coverage of recipient data в proxy-priors-driven 95% CI:
 
 ```python
+MIN_WEEKS_FOR_DRIFT_CHECK = 8  # binomial noise too high below this
+
 def compute_empirical_coverage(
     actual_values: np.ndarray,        # observed recipient sales per week
     proxy_priors_ci_lower: np.ndarray,  # 95% CI lower from proxy-priors model
     proxy_priors_ci_upper: np.ndarray,
-) -> float:
-    """Returns % of weeks where actual ∈ [CI_lower, CI_upper]."""
+) -> Optional[float]:
+    """Returns % of weeks where actual ∈ [CI_lower, CI_upper], or None if too few weeks.
+
+    With < 8 weeks, binomial variance в coverage estimate too high (e.g., 4 weeks
+    с 1 outlier = 75% coverage, могут falsely flag drift). Below threshold,
+    return None и assume normal coverage (skip adaptive adjustment).
+    """
+    n = len(actual_values)
+    if n < MIN_WEEKS_FOR_DRIFT_CHECK:
+        return None  # caller should treat as "normal coverage" (skip drift adjustment)
     in_ci = (actual_values >= proxy_priors_ci_lower) & (actual_values <= proxy_priors_ci_upper)
-    return in_ci.mean()
+    return float(in_ci.mean())
 ```
 
-Expected: coverage ≈ 0.95 for 95% CI. Lower = drift detected.
+Expected: coverage ≈ 0.95 for 95% CI. Lower = drift detected. При None (< 8 weeks data), drift detection skipped - normal schedule applied.
 
 ### 4.2 Adaptive Adjustment Rules
 
 ```python
 def adjust_recipient_obs_value_for_drift(
     base_obs_value: float,
-    coverage: float,
-) -> float:
-    """Accelerate weight reduction если recipient diverges от proxy expectations."""
-    if coverage >= 0.90:
-        return base_obs_value          # normal
+    coverage: Optional[float],  # None = insufficient data for drift check
+) -> Optional[float]:
+    """Accelerate weight reduction если recipient diverges от proxy expectations.
+
+    Returns None if severe drift detected (caller switches к BMA mode).
+    coverage=None (too few weeks) → normal obs_value (skip adjustment, no false drift).
+    """
+    if coverage is None or coverage >= 0.90:
+        return base_obs_value          # normal (or insufficient data, treat as normal)
     elif coverage >= 0.80:
         return base_obs_value * 1.5    # mild drift
     elif coverage >= 0.60:
         return base_obs_value * 3.0    # moderate drift - aggressive reduction
     else:
         return None  # severe - switch to BMA mode (Section 4.4)
+```
+
+**Drift severity classification:**
+```python
+def classify_drift(coverage: Optional[float]) -> Literal["unknown", "none", "mild", "moderate", "severe"]:
+    if coverage is None:
+        return "unknown"  # insufficient data
+    if coverage >= 0.90:
+        return "none"
+    elif coverage >= 0.80:
+        return "mild"
+    elif coverage >= 0.60:
+        return "moderate"
+    return "severe"
 ```
 
 This causes faster proxy weight reduction для drift-detected projects:
@@ -457,8 +564,10 @@ class PosteriorUpdateEvent(BaseModel):
     ess_proxy_adjusted: float
     ess_recipient_computed: float
     
-    # Triggering data
+    # Triggering data + model traceability
     triggering_data_hash: str  # SHA-256 of incremental recipient data
+    before_model_hash: str      # SHA-256 of models/recipient_model.pickle BEFORE refit
+    after_model_hash: str       # SHA-256 of models/recipient_model.pickle AFTER refit
     new_weeks_added: int
     
     # Diagnostics
@@ -475,10 +584,16 @@ class PosteriorUpdateEvent(BaseModel):
 
 ### 6.1 Reproducibility
 
-Each event captures full state нужный для reproducibility:
-- New data hash → can verify input
+Each event captures full state нужный для traceability:
+- `triggering_data_hash` → SHA-256 incremental data → can verify input
+- `before_model_hash` + `after_model_hash` → SHA-256 of model pickle blobs → can verify which model produced which forecast
 - Weights + diagnostics → can verify output
-- Model artifacts saved alongside (models/recipient_model_v2.pickle, _v3, ...)
+
+**Model storage policy (per ADR-002 SCHEMA_DESIGN):** `.aurora` bundle stores **latest model only** в `models/recipient_model.pickle`. Historical models NOT preserved within bundle (size limits). Audit trail в `posterior_update_log.json` references model hashes; for full byte-identical reconstruction of historical model, restore from `.aurora.bak.N` rolling backups (Section 9 SCHEMA_DESIGN).
+
+**Why latest-only:** typical `models/recipient_model.pickle` is 10-15MB. With 13+ refits over 1 year (monthly cadence), historical preservation would push bundle к 130+ MB (audit performance budget concern). Rolling backups provide 4-deep history; methodology certificate captures full audit trail.
+
+**Phase D consideration:** if customer demand для full historical model reconstruction (regulatory audit), separate `models/history/` directory с timestamped pickles can be added (additive schema migration v3.0 → v3.1).
 
 ### 6.2 Methodology Certificate Integration
 
@@ -745,37 +860,53 @@ def test_drift_adjustment_increases_obs_value(coverage, base_obs):
 
 ### 9.1 Multi-Proxy Mode
 
-При multi-proxy (S007), each proxy имеет own posterior update schedule:
+При multi-proxy (S007), used **aggregate ESS** model: all proxies contribute combined virtual sample size, recipient must accumulate enough data чтобы overcome combined proxy weight.
+
+**Why aggregate vs per-proxy:**
+- Per-proxy independent decay: each proxy releases at different t. Hierarchical model has dynamic structure - hard to re-fit cleanly.
+- Aggregate: simple - recipient ESS overcomes combined proxy ESS. Hierarchical model retains structural integrity throughout schedule.
+- Practical: at threshold release, ALL proxies released simultaneously - recipient transitions к standalone в один момент.
 
 ```python
 def multi_proxy_posterior_update(
     project: AuroraBundle,
     new_data: RecipientData,
 ) -> RefitResult:
-    """Posterior update для multi-proxy hierarchical model."""
-    # Each proxy weight reduces independently
-    # Pooling weights между proxies (S007 user-set) preserved
-    # Hierarchical model re-fit с reduced individual proxy weights
-    
+    """Posterior update для multi-proxy hierarchical model (aggregate ESS approach)."""
     proxies = project.get_proxies()
-    new_proxy_weights = []
-    for p in proxies:
-        ess_p = ESS_PROXY_BASE * SIMILARITY_TO_ESS_FACTOR[p.verdict]
-        ess_recipient = compute_ess_recipient(new_data, p.category)
-        w_p = ess_p / (ess_p + ess_recipient)
-        w_p = cap_proxy_weight_for_short_data(w_p, new_data.weeks_count)
-        new_proxy_weights.append(w_p)
-    
-    # Re-fit hierarchical model с new proxy weights
+    pooling_weights = project.get_pooling_weights()  # user-set, preserved
+
+    # Aggregate ESS: weighted sum over proxies (по их similarity verdicts)
+    # Multi-proxy adds 5% inflation per extra proxy (per SIMILARITY_FRAMEWORK Section 6)
+    multi_penalty = 1.0 + 0.05 * (len(proxies) - 1)
+    ess_proxy_aggregate = sum(
+        pw * ESS_PROXY_BASE * SIMILARITY_TO_ESS_FACTOR[p.verdict]
+        for pw, p in zip(pooling_weights, proxies)
+    ) / multi_penalty  # divide for inflation (less informative aggregate)
+
+    # Recipient ESS uses category of recipient, not proxies
+    recipient_category = project.get_metadata().category
+    obs_value = RECIPIENT_OBS_VALUE.get(recipient_category, DEFAULT_RECIPIENT_OBS_VALUE)
+    ess_recipient = new_data.total_weeks * obs_value
+
+    w_proxy_aggregate = ess_proxy_aggregate / (ess_proxy_aggregate + ess_recipient)
+    w_proxy_aggregate = cap_proxy_weight_for_short_data(w_proxy_aggregate, new_data.total_weeks)
+
+    # Re-fit hierarchical model: single aggregate proxy weight, individual pooling preserved
     new_model = train_multi_proxy_hierarchical_with_weights(
-        proxies, new_data, proxy_weights=new_proxy_weights,
-        pooling_weights=project.get_pooling_weights(),
+        proxies, new_data,
+        proxy_aggregate_weight=w_proxy_aggregate,
+        pooling_weights=pooling_weights,
     )
-    
-    return RefitResult(...)
+
+    return RefitResult(
+        method="partial_pooling_multi",
+        w_proxy=w_proxy_aggregate,
+        # ... etc
+    )
 ```
 
-Multi-proxy adds 5% inflation penalty per extra proxy (per SIMILARITY_FRAMEWORK Section 6).
+**Performance budget multi-proxy refit:** 60-150s (vs 30-60s single-proxy) - hierarchical model 2-3× более expensive.
 
 ### 9.2 Posterior Update без media data
 
@@ -792,7 +923,7 @@ If issues - refit blocked, user fixes data first.
 
 ### 9.4 Aurora Optimize Handoff (Phase D Trigger)
 
-При w_proxy < 0.05 + 52+ weeks data:
+При w_proxy < 0.10 + 52+ weeks data (release threshold per ADR-004):
 - UI banner: "Ваш бренд готов к standard MMM. Рассмотрите переход на Aurora Optimize."
 - Click → seamless project file transfer (.aurora bundle opens в Optimize, schema additive ignored)
 - Pricing:client остаётся на Suite bundle или downgrades.

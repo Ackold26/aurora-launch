@@ -151,17 +151,32 @@ def score_category(proxy: CategorySpec, recipient: CategorySpec) -> float:
     return 0.0
 
 
-# Adjacency для L1 categories (curated, maintained в taxonomy.yaml):
-ADJACENT_L1_PAIRS = {
-    ("FMCG_food", "FMCG_beverage"),
-    ("OTC_pharma", "OTC_supplements"),
-    ("Cosmetics", "Personal_care"),
-    ("Telecom", "Banking_retail"),  # both subscription-based services to consumers
-    # ... maintained в category_taxonomy.yaml
-}
+# Adjacency для L1 categories - SOURCE OF TRUTH: engines/category_taxonomy.yaml
+# Loaded at runtime, NOT duplicated в коде. Quarterly review by Антон + Маша.
+
+def load_adjacent_l1_pairs() -> set[tuple[str, str]]:
+    """Load adjacent L1 pairs from category_taxonomy.yaml (SSoT)."""
+    import yaml
+    from pathlib import Path
+    taxonomy_path = Path(__file__).parent.parent / "engines" / "category_taxonomy.yaml"
+    with open(taxonomy_path, encoding="utf-8") as f:
+        taxonomy = yaml.safe_load(f)
+    return {tuple(sorted(pair)) for pair in taxonomy.get("adjacent_l1_pairs", [])}
+
 
 def are_adjacent_l1(l1_a: str, l1_b: str) -> bool:
-    return tuple(sorted([l1_a, l1_b])) in {tuple(sorted(p)) for p in ADJACENT_L1_PAIRS}
+    pairs = load_adjacent_l1_pairs()  # cached в production через @lru_cache
+    return tuple(sorted([l1_a, l1_b])) in pairs
+
+
+# Reference content of category_taxonomy.yaml `adjacent_l1_pairs` (for documentation):
+# - [FMCG_food, FMCG_beverage]
+# - [FMCG_food, FMCG_household]
+# - [OTC_pharma, OTC_supplements]
+# - [Cosmetics, Personal_care]
+# - [Cosmetics, FMCG_personal_care]
+# - [Telecom, Banking_retail]
+# (Maintained в taxonomy.yaml, не в этом документе - prevents drift)
 ```
 
 **Edge case:** new sub-category not in taxonomy - default L2/L3 to "unknown_<name>", score against parent L1 only.
@@ -364,32 +379,43 @@ B2B_WEIGHTS = {
 ### 3.3 Profile Selection Logic
 
 ```python
-PROFILE_BY_L1_L2 = {
-    ("OTC_pharma", "*"): OTC_PHARMA_WEIGHTS,
-    ("Rx_pharma", "*"): RX_PHARMA_WEIGHTS,
-    ("FMCG_food", "snacks_savoury"): FMCG_IMPULSE_WEIGHTS,
-    ("FMCG_food", "snacks_sweet"): FMCG_IMPULSE_WEIGHTS,
-    ("FMCG_food", "dairy_yogurt"): FMCG_STAPLES_WEIGHTS,
-    ("FMCG_food", "dairy_milk"): FMCG_STAPLES_WEIGHTS,
-    ("FMCG_beverage", "beverage_carbonated"): FMCG_IMPULSE_WEIGHTS,
-    ("FMCG_beverage", "beverage_energy"): FMCG_IMPULSE_WEIGHTS,
-    ("FMCG_beverage", "beverage_juice"): FMCG_STAPLES_WEIGHTS,
-    ("Cosmetics", "cosmetics_premium_*"): PREMIUM_COSMETICS_WEIGHTS,
-    ("Telecom", "*"): TELECOM_BANKING_WEIGHTS,
-    ("Banking", "banking_retail"): TELECOM_BANKING_WEIGHTS,
-    ("B2B", "*"): B2B_WEIGHTS,
-    # Default fallback if no match:
-}
+import fnmatch
+
+# Profiles list-of-tuples (NOT dict) для proper wildcard matching через fnmatch.
+# Order matters: most specific entries first, wildcards last per L1.
+# Dict-based lookup with literal "cosmetics_premium_*" key would NOT match "cosmetics_premium_face"
+# (string equality ≠ glob match). Iteration с fnmatch correctly handles patterns.
+
+PROFILE_BY_L1_L2: list[tuple[str, str, dict]] = [
+    # OTC pharma - all L2 patterns covered by wildcard
+    ("OTC_pharma", "*", OTC_PHARMA_WEIGHTS),
+    ("Rx_pharma", "*", RX_PHARMA_WEIGHTS),
+    # FMCG impulse (specific L2 - must come before any wildcards под FMCG_food)
+    ("FMCG_food", "snacks_savoury", FMCG_IMPULSE_WEIGHTS),
+    ("FMCG_food", "snacks_sweet", FMCG_IMPULSE_WEIGHTS),
+    ("FMCG_beverage", "beverage_carbonated", FMCG_IMPULSE_WEIGHTS),
+    ("FMCG_beverage", "beverage_energy", FMCG_IMPULSE_WEIGHTS),
+    # FMCG staples
+    ("FMCG_food", "dairy_yogurt", FMCG_STAPLES_WEIGHTS),
+    ("FMCG_food", "dairy_milk", FMCG_STAPLES_WEIGHTS),
+    ("FMCG_food", "household", FMCG_STAPLES_WEIGHTS),
+    ("FMCG_beverage", "beverage_juice", FMCG_STAPLES_WEIGHTS),
+    # Cosmetics - prefix glob (premium L2 detected through pattern)
+    ("Cosmetics", "cosmetics_premium_*", PREMIUM_COSMETICS_WEIGHTS),
+    # Telecom / Banking
+    ("Telecom", "*", TELECOM_BANKING_WEIGHTS),
+    ("Banking", "banking_retail", TELECOM_BANKING_WEIGHTS),
+    ("B2B", "*", B2B_WEIGHTS),
+]
+
 
 def select_weight_profile(recipient_l1: str, recipient_l2: str) -> dict[str, float]:
-    """Select weight profile based on recipient category."""
-    # Exact L1+L2 match first
-    if (recipient_l1, recipient_l2) in PROFILE_BY_L1_L2:
-        return PROFILE_BY_L1_L2[(recipient_l1, recipient_l2)]
-    # L1 wildcard match
-    if (recipient_l1, "*") in PROFILE_BY_L1_L2:
-        return PROFILE_BY_L1_L2[(recipient_l1, "*")]
-    # Fallback default
+    """Select weight profile based on recipient category. First match wins (order = priority)."""
+    for l1_pattern, l2_pattern, profile in PROFILE_BY_L1_L2:
+        if l1_pattern != recipient_l1:
+            continue
+        if l2_pattern == "*" or fnmatch.fnmatchcase(recipient_l2, l2_pattern):
+            return profile
     return DEFAULT_WEIGHTS
 ```
 

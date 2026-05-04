@@ -123,7 +123,7 @@ class RecipientAnchorsV1(BaseModel):
 
     category_trend: Literal["growing", "stable", "declining"]
     is_paused_brand: bool = False
-    pause_duration_months: Optional[int] = Field(default=None, ge=12)
+    pause_duration_months: Optional[int] = Field(default=None, ge=6)  # audit fix F48
 
     # ... optional fields
 

@@ -139,7 +139,7 @@
 ### Scenario 1: Launch -> Optimize transition (~12 месяцев post-launch)
 
 После 12+ месяцев accumulated recipient data:
-- Aurora Launch posterior weight schedule достигает 95% recipient / 5% proxy
+- Aurora Launch posterior weight schedule достигает >=90% recipient / <=10% proxy (proxy release threshold per ADR-004)
 - Proxy в priors only, model fully recipient-driven
 - **Transition opportunity**: client может switch на Aurora Optimize standard
 - Aurora Launch project file (.aurora) opens в Optimize seamlessly (shared schema)

@@ -131,7 +131,7 @@
    - Max shrinkage cap: weeks <12 → w_proxy >=0.40, weeks <24 → w_proxy >=0.20
    - Diagnostic checks (Gelman-Rubin <1.05, ESS >=400, divergent_transitions=0, posterior predictive p-value 0.05-0.95)
 
-5. **Proxy release threshold:** 0.05. Cross-app handoff trigger: w_proxy <0.05 + 52+ weeks → suggest Aurora Optimize transition.
+5. **Proxy release threshold:** 0.10 (audit-revised from 0.05 - calibrated к ~2.2y FMCG handoff window vs 4.6y at 0.05 - too long). Cross-app handoff trigger: w_proxy <0.10 + 52+ weeks → suggest Aurora Optimize transition.
 
 6. **Audit trail:** `PosteriorUpdateEvent` per refit captures full state (weights, coverage, drift severity, ESS values, diagnostics, triggering data hash, user note). Methodology Certificate PDF includes full posterior update history table.
 
