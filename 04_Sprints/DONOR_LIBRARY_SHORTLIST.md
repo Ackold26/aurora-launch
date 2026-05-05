@@ -58,20 +58,19 @@
 
 ## 2. Открытые вопросы Антону (для INBOX_TO_MN)
 
-### 2.1 ROSST — что это?
+### 2.1 ROSST — clarified (likely confusion Маши небесной)
 
-В моей памяти **ROSST упоминается только в контексте release infrastructure** (`rosst-updates` repo для `latest.json` auto-update endpoint). В Aurora Launch repo также — только release pipeline (CONTRIBUTING.md, THREAT_MODEL.md).
+**Update 2026-05-05 (post-audit):** проверила `D:/Docs/Aurora_Ai/Dev/` — ROSST = семейство white-label apps клиента «РОССТ»: `ROSST_AI_Creative`, `ROSST_AI_DocMaster`, `ROSST_AI_Legal`, `ROSST_AI_Media`. Это **AI-приложения, не аналитика**. У ROSST_AI_* нет MMM-моделей в Aurora Эконометрике — следовательно, **ROSST не может быть donor brand** для Aurora Launch.
 
-**Гипотезы:**
-1. ROSST = клиентский бренд / компания, которого я не знаю (Антон передавал shortlist устно).
-2. ROSST = аббревиатура — Российский [...?]. Возможно фарма-компания.
-3. Confusion с другим именем — возможно ROSSI / ROST / ROSST AG.
+**Дополнительно:** существует `rosst-updates` GitHub repo — это Aurora release infrastructure (`latest.json` auto-update endpoint), не клиент.
 
-**Запрос Антону:** что такое ROSST в контексте donor base? Если это клиент Эконометрики — название бренда + категория ATC + manufacturer.
+**Заключение:** упоминание ROSST в donor list (бриф 2026-05-04 от Маши небесной) — likely **confusion** с одним из этих ROSST-related entities. Не блокирует, удалила из shortlist.
 
-### 2.2 Дополнительные 2-3 кандидата (для покрытия категорий)
+**Reformulated запрос Антону:** нужны **3 новых donor кандидата** (фарма ICP per стратегические корректировки 2026-05-05) beyond Кагоцел + Венарус — см. Section 2.2.
 
-**Уже покрыто:** OTC.cold_flu.antiviral (Кагоцел) + OTC.venotonic (Венарус). Это 2 из 5+ нужных.
+### 2.2 Дополнительные 3 кандидата (для покрытия категорий)
+
+**Уже покрыто:** OTC.cold_flu.antiviral (Кагоцел) + OTC.venotonic (Венарус). Это 2 из 5 нужных. После исключения ROSST (Section 2.1) необходимо **3 новых кандидата**.
 
 **Категорийные gaps в shortlist:**
 - **OTC.analgesic** (НПВС, парацетамол, ибупрофен) — массовая фарма-категория, частые launches новых SKU
@@ -82,27 +81,38 @@
 - **OTC.respiratory_relief** (отличается от antiviral — мукоактивы, противокашлевые)
 
 **Запрос Антону:**
-1. Какие ещё бренды из existing Эконометрика clients готовы к anonymization? (фарма приоритет, не FMCG / cosmetics — per ICP correction 2026-05-05)
-2. Если "ROSST" не клиент Эконометрики — заменить ли на другое существующее? Или ROSST = плейсхолдер для будущего пилота?
-3. Допустимо ли использовать данные Эконометрика клиентов БЕЗ их прямого consent (anonymization достаточна) или нужен informational notice? (Per Section 3 protocol — техническая anonymization достаточна по Антону, но для critical clients double-check.)
+1. Какие 3 _новых_ бренда из existing Эконометрика clients готовы к anonymization? (фарма приоритет, не FMCG / cosmetics — per ICP correction 2026-05-05)
+2. Допустимо ли использовать данные Эконометрика клиентов БЕЗ их прямого consent (anonymization достаточна) или нужен informational notice? (Per Section 3 protocol — техническая anonymization достаточна по Антону, но для critical clients double-check.)
+3. **Производитель Венарус** — preliminary в memory упомянут «Materia Medica?». На самом деле Венарус (диосмин/гесперидин, ATC C05CA) производится **OBL Pharm / Оболенское фармпредприятие** в России (генерик Detralex от Servier). Подтверди — это правильный manufacturer для anonymization audit trail (хотя поле удаляется, но для аудита Антона нужно зафиксировать).
 
 ---
 
-## 3. Anonymization protocol (per Антон 2026-05-05)
+## 3. Anonymization protocol (per Антон 2026-05-05, audit-revised)
 
 **Принцип:** техническая anonymization достаточна. Согласия клиентов НЕ требуются (если данные не покидают anonymized form). Brand identity not derivable из donor entry.
 
 ### 3.1 Mandatory anonymization steps
 
+🔴 **CRITICAL INVARIANT (audit fix B2):** sales × spend × random_factor применяются с **OДНИМ И ТЕМ ЖЕ** factor R per donor (synchronized scaling). Это сохраняет ROI ratios — критично для donor purpose (transfer adstock + hill _shape_, который inherits ROI scale). **Independent random factors на sales vs spend ломают ROI relationships → broken donor**. Anonymization tool MUST enforce this через single seed parameter, applied к обоим столбцам.
+
 | Field | Transformation | Rationale |
 |---|---|---|
 | Brand name | → код `<3-letter>-<year>` (e.g., `KAG-2024`, `VEN-2024`) | De-identification primary |
 | Manufacturer | → удалить полностью | Brand → manufacturer mapping public knowledge |
-| Sales numbers (units / revenue) | × random factor 0.5-2.0 (constant per donor для preserve shape) | Magnitude masking, shape preserved |
-| Media spend numbers | × same random factor (synchronized с sales) | Preserve ROI ratios |
+| Sales numbers (units / revenue) | × **R** (random factor 0.5-2.0, constant per donor) | Magnitude masking, shape preserved |
+| Media spend numbers (per channel) | × **R** (**same R** as sales — synchronized) | Preserve ROI ratios — CRITICAL invariant |
 | Period dates | shift by -12 months (constant per donor) | Preserve seasonality, hide actual time window |
 | Specific creative names / campaign names | → удалить (если присутствуют в metadata) | Identifying details |
 | SKU names / pack sizes | → generic codes (`SKU_1`, `SKU_2`) | Brand identification vector |
+
+**⚠️ Trade-off period shift -12 months (audit finding H9):** сдвиг сохраняет seasonality (52-week annual cycle), но **shift'ит macro context** (e.g., COVID end Q1 2022, sanctions impact 2022-2023). Если donor имеет ярко выраженные multi-year trends (post-COVID demand decline для Кагоцел типа), shifted period misrepresents recipient's macro environment.
+
+**Mitigation options (Антон's call):**
+- **Option A (default):** apply -12mo shift; в metadata flag донора `transfer_long_term_trend: false` → не передавать `long_term_trend_slope` parameter. Безопаснее.
+- **Option B (alternative):** «in-year shift» — сдвинуть weeks-of-year случайным random offset 0-26 (preserves week-of-year mapping but obscures absolute year). Сохраняет macro context, но teaches recipient «ковидный пик» как «normal seasonality». Не рекомендуется.
+- **Option C:** не сдвигать вовсе. Daterange анонимизирован уже фактом масштабирования. Risk: если donor goes public + recipient reverse-engineers brand by date pattern matching.
+
+Default proposal: **Option A** для phase B6 ship.
 
 ### 3.2 Preserved fields (для category match + transfer accuracy)
 

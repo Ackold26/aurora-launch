@@ -102,10 +102,11 @@
 
 ### 1.2 Acceptance Criteria (Given / When / Then)
 
-**AC1.1 — Pure extraction, zero functional drift.**
-- GIVEN Aurora Эконометрика regression corpus (Кагоцел trained model `.pickle` + Венарус trained model + 4 ROSST_AI test fixtures).
+**AC1.1 — Pure extraction, zero functional drift.** (audit-revised B8)
+- GIVEN Aurora Эконометрика regression corpus (Кагоцел trained model `.pickle` + Венарус trained model). **Note:** test corpus stored privately (`tests/fixtures/private/`, gitignore'd) — синхронизируется через secure channel между Антоном и Машей маленькой; Маша небесная не имеет direct access (см. R4 в audit report).
 - WHEN `aurora_inference.modeler.train_model(config, project_dir)` invoked с identical config (extracted from Эконометрика regression test).
-- THEN output dict has identical keys (`model_data`, `metrics`, `diagnostics`, etc.) и numerical values match Эконометрика baseline within `rtol=1e-6` for deterministic seeds (NumPyro fixed `random.PRNGKey(42)`), and within `rtol=1e-3` for stochastic comparisons (Gelman-Rubin, ESS).
+- THEN output dict has identical keys (`model_data`, `metrics`, `diagnostics`, etc.) и numerical values match Эконометрика baseline within `rtol=1e-4` for deterministic seeds (NumPyro fixed `random.PRNGKey(42)`), and within `rtol=1e-2` for stochastic diagnostics (Gelman-Rubin, ESS, divergent transitions count).
+- **Cross-machine numerical determinism caveat:** bit-exact equality невозможна across (Python version, JAX version, XLA backend, hardware) variations. `rtol=1e-4` accommodates типичный floating-point operation order drift. Test fixtures regenerated quarterly on reference machine (Антон's primary dev box); CI runners use looser `rtol` if flakiness обнаружена.
 
 **AC1.2 — Public API stability contract.**
 - GIVEN `aurora_inference` package installed at version 0.1.0.
@@ -122,10 +123,13 @@
 - WHEN consumer calls `aurora_inference.trust3_hierarchical.build_hierarchical_priors(channel_categories, prior_config)` standalone (вне `train_model`).
 - THEN returned PriorConfig dict matches priors that `train_model` would inject; consumer может pass priors to custom `modeler.train_model` invocation (для Aurora Launch transfer learning use case Phase B).
 
-**AC1.5 — Conformal Prediction triple-CI работает out-of-the-box.**
-- GIVEN trained Bayesian model + calibration set (20% holdout).
+**AC1.5 — Conformal Prediction triple-CI работает out-of-the-box.** (audit-revised H4)
+- GIVEN trained Bayesian model + calibration set (20% holdout, n_calibration ≥ 50 для default tightness assertion).
 - WHEN `aurora_inference.conformal.ConformalCalibrator.calibrate_bayes(model, calibration_data)` invoked.
-- THEN returns ConformalCI dict с `lower`, `upper`, `coverage_level` (default 0.9), и intervals tighter than naive ±2σ (Aurora differentiator validated).
+- THEN returns ConformalCI dict с `lower`, `upper`, `coverage_level` (default 0.9). Tightness varies с n_calibration:
+  - **n ≥ 50:** intervals ≤ ±2σ + 10% tolerance (Aurora differentiator — distribution-free + tighter than naive Gaussian).
+  - **n < 50:** intervals expected wider (quantile inflation `(1-α)(1+1/n)` — math limitation per Vovk 2005). Validate **conservative coverage instead**: empirical coverage ≥ stated 0.9 within ±0.05 на test sample.
+- Aurora Launch projects часто start с n < 12 weeks recipient calibration → AC must handle small-n gracefully, not assert universal tightness.
 
 **AC1.6 — KPI Registry pattern enforces frozen configs.**
 - GIVEN KPI_SALES config (frozen v1.2.0).
@@ -155,6 +159,8 @@
 ### 1.3 Definition of Done
 
 - [ ] **AC1.1–AC1.10 все pass** (см. Section 1.4 для test data).
+- [ ] **Atomic write fix (audit B7):** все `pickle.dump` calls в Inference Core migrated к helper `aurora_inference.io.atomic_write_pickle(path, data)` using `os.replace()` (Python 3.3+ atomic overwrite cross-platform). **Inherits + fixes existing Эконометрика bug** где `engines/modeler.py:1131` + `engines/ols_modeler.py:416` пишут pickle direct (process kill mid-write → corrupt model). Phase A C1 takes ownership of this fix.
+- [ ] **Persistence helper formalization (audit refinement):** ad-hoc `setdefault(...)` fix-ups в `load_model_with_compat` formalized как explicit migrations через C6 SchemaRegistry. No silent defaulting outside registry.
 - [ ] **Code merged в `aurora-platform-core` main** + tag `aurora-platform-core/v0.1.0`.
 - [ ] **Pytest suite migration:** existing 838 Aurora Эконометрика pytest cases migrated к `aurora-platform-core/tests/inference/`. Parallel-runnable (`-n auto`). Coverage `aurora_inference` package ≥ 80% (line + branch).
 - [ ] **Integration regression:** Aurora Эконометрика v1.0.16 → переключение на `aurora-platform-core==0.1.0` (depend как `pip install`) + full regression GREEN на Кагоцел + Венарус corpus. Baseline metrics (R², MAPE, posterior predictive p-value) match within `rtol=1e-6`.
@@ -273,13 +279,19 @@ Per ADR-001 `tiered-hybrid-ai-parser`:
 
 - **Tier 1 — Heuristic + signature match.** `aurora_data_studio.source_adapters.<src>` runs first. Filename pattern + header pattern + cell signature (e.g., AdEx weights summing to 1.0) → high-confidence match (≥ 0.85). Fast (< 100 ms per file). Default for all 5 known sources.
 - **Tier 2 — Local LLM.** `aurora_data_studio.engines.llm_parser` — llama.cpp wrapper around Phi-3.5-mini Q4 GGUF (~2.5 GB installer overhead, 4-6 GB RAM при inference). Used когда Tier 1 confidence < threshold (e.g., custom client XLSX без known signature). Local-only (privacy-first для фарма/financial ICP). Output: `WorkbookInference` Pydantic model (см. Studio existing `engines/llm_parser/output_models.py`).
-- **Tier 3 — Cloud LLM (opt-in).** `aurora_data_studio.engines.cloud_parser` — Anthropic SDK wrapper, default OFF. Toggle в Settings + per-session confirm. PII redaction layer (regex + structural rules) обязательная pre-processing (см. 2.1.G privacy).
+- **Tier 3 — Cloud LLM (opt-in).** `aurora_data_studio.engines.cloud_parser` — Anthropic SDK wrapper, default OFF. Toggle в Settings + per-session confirm. **PII redaction = NER + whitelist (audit fix H1)**, не regex-only — см. 2.1.G privacy.
 
 **Tier escalation rules** (per ADR-001):
-- Tier 1 confidence ≥ 0.85 → use Tier 1 result.
-- 0.50 ≤ confidence < 0.85 → fall through Tier 2.
-- Tier 2 confidence ≥ 0.70 → use.
-- < 0.70 (или Tier 2 disabled) → fall through Tier 3 (если opt-in) или surface к user через MappingReviewStep.
+- Tier 1 confidence ≥ **threshold_t1** → use Tier 1 result.
+- threshold_t2 ≤ confidence < threshold_t1 → fall through Tier 2.
+- Tier 2 confidence ≥ **threshold_t1_local** → use.
+- < threshold_t1_local (или Tier 2 disabled) → fall through Tier 3 (если opt-in) или surface к user через MappingReviewStep.
+
+**Threshold calibration (audit fix H3):** initial defaults `threshold_t1=0.85, threshold_t2=0.50, threshold_t1_local=0.70` — **heuristic guesses, not calibrated**. DoD requires per-source threshold tuning via cross-validation на eval corpus:
+- Target precision ≥ 0.95 для Tier 1 (low FP rate, prefer escalation if uncertain).
+- Target recall ≥ 0.85 для Tier 2 (catch most cases).
+- Tunable per `source_id` (DSM heuristic likely much higher confidence threshold than custom XLSX).
+- Brier Score < 0.15 (existing DoD) measures **calibration quality**, не threshold optimality — это independent quality dimension.
 
 **Pydantic output models** (already drafted в Studio repo):
 - `ColumnInference(BaseModel)` — per-column inferred role + canonical_field_id + confidence.
@@ -386,12 +398,17 @@ Per Studio wireframes folder (already drafted ASCII layouts):
 
 #### 2.1.G Privacy invariants (критично для фарма ICP)
 
-Per Studio existing PRINCIPLES P5-P7:
+Per Studio existing PRINCIPLES P5-P7 + audit-revised H1:
+
 1. **Default = no data leaves machine.** Tier 1 + Tier 2 fully local.
 2. **Cloud Tier 3 — opt-in.** Toggle в Settings, default OFF.
-3. **PII redaction обязательная** перед каждым cloud call (regex layer + structural rules: brand names, manufacturer names, contact info, IBAN/INN patterns).
+3. **PII redaction = NER + whitelist approach** (audit fix H1; regex alone insufficient для B2B-фарма XLSX где content почти 100% identifying):
+   - **Layer 1 — Russian NER** (Natasha library OR DeepPavlov RuBERT NER) для PER/ORG/LOC entity recognition в text columns.
+   - **Layer 2 — Whitelist (default):** redact ALL string content; keep numbers + ISO dates + canonical column headers + user-confirmed tokens. Aggressive default — minimizes leak surface.
+   - **Layer 3 — User-driven explicit redaction:** at first Tier 3 invocation, show preview of what will be sent + allow manual additions to whitelist (e.g., «keep `TV channel codes` since they're public catalogs»).
+   - **Layer 4 — Regex для known patterns:** email, INN, phone, IBAN, MAC, IP — каскадная redaction.
 4. **No model training on customer data.** Phi pretrained, Anthropic terms — no training (verified в ADR-001).
-5. **Audit trail.** Redaction log + tier decisions saved per session, accessible через `AdvancedSettingsStep` → "Open audit log".
+5. **Audit trail.** Redaction log + tier decisions saved per session, accessible через `AdvancedSettingsStep` → "Open audit log". Log records: original token → redacted placeholder → restoration mapping (encrypted local-only).
 
 #### 2.1.H Telemetry events (Phase A scaffolding для Этапа 2)
 
@@ -432,10 +449,17 @@ Per `aurora-knowledge/Architecture/phase-a-future-monetization-scaffold.md` (М�
 - WHEN user uploads.
 - THEN Tier 1 confidence < 0.85 → Tier 2 invoked → Phi-3.5-mini Q4 inference returns `WorkbookInference` с per-column `ColumnInference` (canonical_field_id + confidence); UI MappingReviewStep shows AI suggestions + manual override option.
 
-**AC2.3 — Tier 3 opt-in only с PII redaction.**
-- GIVEN Settings "Enable cloud parser (Tier 3)" toggle = ON, sample XLSX с brand names + manufacturer names в content.
+**AC2.3 — Tier 3 opt-in only с PII redaction (NER + whitelist).** (audit-revised H1)
+- GIVEN Settings "Enable cloud parser (Tier 3)" toggle = ON, sample XLSX с brand names + manufacturer names + person names в content.
 - WHEN parser falls through к Tier 3.
-- THEN before HTTP request: PII redaction log shows replaced strings (e.g., "Кагоцел" → "[BRAND_1]", "Materia Medica" → "[MANUFACTURER_1]"); request to Anthropic API contains только redacted version; response un-redacted local-side через mapping table.
+- THEN before HTTP request: 4-layer redaction applied (regex + NER + whitelist + user-confirmed). Audit log shows replaced strings:
+  - "Кагоцел" → "[BRAND_001]" (Russian NER catches PER/ORG/BRAND).
+  - "Materia Medica" → "[ORG_001]".
+  - "Иванов А.С." → "[PERSON_001]" (NER PER).
+  - "8 (800) 555-1234" → "[PHONE_001]" (regex).
+  - Random column-header text NOT in whitelist (e.g., "Кампания Q1 спецакция") → "[REDACTED_001]" (whitelist default-aggressive).
+- HTTP request to Anthropic API contains только redacted version; response un-redacted local-side через mapping table (mapping encrypted в session-local memory, never persisted).
+- **First Tier 3 invocation per session:** preview UI shows redaction list + allows user manual whitelist additions before send.
 
 **AC2.4 — Mediascope AdEx 3 variants robust detection.**
 - GIVEN 3 fixture files: V1 (ISO datetime, 63K rows, Пиво безалкогольное), V2 («Jan 2024» abbreviated, 9.7K rows, Недвижимость Тюмень), V3 (multi-sheet с `;` разделителями, 100K+ rows, ТЦ + Туризм).
@@ -452,10 +476,11 @@ Per `aurora-knowledge/Architecture/phase-a-future-monetization-scaffold.md` (М�
 - WHEN user uploads only sales_target file (no ad spend).
 - THEN `must_have_check` returns `passed=False` + `missing=["ad_spend_by_channel"]`; UI DataSpecStep shows red checkmark на ad_spend_by_channel + suggested sources `[mediascope_adex, digitalbudget, custom_xlsx]`.
 
-**AC2.7 — Bundle composer atomic write + ZIP integrity.**
+**AC2.7 — Bundle composer atomic write + ZIP integrity.** (audit-revised B7)
 - GIVEN composed canonical data + provenance + quality results.
 - WHEN `bundle_composer.compose(output_path="my_project.aurora")` invoked.
-- THEN `.aurora.tmp` written first, atomic rename к `.aurora`, previous version moved к `.aurora.bak.1` (rolling 4 backups); SHA-256 signature in manifest.json matches recomputed hash; `unzip + cat manifest.json` works на любой машине без Python.
+- THEN: (1) `.aurora.tmp` written first; (2) **`os.replace(tmp_path, output_path)`** used для atomic overwrite (Python 3.3+ — atomic cross-platform; **NOT `os.rename` which fails on Windows если target exists**); (3) previous version pre-moved к `.aurora.bak.1` (rolling 4 backups) BEFORE replace; (4) SHA-256 signature in manifest.json matches recomputed hash; (5) `unzip + cat manifest.json` works на любой машине без Python.
+- **Crash-safety invariant:** при любой process kill mid-write, либо old `.aurora` exists intact (replace not yet committed), либо new `.aurora` exists complete (replace committed). Никогда — partial/corrupt state.
 
 **AC2.8 — Quality gates: warn vs fail behavior.**
 - GIVEN bundle с partial coverage (45 weeks vs 52 required) + 1 outlier (z=4.5).
@@ -484,6 +509,10 @@ Per `aurora-knowledge/Architecture/phase-a-future-monetization-scaffold.md` (М�
 - [ ] **Pytest suite:** 100+ tests, parallel-runnable. Fixtures: synthetic 10 wild XLSX (existing) + real corpus 5 files (existing) + edge cases (multi-sheet, mixed RU/EN, vertical layout, merged cells). Coverage ≥ 80%.
 - [ ] **Property-based tests:** adapter idempotency (parse twice = same canonical), JSON round-trip (Pydantic models serialize/deserialize losslessly), multi-sheet detection (Sheet1 dedup vs category sheets).
 - [ ] **Brier Score eval methodology** (per existing `engines/llm_parser/eval_methodology.md`): Phi-3.5-mini calibration measured против golden labels на 10 synthetic + 5 real corpus. Brier Score < 0.15 for accepted ship.
+- [ ] **Tier escalation thresholds calibrated** (audit fix H3): per-source thresholds tuned via cross-validation, target precision ≥ 0.95 для Tier 1, recall ≥ 0.85 для Tier 2. Documented в `engines/source_adapters/<src>/threshold_calibration.json`.
+- [ ] **PII redaction NER layer integrated** (audit fix H1): Russian NER (Natasha или DeepPavlov RuBERT) embedded в `engines/cloud_parser/redaction.py`. UI preview at first Tier 3 invocation per session.
+- [ ] **Atomic write helper** (audit fix B7): `engines/bundle_composer/io.py:atomic_write_aurora` использует `os.replace()`. Property test verifies crash-safety invariant.
+- [ ] **Phi-3.5-mini license review** (audit fix M3): redistribution в Aurora installer verified (Phi-3-mini Apache 2.0 since June 2024; Phi-3.5 likely same — но manual confirmation required pre-ship).
 - [ ] **API docs:** `aurora-data-studio/docs/api.md` + per-cabinet UX docs.
 - [ ] **CHANGELOG entry.**
 - [ ] **ADRs:**
@@ -689,10 +718,12 @@ error_codes:
 | `cabinet_step` | Svelte UI component с custom interactions | UI events (file upload, button clicks) | side-effects: file uploads, callable invocations |
 | `callable` | Single function invocation (synchronous) | args from state / step inputs | dict result, persisted |
 | `long_running_callable` | Background task с progress streaming | same as callable | streaming progress + final result |
-| `composite` | Sequence of sub-steps в одной transactional unit | inputs to first sub-step | output of last sub-step + on_partial_failure rollback |
+| `composite` | Sequence of sub-steps + **explicit cleanup_callable_ref per sub-step** (audit fix H6) | inputs to first sub-step | output of last sub-step + on_partial_failure rollback (state + side effects) |
 | `decision` | Branch на condition (jinja2-style expression evaluating state) | condition expression | next step id |
 | `artifact_export` | Write report files | model_data + format list | file paths списком |
 | `__end__` | Terminal state | — | — |
+
+**Composite step rollback semantics (audit fix H6):** при `on_partial_failure: rollback_to_previous_step`, engine invokes **`cleanup_callable_ref`** for each completed sub-step **в обратном порядке**. Cleanup callable обязан remove side effects (uploaded files, temp artifacts, partial pickles). Workflow YAML schema validation enforces: каждый sub-step с side effects MUST declare cleanup_callable_ref OR explicitly mark `side_effects_free: true`. Phase A scope: filesystem cleanup primary; database cleanup (if Phase B+ adds DB writes) — extension.
 
 #### 3.1.B Workflow Engine API
 
@@ -837,20 +868,25 @@ Existing Aurora Эконометрика `error_codes.py` registry (numeric erro
 - WHEN process killed at 50% completion.
 - THEN `.workflow_state.json` reflects last completed step (`transfer_validate`); on `resume()`, engine restarts at `train` step (not from beginning); user-visible: "Resuming training from checkpoint" message.
 
-**AC3.4 — Long-running step с progress streaming.**
+**AC3.4 — Long-running step с progress streaming.** (audit-revised H5)
 - GIVEN `train` step (Bayesian MCMC).
-- WHEN client connects к SSE endpoint `/workflow/.../step/train/progress`.
-- THEN streams ProgressEvent JSON chunks (`{"step": "train", "progress": 0.42, "message": "MCMC sampling chain 2/4", "ts": "..."}`); chunk frequency ≥ every 5 sec; final event `{"status": "completed", "result": {...}}`.
+- WHEN client connects к progress channel — **either SSE endpoint** `/workflow/.../step/train/progress` (Phase A default) **или native Tauri event** `workflow:progress:{wf_id}:{step_id}` (Phase B+ optimization).
+- THEN streams ProgressEvent JSON chunks (`{"step": "train", "progress": 0.42, "message": "MCMC sampling chain 2/4", "ts": "..."}`); chunk frequency: max(every 5 sec OR every 5% progress increment OR on chain transition boundary); final event `{"status": "completed", "result": {...}}`.
+- **Mechanism choice:** Phase A SSE для simplicity + HTTP-only contract (existing `sse-starlette` библиотека). Phase B+ migration к Tauri native events (`emit`/`listen`) — lower latency (~10ms vs ~100ms SSE), more idiomatic для desktop. Workflow engine API exposes both — frontend chooses.
 
 **AC3.5 — Cooperative cancel.**
 - GIVEN `train` step running.
 - WHEN POST `/workflow/.../step/train/cancel` invoked.
 - THEN training stops within 30 sec (cooperative checkpoint); state saved; `current_step` returns `train` status `cancelled`; resume rolls back к previous step.
 
-**AC3.6 — Composite step rollback on partial failure.**
-- GIVEN `transfer_validate` composite step с 3 sub-steps.
+**AC3.6 — Composite step rollback on partial failure (state + side effects).** (audit-revised H6)
+- GIVEN `transfer_validate` composite step с 3 sub-steps (`extract_priors`, `apply_magnitudes`, `prior_predictive`); `extract_priors` declares `cleanup_callable_ref: aurora_launch.engines.launch_adapt.cleanup_extracted_priors`.
 - WHEN sub-step `apply_magnitudes` fails (RecipientAnchors invalid).
-- THEN rollback applied: state at start of `transfer_validate` restored (extract_priors output discarded); next_step = `recipient_anchors` (per `on_partial_failure: rollback_to_previous_step`).
+- THEN rollback applied в TWO phases:
+  1. **State dict restored** к началу `transfer_validate`.
+  2. **Side effects cleanup:** для each completed sub-step **в обратном порядке** (LIFO), engine invokes registered `cleanup_callable_ref`. В этом примере: `extract_priors` cleanup removes `project_dir/extracted_priors_*.json` artifacts.
+- Next_step = `recipient_anchors` (per `on_partial_failure: rollback_to_previous_step`).
+- **No silent stale state:** disk + state dict consistent после rollback.
 
 **AC3.7 — FastAPI auto-generation.**
 - GIVEN loaded workflow.
@@ -1035,7 +1071,7 @@ aurora-shell-template/
   "tauri_app_identifier": "pro.auroraai.launch",
   "tauri_window_title": "Aurora Launch",
   "default_window_size": "1280x800",
-  "min_window_size": "1024x600",
+  "min_window_size": "1280x720",                      // audit fix M1: 1024x600 too small для Aurora Launch ProxySelectionStep similarity radar + 6-dim form
   "supabase_project_ref": "<filled at install>",
   "rosst_updates_endpoint": "<filled at install>",
   "license_app_key": "aurora_launch",
@@ -1345,10 +1381,11 @@ class LicenseClient:
 def train_model(...): ...                                  # decorator
 ```
 
-**Floating license heartbeat / TTL** (per Studio ADR-003):
+**Floating license heartbeat / TTL** (per Studio ADR-003 + audit fix H7):
 - Heartbeat каждые 60 сек.
 - Server-side TTL 5 минут (slot reclaimable если 3 missed heartbeats).
 - Cron cleanup runs every minute on Supabase Edge Function.
+- **Client retry logic (audit fix H7):** при transient network error на heartbeat, client retries up to 3 attempts within 30 sec window с exponential backoff (5s, 10s, 15s). Только после 3 consecutive failures без success — UI shows "Connection lost" + saves session work locally + attempts re-acquire on reconnect. Это prevents wrongful slot reclamation при transient network glitch.
 
 **Cross-app license activation:**
 - Аutomatic при purchase any econometric app: Studio Solo activated (per Studio bundle-activation primary path).
@@ -1476,12 +1513,14 @@ DEFAULT_FLAGS = {
 - WHEN user opens Aurora Data Studio.
 - THEN Studio автоматически Solo tier activated (per ADR-002 bundle-activation primary path); `get_tier("aurora_data_studio")` returns SOLO; full Studio scope accessible.
 
-**AC5.4 — Floating license slot acquisition.**
+**AC5.4 — Floating license slot acquisition.** (audit-revised H7)
 - GIVEN Studio Team license (3 slots), 2 пользователя already connected.
 - WHEN 3rd user opens Studio.
-- THEN `acquire_slot()` succeeds; heartbeat starts; `seats_available=0` reported.
+- THEN `acquire_slot()` succeeds; heartbeat starts (60s interval с retry logic 3×30s window on transient errors); `seats_available=0` reported.
 - WHEN 4th user opens Studio.
 - THEN `acquire_slot()` raises `NoSlotsAvailable` + UI message "All Team seats occupied, ..."
+- WHEN 3rd user experiences transient network glitch (1 missed heartbeat).
+- THEN client retries 3× с exponential backoff; if all 3 succeed → no impact (slot retained); if all 3 fail → UI shows "Connection lost" + saves session work locally + re-acquires on reconnect. **Slot НЕ reclaimed wrongfully.**
 
 **AC5.5 — TTL slot reclamation.**
 - GIVEN floating slot with last heartbeat 6 минут назад.
@@ -1748,6 +1787,9 @@ CREATE TABLE license_tiers (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Required для exclusion constraint (audit fix B5):
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
 CREATE TABLE app_licenses (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES user_accounts(id) NOT NULL,
@@ -1760,7 +1802,14 @@ CREATE TABLE app_licenses (
   schema_version TEXT NOT NULL DEFAULT '1.0',
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now(),
-  UNIQUE (user_id, app_id, valid_from)
+  -- Audit fix B5: prevent overlapping licenses for same (user, app).
+  -- UNIQUE (user_id, app_id, valid_from) недостаточен — допускает overlap.
+  -- Exclusion constraint enforces «at most 1 active license per (user, app) at any moment».
+  EXCLUDE USING gist (
+    user_id WITH =,
+    app_id WITH =,
+    tstzrange(valid_from, COALESCE(valid_until, 'infinity'::timestamptz)) WITH &&
+  )
 );
 
 CREATE TABLE license_slots (
@@ -1789,7 +1838,7 @@ CREATE INDEX idx_license_slots_license_active ON license_slots(license_id) WHERE
 CREATE INDEX idx_license_slots_heartbeat ON license_slots(last_heartbeat_at) WHERE released_at IS NULL;
 ```
 
-**Default seed (Phase A):**
+**Default seed (Phase A, audit-revised B3):**
 
 ```sql
 INSERT INTO license_tiers (id, display_name, is_paid, seats_default, features) VALUES
@@ -1797,7 +1846,9 @@ INSERT INTO license_tiers (id, display_name, is_paid, seats_default, features) V
   ('pro', 'Pro', true, 1, '[]'::jsonb),
   ('team', 'Team', true, 3, '[]'::jsonb),
   ('agency', 'Agency', true, 10, '[]'::jsonb),
-  ('enterprise', 'Enterprise', true, 9999, '[]'::jsonb);
+  ('enterprise', 'Enterprise', true, 9999, '[]'::jsonb),
+  -- Special tier для legacy demo client migration (audit fix B3):
+  ('trial_6mo', 'Demo legacy 6-month trial', false, 1, '[]'::jsonb);
 
 -- Studio Этап 1: все features в free (per стратегия 2026-05-05).
 INSERT INTO license_features (tier_id, feature_id, enabled) VALUES
@@ -1815,7 +1866,53 @@ INSERT INTO license_features (tier_id, feature_id, enabled) VALUES
   ('enterprise', 'launch.feature.dedicated_success_manager', true);
 ```
 
-**Migration mechanism:** schema bumps applied through Supabase migrations folder (Alembic-style versioning). Versioned via Supabase CLI. Backwards compat: existing v1.0.16 license keys auto-migrate (license rows updated with default tier_id="pro").
+**Migration mechanism:** schema bumps applied through Supabase migrations folder (Alembic-style versioning). Versioned via Supabase CLI.
+
+**Backwards compat (audit-revised B3):** existing Aurora Эконометрика v1.0.16 license keys auto-migrate с **`tier_id="trial_6mo"`** (NOT "pro" — paid tier без payment record создаёт ledger inconsistency). `valid_until = migration_date + 6 months` per Aurora Suite migration plan (memory `project_econometrica_target_architecture_v3` § «Customer Migration Strategy»: «демо-клиенты получают **free 6-month trial** на Aurora Suite после ship Phase B»). После 6 months — pre-renewal sales conversation; expired trial → graceful read-only mode (open existing projects, no new analysis).
+
+**Acquire-slot transaction (audit fix B6):** Edge Function MUST использовать `SERIALIZABLE` isolation level + SELECT FOR UPDATE pattern для предотвращения race conditions при concurrent slot acquire от different machines:
+
+```typescript
+// supabase/functions/acquire-slot/index.ts (skeleton)
+await supabase.rpc('acquire_license_slot', {
+  p_license_id: licenseId,
+  p_user_id: userId,
+  p_machine_fingerprint: machineFingerprint
+});
+
+// SQL function:
+CREATE OR REPLACE FUNCTION acquire_license_slot(
+  p_license_id UUID, p_user_id UUID, p_machine_fingerprint TEXT
+) RETURNS TABLE(slot_id UUID, ok BOOLEAN, reason TEXT)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_seats_total INT;
+  v_seats_used INT;
+  v_slot_id UUID;
+BEGIN
+  -- Lock license row + count active slots в same transaction
+  SELECT seats_total INTO v_seats_total
+  FROM app_licenses WHERE id = p_license_id FOR UPDATE;
+
+  SELECT count(*) INTO v_seats_used
+  FROM license_slots WHERE license_id = p_license_id AND released_at IS NULL;
+
+  IF v_seats_used >= v_seats_total THEN
+    RETURN QUERY SELECT NULL::UUID, FALSE, 'no_slots_available';
+    RETURN;
+  END IF;
+
+  INSERT INTO license_slots (license_id, user_id, machine_fingerprint)
+    VALUES (p_license_id, p_user_id, p_machine_fingerprint)
+    RETURNING id INTO v_slot_id;
+
+  RETURN QUERY SELECT v_slot_id, TRUE, NULL::TEXT;
+END;
+$$;
+```
+
+**activate-bundle idempotency:** UPSERT semantic — repeated invocation with same `(user_id, app_id_purchased)` does NOT create duplicate licenses. Studio Solo activation safe under repeated triggers (renewal, sync errors, Edge Function retries).
 
 #### 6.1.D Edge Functions (per Studio ADR-003)
 
@@ -1864,10 +1961,11 @@ def hash_canonical(data: dict) -> str:
 - WHEN `SchemaRegistry.migrate(data, kind="aurora_bundle")`.
 - THEN returns data с `schema_version="3.0"`, `media_stds` removed (v1→v2), Launch + Studio combined fields added (v2→v3).
 
-**AC6.2 — Migration idempotency.**
+**AC6.2 — Migration idempotency + path determinism.** (audit-revised H8)
 - GIVEN v3.0 data.
 - WHEN `migrate(migrate(data))` invoked.
 - THEN result equals `migrate(data)` (no double-processing); migration registry validation confirms purity.
+- **Path determinism (audit fix H8):** при registry с multiple equal-length BFS paths between same `(start, end)` versions, registry MUST register migrations as **commutative** (testable via property test: `path_A(data) == path_B(data)` для random data dicts). Если non-commutative обнаружен → `validate_registry_health()` warns + ADR-required resolution. Phase A scope: registry simple enough что commutativity holds trivially (linear chain v1→v2→v3); Phase B+ enforcement required при graph branching.
 
 **AC6.3 — Cycle detection at registry validation.**
 - GIVEN registry with cycle (e.g., 1.0→2.0→1.0 hypothetical bug).
@@ -1889,20 +1987,21 @@ def hash_canonical(data: dict) -> str:
 - WHEN `activate-bundle` Edge Function called с `app_id_purchased="aurora_optimize"`.
 - THEN auto-creates Solo Studio license for same user (per ADR-002 bundle-activation primary path); license row has tier="free"; user immediately accessible Studio.
 
-**AC6.7 — Floating slot acquire concurrency safety.**
-- GIVEN 3-seat Team license, 2 active slots.
-- WHEN 5 users simultaneously call `acquire-slot` Edge Function.
-- THEN exactly 1 succeeds (atomic INSERT с UNIQUE constraint); 4 receive `NoSlotsAvailable` 409 Conflict response; no race conditions corrupt slot count.
+**AC6.7 — Floating slot acquire concurrency safety.** (audit-revised B6)
+- GIVEN 3-seat Team license, 2 active slots от machines M1, M2.
+- WHEN 5 users from machines M3, M4, M5, M6, M7 simultaneously call `acquire-slot` Edge Function.
+- THEN **exactly 1 succeeds** (per `SERIALIZABLE` transaction + `SELECT ... FOR UPDATE` pattern на app_licenses row); 4 receive `NoSlotsAvailable` 409 Conflict response. **NO race conditions corrupt slot count** (UNIQUE column в license_slots недостаточно — different machine_fingerprints все unique → 5 INSERT'ы все succeed без serializable transaction).
+- Property test: 100 random concurrency scenarios, varying license seats + concurrent attempts → invariant `count(active_slots) ≤ seats_total` holds 100% времени.
 
 **AC6.8 — Slot reclamation cron correctness.**
 - GIVEN slot с `last_heartbeat_at = now() - 6 minutes`.
 - WHEN `reclaim-stale-slots` cron runs.
 - THEN slot's `released_at` set to current time; new acquire-slot succeeds for that license.
 
-**AC6.9 — Aurora Эконометрика legacy license auto-migration.**
-- GIVEN Эконометрика v1.0.16 user with existing license row (pre-tier schema).
+**AC6.9 — Aurora Эконометрика legacy license auto-migration.** (audit-revised B3)
+- GIVEN Эконометрика v1.0.16 user with existing license row (pre-tier schema). Per memory `project_econometrica_target_architecture_v3` — это ТОЛЬКО демо-клиенты, нет paying customers.
 - WHEN database migration applied + cross_app_license deployed.
-- THEN existing license row updated с `tier_id="pro"` default (existing behavior preserved); user opening Эконометрика → no flow changes; license check still passes.
+- THEN existing license row updated с `tier_id="trial_6mo"` default (NOT "pro" — paid tier без payment record нарушает ledger); `valid_until = migration_timestamp + 6 months` per Aurora Suite migration plan; user opening Эконометрика → no flow changes (license check still passes). Pre-renewal sales conversation triggered 30 days before `valid_until`.
 
 **AC6.10 — Hash canonical determinism.**
 - GIVEN identical data dict в two different orderings (key insertion order varies).
@@ -2004,13 +2103,15 @@ Per Aurora Launch ADR-002 + Sprint B4 deliverable spec (`02_Data_Spec/REPORT_SEC
   "Subject": "<project_name>",
   "Producer": "Aurora <app_id> v<engine_version>",
   "Keywords": "AURORA_METHODOLOGY_CERT_v1",
-  "/AuroraSignature": "<sha256_hex>",
+  "/AuroraSignatureSHA256": "<sha256_hex>",
   "/AuroraEngineVersion": "aurora-platform-core==0.1.0; aurora-launch==1.4.0",
   "/AuroraGeneratedAt": "2026-05-XX T HH:MM:SS UTC",
   "/AuroraSchemaVersion": "3.0",
   "/AuroraBundleHash": "<sha256_of_companion_aurora_bundle>"
 }
 ```
+
+**Future-proofing for Ed25519 (audit fix H2):** info dict использует suffixed key `/AuroraSignatureSHA256` (не plain `/AuroraSignature`) чтобы Phase D+ мог добавить `/AuroraSignatureEd25519` без breaking changes. Phase A SHA-256 = **integrity check** (data not tampered); Phase D+ Ed25519 = **proof of origin** (Aurora private key signed). Marketing copy в UI должен честно framing'овать: «Verification confirms data integrity» (Phase A), не «Aurora authenticated this report».
 
 **Companion `.aurora` file:** must be supplied вместе с PDF при verification (drag-drop both). Bundle's manifest.json contains:
 ```json
@@ -2022,11 +2123,24 @@ Per Aurora Launch ADR-002 + Sprint B4 deliverable spec (`02_Data_Spec/REPORT_SEC
     "engine_version": "aurora-platform-core==0.1.0; aurora-launch==1.4.0",
     "generated_at": "2026-05-XX T HH:MM:SS UTC"
   },
-  "signature": "<sha256_hex>"
+  "signature_sha256": "<sha256_hex>"
 }
 ```
 
-**Hash signature reproducibility invariant:** identical inputs (config + deterministic seeds) → identical hash. Verifier compares PDF embedded `/AuroraSignature` против recomputed hash от bundle contents + canonical JSON of bundle_metadata.
+**Hash signature scope (audit fix B4):** signature computes hash over **canonical bundle data + canonical bundle_metadata EXCLUDING time-varying fields**. Specifically excluded из hash scope:
+- `bundle_metadata.generated_at` — varies per generation, byte-different even with same inputs.
+- PDF info dict `/AuroraGeneratedAt` — same.
+- PDF `/CreationDate`, `/ModDate` — PDF library auto-sets timestamps.
+
+Included в hash scope: bundle data parquet bytes + bundle_metadata fields {target_app, target_task, engine_version, schema_version, data_provenance hashes}.
+
+**Reproducibility invariant (audit-revised B4):** two runs of same project at T1 ≠ T2 with identical inputs + deterministic seeds → produced bundles + PDFs have **identical signatures** (despite different generated_at timestamps). Это allows verifier to confirm «same project re-generated» as legitimate state, не tampered.
+
+**PDF signature embedding flow:**
+1. Generate PDF with placeholder `/AuroraSignatureSHA256` = "0000...".
+2. Compute canonical hash over bundle (exclude generated_at).
+3. Patch PDF info dict с computed hash via `lopdf` или similar low-level edit.
+4. Bundle ↔ PDF coupling: bundle's `signature_sha256` field IS the same hash, PDF's `/AuroraBundleHash` references it for cross-check.
 
 #### 7.1.B WebAssembly verifier client
 
@@ -2170,10 +2284,11 @@ Static HTML page (no SPA framework) с минималистичной UI per Aur
 - WHEN user navigates с keyboard.
 - THEN: drop zones reachable via Tab; pressing Enter opens file picker (fallback); verification result announced via screen reader (`aria-live="polite"`); WCAG AA contrast verified with auto-tools (axe-core или Lighthouse).
 
-**AC7.10 — Reproducibility test.**
-- GIVEN same Aurora project trained twice with identical inputs + deterministic seeds (NumPyro `random.PRNGKey(42)`).
+**AC7.10 — Reproducibility test.** (audit-revised B4)
+- GIVEN same Aurora project trained twice with identical inputs + deterministic seeds (NumPyro `random.PRNGKey(42)`) at T1 и T2.
 - WHEN both runs export Methodology Certificate + bundle.
-- THEN signatures of both PDFs match byte-by-byte (verifies hash signature reproducibility per Aurora Launch ADR-002).
+- THEN: PDF byte-level NOT identical (different `/AuroraGeneratedAt` + `/CreationDate`); BUT **`/AuroraSignatureSHA256` values match** (signature scope excludes timestamps per Section 7.1.A); bundle `signature_sha256` matches between runs; verifier displays «✓ Verified — same project re-generated at different times».
+- This validates **content reproducibility**, не bytewise file equality (which is impossible due to embedded timestamps).
 
 ### 7.3 Definition of Done
 
@@ -2229,7 +2344,7 @@ Static HTML page (no SPA framework) с минималистичной UI per Aur
 
 **Внешние:**
 - **Rust + wasm-pack** для WASM build.
-- **lopdf или pdfium-render Rust crate** для PDF info dict parsing.
+- **lopdf Rust crate** для PDF info dict parsing (audit fix M7: chosen over pdfium-render — lopdf 200-500 KB vs pdfium 5+ MB; Phase A scope = info dict only, no full PDF rendering, lopdf sufficient).
 - **zip Rust crate** для ZIP parsing.
 - **sha2 Rust crate** для SHA-256.
 - **Vercel** hosting (free tier для static — Phase A; Pro tier ~$20/mo если бandwidth growth).
@@ -2241,7 +2356,7 @@ Static HTML page (no SPA framework) с минималистичной UI per Aur
 
 ### 7.6 Open questions для Маши небесной
 
-1. **SHA-256 vs Ed25519 для signing:** Phase A default = SHA-256 deterministic hashing (no signing keys, no PKI). Это позволяет любой стороне reproduce signature если они имеют bundle data + canonical hashing function. Ed25519 signing предполагает Aurora's private key — verification confirms "Aurora signed this", не just "data is intact". Для фарма ICP regulatory trust — Ed25519 stronger guarantee (proof of origin), но complicates PKI / key rotation. Default Phase A: SHA-256, Ed25519 — Phase D consideration on customer demand.
+1. **SHA-256 vs Ed25519 для signing (audit-revised H2):** Phase A default = SHA-256 deterministic hashing — это **integrity check (data not tampered)**, не **proof of origin**. Любой может recompute SHA-256 от bundle data — signature не доказывает что Aurora generated it. Для фарма regulatory trust — Ed25519 signing с Aurora's private key даёт proof of origin (verifier confirms «Aurora signed this»). PHASE_A spec future-proof'ен: PDF info dict использует suffixed `/AuroraSignatureSHA256`, легко добавить `/AuroraSignatureEd25519` Phase D+ без breaking. Marketing copy в Phase A UI HONESTLY framing'ует «integrity verified» вместо «authenticity verified» — overpromise рискует backfire при дispute scenario.
 
 2. **Scope of `bundle_metadata` в hash:** какие поля из manifest.json включаются в canonical hash computation? Default proposal: `target_app`, `target_task`, `engine_version`, `generated_at`, `schema_version`, `data_provenance`. Изменение reasons / human comments — не входит (allows customer-side annotations без breaking signature).
 
