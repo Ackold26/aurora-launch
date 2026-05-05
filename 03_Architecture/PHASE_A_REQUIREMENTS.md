@@ -1,8 +1,12 @@
-# Phase A — Requirements (7 Components)
+# Phase A — Requirements (8 Components)
 
-**Status:** Draft v0.1 (2026-05-05) — Маша маленькая. Финальная версия в `aurora-meta/SPECS/PHASE-A.md` (доработка Маши небесной с sales/marketing/risks углами).
+**Status:** Draft v0.2 (2026-05-05 evening, post-Маша-небесная-Q&A). Финальная версия в `aurora-meta/SPECS/PHASE-A.md`. v0.2 changes (Антон's answers via Маша небесная INBOX_TO_MM 03:30 МСК):
+- C7 Web verifier: Ed25519 в Phase A scope (не SHA-256 path) + key management infrastructure (KMS / rotation / public key distribution). +1-2 недели в Phase A timeline. Marketing «authenticity verified» с дня 1.
+- **C8 NEW Reporting Studio** (8-й компонент Phase A) — minimal extraction Эконометрика's `aurora_html/`, `aurora_pptx/`, Rust XLSX writer, narrative_adapter в platform-core. Без расширения функционала. Полноценный Reporting Studio — Phase B+.
+- C5 Common Services: tier_id `trial_6mo` confirmed (B3 audit fix locked) + telemetry hosting Vercel + explicit disclaimer.
+- C2 Data Studio: Phi-3.5-mini Q4 GGUF first-run download (НЕ bundled installer) — installer lightweight (~190 MB как Эконометрика production), первый запуск 10-15 мин download.
 
-**Что это:** детальный спек 7 компонентов Aurora Phase A платформы — extracted core (Inference Core + Data Studio + Workflow Engine), shell-уровень (Tauri shell template + Common Services + Schema Registry / cross_app_license), и доверительный layer (Web verifier для Methodology Certificate).
+**Что это:** детальный спек 8 компонентов Aurora Phase A платформы — extracted core (Inference Core + Data Studio + Workflow Engine + Reporting Studio NEW), shell-уровень (Tauri shell template + Common Services + Schema Registry / cross_app_license), и доверительный layer (Web verifier для Methodology Certificate с Ed25519 authentication).
 
 **Источник истины:**
 - Aurora Эконометрика current production code (`D:/Docs/Aurora_Ai/Dev/Aurora_Econometrica/`) — extraction baseline для Inference Core, Reporting layer, Sidecar pattern.
@@ -29,7 +33,7 @@
 - ADR'ы для irreversible decisions добавлены в `aurora-knowledge/Decisions/`.
 - CHANGELOG entry с миграционными нотами для consumer apps (Эконометрика / Launch / Studio).
 
-**Component dependency graph:**
+**Component dependency graph (v0.2 — 8 components):**
 
 ```
                     ┌─────────────────────────────────┐
@@ -39,25 +43,38 @@
                        ▼                           ▼
    ┌───────────────────────────┐         ┌─────────────────────┐
    │  C1  Inference Core       │         │  C5  Common Services│
-   │  (Bayesian/OLS engines)   │         │  (Auth/License/Upd) │
-   └───┬──────────────┬────────┘         └────────┬────────────┘
-       │              │                            │
-       ▼              ▼                            ▼
-   ┌─────────┐   ┌──────────────┐         ┌───────────────────┐
-   │ C2 Data │   │ C3 Workflow  │         │ C4 Tauri shell    │
-   │ Studio  │   │ Engine       │         │ template          │
-   └────┬────┘   └──────┬───────┘         └─────────┬─────────┘
-        │               │                            │
-        └───────────────┴────────────┬───────────────┘
+   │  (Bayesian/OLS engines)   │         │  (Auth/License/     │
+   │                           │         │   Updates/Telemetry/│
+   │                           │         │   FeatureFlags +    │
+   │                           │         │   Ed25519 KMS)      │
+   └───┬──────────────┬────────┘         └────┬─────────┬──────┘
+       │              │                        │         │
+       ▼              ▼                        ▼         ▼
+   ┌─────────┐   ┌──────────────┐    ┌─────────────┐  ┌────────────────┐
+   │ C2 Data │   │ C3 Workflow  │    │ C8 Reporting│  │ C4 Tauri shell │
+   │ Studio  │   │ Engine       │    │ Studio      │  │ template       │
+   │ (Phi    │   │              │    │ (HTML/PPTX/ │  │                │
+   │  first- │   │              │    │  XLSX/PDF   │  │                │
+   │  run)   │   │              │    │  extraction)│  │                │
+   └────┬────┘   └──────┬───────┘    └──────┬──────┘  └─────────┬──────┘
+        │               │                    │                   │
+        └───────────────┴────────────┬───────┴───────────────────┘
                                      │
                                      ▼
                        ┌───────────────────────────────┐
                        │  C7 Web verifier              │
-                       │  (verify.auroraai.pro WASM)   │
+                       │  (verify.auroraai.pro WASM    │
+                       │   + Ed25519 sig verify)       │
                        └───────────────────────────────┘
 ```
 
-**Build order:** C6 (foundation) → C1 + C5 (parallel) → C2 + C3 + C4 (parallel after C1+C5) → C7 (last, needs C1 hash output spec).
+**Build order:**
+- **Layer 0 — Foundation:** C6 (Schema Registry + license tier scaffolding + Ed25519 KMS schema).
+- **Layer 1 — Core (parallel):** C1 (Inference) + C5 (Common Services + Ed25519 signing service Edge Function).
+- **Layer 2 — Apps (parallel after L1):** C2 (Data Studio) + C3 (Workflow Engine) + C8 (Reporting Studio extraction) + C4 (Tauri shell).
+- **Layer 3 — Trust:** C7 (Web verifier WASM with Ed25519 public key distribution). Needs C1 PDF generator hooks + C5 KMS infrastructure + C6 schema versioning.
+
+**Phase A revised timeline:** 8-10 недель (vs 7-8 first-version). +1-2 недели на Ed25519 key management (per ADR-005) + +1 неделю на C8 Reporting Studio extraction. Risk R1 timeline-realism (audit Session 1) escalated к High/High в `aurora-meta/RISKS-PHASE-A.md` (Маша небесная ADR-006).
 
 ---
 
@@ -226,7 +243,7 @@
 
 ### 1.6 Open questions для Маши небесной
 
-1. **Reporting Studio scope в Phase A:** в этом spec'е Reporting (`aurora_html`, `aurora_pptx`, Rust XLSX writer) явно вынесен из Inference Core. Где он живёт? Предложение: отдельный `aurora-platform-core` sub-package `aurora_reporting`, in-scope Phase A но как **Component 1.5** (sub-component, not separate Phase A item — потому что 7 Phase A items уже locked). Альтернатива: оставить в Aurora Эконометрика repo и не extract'ить (но это блокирует Aurora Launch B4 reuse template).
+1. ✅ **CLOSED 2026-05-05** — **Reporting Studio scope в Phase A** = новый **Component 8** (минимальная версия — extraction `aurora_html/`, `aurora_pptx/`, Rust XLSX writer, narrative_adapter в `aurora-platform-core/aurora_reporting/`, без расширения функционала). Полноценный Reporting (новые templates, кастомизация) — Phase B+. Per Антон's answer + Маша небесная ADR commit `f6ba509`. См. C8 spec ниже.
 2. **Awareness в Inference Core?** Awareness math (`s_curve`, Weibull adstock, dual-posterior) сейчас в `engines/awareness.py` Эконометрики. Это специфика Aurora Brand. Оставить в Inference Core (per Suite shared platform principle) или вынести в Aurora Brand-specific module? Default здесь: оставить в Inference Core, потому что Aurora Launch awareness ramp-up workflow тоже использует.
 3. **Channel categorization auto-suggestion (`auto_suggest_categories` server endpoint):** это inference layer или Data Studio? Сейчас в server.py FastAPI route. Default predложение: extract в `aurora_inference.trust3_hierarchical.suggest_categories(...)` (math layer), HTTP shell остаётся в C3.
 4. **JAX MSVC compiler dependency:** ship'аем pre-compiled JAX wheels внутри `aurora-platform-core` PyPI artifact (heavy ~200 MB) или оставляем `pip install jax[cpu]` user step? Default: included Windows wheels (per Aurora Эконометрика 189 MB installer pattern).
@@ -315,7 +332,16 @@ class AuroraArtifactReferenceAdapter(SourceAdapter):
 Per ADR-001 `tiered-hybrid-ai-parser`:
 
 - **Tier 1 — Heuristic + signature match.** `aurora_data_studio.source_adapters.<src>` runs first. Filename pattern + header pattern + cell signature (e.g., AdEx weights summing to 1.0) → high-confidence match (≥ 0.85). Fast (< 100 ms per file). Default for all 5 known sources.
-- **Tier 2 — Local LLM.** `aurora_data_studio.engines.llm_parser` — llama.cpp wrapper around Phi-3.5-mini Q4 GGUF (~2.5 GB installer overhead, 4-6 GB RAM при inference). Used когда Tier 1 confidence < threshold (e.g., custom client XLSX без known signature). Local-only (privacy-first для фарма/financial ICP). Output: `WorkbookInference` Pydantic model (см. Studio existing `engines/llm_parser/output_models.py`).
+- **Tier 2 — Local LLM.** `aurora_data_studio.engines.llm_parser` — llama.cpp wrapper around Phi-3.5-mini Q4 GGUF (~2.5 GB model, 4-6 GB RAM при inference). Used когда Tier 1 confidence < threshold (e.g., custom client XLSX без known signature). Local-only at inference time (privacy-first для фарма/financial ICP). Output: `WorkbookInference` Pydantic model (см. Studio existing `engines/llm_parser/output_models.py`).
+
+  **Phi distribution: first-run download (per Антон 2026-05-05).** Installer remains lightweight (~190 MB, parity с Эконометрика production size). При первом запуске Studio:
+  1. Welcome screen warns: «Studio загружает локальную модель Phi-3.5 для разбора неизвестных файлов (один раз, ~2.5 ГБ, 10-15 минут)».
+  2. Background download с CDN endpoint `https://cdn.auroraai.pro/models/phi-3.5-mini-q4_k_m.gguf` (или fallback к HuggingFace Hub `microsoft/Phi-3.5-mini-instruct`).
+  3. SHA-256 verification после download.
+  4. Stored в `%LOCALAPPDATA%\Aurora\models\phi-3.5-mini-q4_k_m.gguf`.
+  5. Studio становится usable; Tier 2 функционал available после download complete.
+
+  **UX impact:** первый запуск 10-15 мин (acceptable per Антон — «клиент один раз потерпит»). Subsequent launches — мгновенно (model cached). Если корпоративная сеть блокирует CDN — manual download path (provide model file, Studio detects + uses).
 - **Tier 3 — Cloud LLM (opt-in).** `aurora_data_studio.engines.cloud_parser` — Anthropic SDK wrapper, default OFF. Toggle в Settings + per-session confirm. **PII redaction = NER + whitelist (audit fix H1)**, не regex-only — см. 2.1.G privacy.
 
 **Tier escalation rules** (per ADR-001):
@@ -555,7 +581,7 @@ Per `aurora-knowledge/Architecture/phase-a-future-monetization-scaffold.md` (М�
 - [ ] **AC2.1–AC2.10 все pass.**
 - [ ] **Code merged в `aurora-data-studio` main** + tag `v0.1.0`. Aligned с `aurora-platform-core==0.1.0` (C1) deps.
 - [ ] **Source adapters: 4 production-ready** (DSM, Mediascope AdEx 3 variants, TV Index, DigitalBudget — Phase A spec). Custom XLSX — Tier 2 fallthrough only.
-- [ ] **Tier 2 LLM integration:** Phi-3.5-mini Q4 GGUF model packaged с installer (~2.5 GB overhead documented in INSTALL.md). llama.cpp wrapper functional на Windows. Cold start < 30 сек, warm inference < 5 сек на 1 sheet.
+- [ ] **Tier 2 LLM integration:** Phi-3.5-mini Q4 GGUF model **first-run downloaded** с CDN (~2.5 GB, 10-15 мин на типичной 10-50 Mbps connection) + SHA-256 verified. Installer lightweight ~190 MB (per Антон 2026-05-05 decision — НЕ bundled). llama.cpp wrapper functional на Windows. Cold start < 30 сек, warm inference < 5 сек на 1 sheet. CDN endpoint `cdn.auroraai.pro/models/` + HuggingFace fallback. Manual install path для closed-network corporate environments.
 - [ ] **Tier 3 cloud:** Anthropic Haiku integration с PII redaction layer + audit trail. Toggle UI в AdvancedSettingsStep.
 - [ ] **Task profiles:** 7 YAMLs (3 Optimize + 2 Launch + 2 Brand) ship'нуты в `04_Task_Profiles/`. Schema validation passes для всех.
 - [ ] **41 canonical fields registry** finalized + frozen (`engines/llm_parser/canonical_fields.py`). Doc'd в `02_Data_Spec/CANONICAL_FIELDS.md`.
@@ -572,7 +598,7 @@ Per `aurora-knowledge/Architecture/phase-a-future-monetization-scaffold.md` (М�
   - `aurora-knowledge/Decisions/aurora-data-studio-canonical-fields-registry.md` (frozen schema rationale).
   - Studio existing ADR-001 (tiered hybrid AI) + ADR-002 (standalone SKU bundle activation) + ADR-003 (floating license) — verified Accepted.
   - New ADR `aurora-data-studio-phase-a-etap-1-scope.md` documenting Маша небесная strategic correction 2026-05-05.
-- [ ] **NSIS installer** (Windows): Studio.exe + Phi-3.5-mini Q4 GGUF model bundled OR downloaded on first run (decision: bundled — simpler UX, larger installer ~2.7 GB total).
+- [ ] **NSIS installer** (Windows): Studio.exe **lightweight ~190 MB** (NO Phi model bundled — first-run download approach per Антон 2026-05-05). First launch UX: model download progress UI с «cancel and use Tier 1+3 only» fallback option.
 - [ ] **Privacy audit report:** independent review (manual or via Маша небесная) confirming AC2.10 invariant — no data leaves machine in default config.
 
 ### 2.4 Test Data Requirements
@@ -618,19 +644,19 @@ Per `aurora-knowledge/Architecture/phase-a-future-monetization-scaffold.md` (М�
 - **llama-cpp-python >= 0.2.50** — Phi-3.5-mini wrapper. Pinned.
 - **anthropic >= 0.30** — SDK для Tier 3.
 - **openpyxl >= 3.1, pyarrow >= 14.0, pandas >= 2.1** — XLSX/Parquet I/O.
-- **Phi-3.5-mini Q4 GGUF** — bundled с installer, source: HuggingFace `microsoft/Phi-3.5-mini-instruct` Q4_K_M quantization.
+- **Phi-3.5-mini Q4 GGUF** — **first-run download** (per Антон), source: HuggingFace `microsoft/Phi-3.5-mini-instruct` Q4_K_M quantization mirrored на `cdn.auroraai.pro/models/`. SHA-256 manifest published на `cdn.auroraai.pro/models/MANIFEST.json`.
 - **Pydantic v2** — output models + adapter contract.
 
 **Координационные:**
 - **Маша небесная ADRs:** 4 strategic ADRs про Studio + 1 architecture file (phase-a-future-monetization-scaffold) — pending 2026-05-11 deadline.
-- **Антон approval:** financial trade-off "bundled installer +2.5 GB" vs "first-run download" (default proposal: bundled, simpler UX). Также: tier 3 cloud LLM cost projections (capped vs unlimited на Этапе 1).
+- **Антон approval:** ✅ closed 2026-05-05 — Phi-3.5 first-run download decision (НЕ bundled). CDN hosting на Vercel infrastructure. Tier 3 cloud LLM cost projections — separate operational item (TBD per usage telemetry).
 - **Coordination doc:** `COORDINATION_WITH_DATA_STUDIO.md` (committed `b523758`, draft v0.1) — adapter ownership, versioning, telemetry events. Final в `aurora-meta/COORDINATION-LAUNCH-STUDIO.md`.
 
 ### 2.6 Open questions для Маши небесной
 
 1. **DigitalBudget адаптер spec — где брать тестовые файлы?** Q3 partial: 2 of 4 sources закрыты (AdEx + TV Index), DigitalBudget + 3-5 custom XLSX pending. Нужен запрос Антону на предоставление samples (1-2 DigitalBudget exports + 3-5 client XLSX). Без этих fixtures Phase A AC2.6 + adapter ship невозможны.
 
-2. **Phi-3.5-mini bundling: installer +2.5 GB vs first-run download?** Default proposal: bundled (simpler UX, no internet at first run, фарма enterprise IT-policy friendly). Альтернатива: download via background после install (smaller installer, but breaks fully-offline use case). Decision impact: NSIS installer size (Aurora Эконометрика precedent ~189 MB; with Phi → ~2.7 GB total — large but still feasible).
+2. ✅ **CLOSED 2026-05-05 — first-run download** (per Антон). Installer lightweight ~190 MB; первый запуск 10-15 мин для Phi download. Closed-network corporate environments — manual install path (provide model file).
 
 3. **Tier 3 cloud unlimited cap на Этапе 1?** Если Этап 1 = full access всем покупателям Suite, tier 3 cloud = potentially unlimited Anthropic API spend. Нужен soft cap (e.g., 1M tokens / customer / month) с graceful degradation? Или hard cap с paywall? Default proposal: soft cap 500K tokens/customer/month с warning UI на 80% utilization.
 
@@ -1494,12 +1520,18 @@ class TelemetryEvent(BaseModel):
 **Storage / transport:**
 - Local: append-only `~/.aurora/telemetry/events.jsonl`, rotated daily, 90-day retention.
 - Server (если opt-in): batch upload к `https://telemetry.auroraai.pro/events` каждые 60 минут или при flush().
+- **Hosting (per Антон 2026-05-05): Vercel** (US-based, тот же провайдер что auroraai.pro main + CDN). Trade-off: дешевле + проще infrastructure vs Yandex.Cloud, но юрисдикционно США.
+- **Disclaimer (обязательный, Phase A scope):** на Settings → Telemetry toggle UI **explicit text**:
+  > «Telemetry содержит только обезличенные usage events: имя функции, время, версия Aurora. Никаких клиентских данных, никаких brand names, никаких model parameters, никаких файлов. Сервер расположен в США (Vercel). Опции: оставить выключенным (default) или включить с phenom прозрачным opt-in.»
+- Также disclaimer повторяется в положении об использовании Studio Этап 1 (Маша небесная's юр.черновик).
 - Anonymized user_id_anon (UUID per install, не tied к Supabase user_id).
-- No PII, no data content. Feature usage signals only.
+- No PII, no data content, no brand names, no file content. Feature usage signals only.
 
-**Default state:** OFF (фарма ICP privacy concern). User opts-in через Settings → Telemetry → "Help us improve Aurora".
+**Re-visit trigger (per ADR-006):** если первый фарма / финансовый клиент откажется от telemetry из-за US-юрисдикции → миграция на Yandex.Cloud (Phase C, ~1 неделя работы). Decision documented в `aurora-meta/RISKS-PHASE-A.md` R12.
 
-**Storage retention:** server side aggregated indefinite (для Этап 2 analysis). Individual events retain 90 дней.
+**Default state:** OFF (фарма ICP privacy concern + жёсткое требование explicit consent). User opts-in через Settings → Telemetry → "Help us improve Aurora".
+
+**Storage retention:** server side aggregated indefinite (для Этап 2 analysis). Individual events retain 90 дней. Right-to-be-forgotten: user может request data deletion через support email — purges все events с his user_id_anon.
 
 #### 5.1.E Feature flags
 
@@ -1676,7 +1708,7 @@ DEFAULT_FLAGS = {
 
 ### 5.6 Open questions для Маши небесной
 
-1. **Telemetry server hosting:** Vercel (consistent с auroraai.pro static) или Yandex.Cloud (data-localization для РФ)? Default proposal: Yandex.Cloud для compliance + Russian data residency. Cost trade-off: ~3000₽/мес минимум.
+1. ✅ **CLOSED 2026-05-05 — Vercel** (per Антон). Mitigation: explicit disclaimer (см. 5.1.D) + re-visit trigger (фарма / финансовый клиент refuse → migrate Yandex.Cloud Phase C, ~1 неделя). Documented в Маша небесная RISKS-PHASE-A R12 + ADR-006.
 
 2. **License key storage architecture:** Supabase server-side primary + cached client-side. Какой fallback при offline (нет интернета at startup)? Default: cached license valid 7 days offline, then "Please connect к internet" UI.
 
@@ -2123,7 +2155,7 @@ def hash_canonical(data: dict) -> str:
 
 1. **Migration rollback strategy:** если v2.0→v3.0 migration fails mid-way (e.g., disk full at file write), rollback к v2.0 или surface error? Default: rollback (atomic write paradigm). Phase A scope: file-level atomicity (temp file + rename), не in-process transactional rollback.
 
-2. **License schema migration script для Эконометрика clients:** demo customers получают free 6mo Suite trial per memory `project_econometrica_target_architecture_v3.md`. Это applied как INSERT INTO app_licenses со специальным tier="trial_6mo"? Или extend "free" tier valid_until 6 месяцев? Default: new tier `trial_6mo` для clarity в analytics.
+2. ✅ **CLOSED 2026-05-05** — **`trial_6mo` tier** (новый seed) для всех Suite-клиентов на Этапе 1 per Антон + ADR-006 Маши небесной. valid_until = +6 months. После 6mo — pre-renewal sales conversation; expired trial → graceful read-only mode. Включая existing Эконометрика v1.0.16 demo customers. `free` tier зарезервирован для будущих open-tier scenarios (TBD).
 
 3. **schema_version в pickle vs `.aurora` bundle manifest.json:** pickle файл содержит schema_version в pickled dict; .aurora ZIP manifest.json также. Если они расходятся (corruption / manual editing), какой priority? Default: manifest.json wins (canonical для bundle), pickle field warning logged.
 
@@ -2133,9 +2165,11 @@ def hash_canonical(data: dict) -> str:
 
 ---
 
-## Component 7: Web verifier (Methodology Certificate)
+## Component 7: Web verifier (Methodology Certificate, Ed25519 в Phase A)
 
-**Goal:** Public web tool `verify.auroraai.pro` — статический WebAssembly client, который позволяет любой стороне (регулятор / customer's CFO / customer's юрист / external audit) verify integrity Aurora's Methodology Certificate PDF + связанного `.aurora` файла **без отправки данных на сервер**. Это критичный trust-builder для фарма ICP — данные не покидают браузер пользователя, гарантировано через open-source WASM client.
+**v0.2 (2026-05-05 evening) — Антон's decision via Маша небесная INBOX_TO_MM 03:30 МСК + ADR-005 commit `f6ba509` в aurora-meta:** Ed25519 digital signature **в Phase A scope**, не SHA-256-only path. Marketing «**authenticity verified**» с дня 1. +1-2 недели Phase A timeline. Регуляторный нарратив для фарма / healthcare / крупного enterprise — критичен для первой коммерческой продажи Suite на регулируемом рынке.
+
+**Goal:** Public web tool `verify.auroraai.pro` — статический WebAssembly client, который позволяет любой стороне (регулятор / CFO клиента / юрист клиента / external audit) verify **authenticity** Aurora's Methodology Certificate PDF — что документ выпущен Aurora и не был изменён, **без отправки данных на сервер** (client-side cryptography only). Trust-builder для фарма ICP + крупного enterprise sales (X5, Магнит) — снимает крупный sales objection (regulatory readiness).
 
 ### 7.1 Scope
 
@@ -2149,78 +2183,171 @@ Per Aurora Launch ADR-002 + Sprint B4 deliverable spec (`02_Data_Spec/REPORT_SEC
 - **Page 1 (Starter / Pro tiers):** Aurora seal header + project metadata + headline forecast + tier badge (Gold/Silver/Bronze) + signature panel (visible hash) + version stamps + методология footer.
 - **Page 2 (Pro+ tier only):** detailed math (priors used, sampler diagnostics, Gelman-Rubin, ESS, divergent transitions count, posterior predictive p-value) + audit trail summary.
 
-**Embedded metadata (PDF info dictionary):**
+**Embedded metadata (PDF info dictionary, Ed25519 primary):**
 ```json
 {
   "Title": "Aurora Methodology Certificate",
   "Subject": "<project_name>",
   "Producer": "Aurora <app_id> v<engine_version>",
   "Keywords": "AURORA_METHODOLOGY_CERT_v1",
-  "/AuroraSignatureSHA256": "<sha256_hex>",
+  "/AuroraSignatureEd25519": "<hex_signature_64_bytes>",
+  "/AuroraPublicKeyId": "aurora-master-2026-rotation-1",
   "/AuroraEngineVersion": "aurora-platform-core==0.1.0; aurora-launch==1.4.0",
   "/AuroraGeneratedAt": "2026-05-XX T HH:MM:SS UTC",
   "/AuroraSchemaVersion": "3.0",
-  "/AuroraBundleHash": "<sha256_of_companion_aurora_bundle>"
+  "/AuroraBundleHash": "<sha256_of_companion_aurora_bundle_canonical>"
 }
 ```
 
-**Future-proofing for Ed25519 (audit fix H2):** info dict использует suffixed key `/AuroraSignatureSHA256` (не plain `/AuroraSignature`) чтобы Phase D+ мог добавить `/AuroraSignatureEd25519` без breaking changes. Phase A SHA-256 = **integrity check** (data not tampered); Phase D+ Ed25519 = **proof of origin** (Aurora private key signed). Marketing copy в UI должен честно framing'овать: «Verification confirms data integrity» (Phase A), не «Aurora authenticated this report».
+**Поля:**
+- `/AuroraSignatureEd25519` — Ed25519 signature (64 байта hex) над canonical message (см. Section signature scope ниже). Подписывается Aurora master Ed25519 private key.
+- `/AuroraPublicKeyId` — идентификатор public key для verification (резерв для key rotation: при rotation Phase D+ старые подписи остаются verifiable через archive of past public keys).
+- `/AuroraBundleHash` — SHA-256 hash of canonical bundle data (для cross-check between PDF и companion `.aurora`).
 
-**Companion `.aurora` file:** must be supplied вместе с PDF при verification (drag-drop both). Bundle's manifest.json contains:
+**Companion `.aurora` file (optional при verification):** PDF self-contained verifiable через Ed25519 signature; bundle drag-drop optional для cross-check `bundle_hash` field. Per ADR-005 Phase A: «Input: PDF Methodology Certificate (drag-drop в браузере)». Bundle drag-drop как **secondary verification layer** не блокирует primary check.
+
+Bundle's manifest.json contains:
 ```json
 {
   "schema_version": "3.0",
+  "bundle_layout_id": "launch_v3.0",
   "bundle_metadata": {
     "target_app": "aurora_launch",
     "target_task": "new_brand_forecast",
     "engine_version": "aurora-platform-core==0.1.0; aurora-launch==1.4.0",
     "generated_at": "2026-05-XX T HH:MM:SS UTC"
   },
-  "signature_sha256": "<sha256_hex>"
+  "signature_sha256": "<sha256_canonical_hex>"
 }
 ```
 
-**Hash signature scope (audit fix B4):** signature computes hash over **canonical bundle data + canonical bundle_metadata EXCLUDING time-varying fields**. Specifically excluded из hash scope:
-- `bundle_metadata.generated_at` — varies per generation, byte-different even with same inputs.
-- PDF info dict `/AuroraGeneratedAt` — same.
+**Signature scope (audit fix B4 preserved per ADR-005):** Ed25519 signature computes over **canonical message** = `SHA-256(canonical_bundle_data || canonical_bundle_metadata_excluding_timestamps || engine_version_string || schema_version_string)`. Specifically excluded из signature scope:
+- `bundle_metadata.generated_at` — varies per generation.
+- PDF info dict `/AuroraGeneratedAt` — varies.
 - PDF `/CreationDate`, `/ModDate` — PDF library auto-sets timestamps.
 
-Included в hash scope: bundle data parquet bytes + bundle_metadata fields {target_app, target_task, engine_version, schema_version, data_provenance hashes}.
+Included в signature scope: bundle data parquet bytes + bundle_metadata fields {target_app, target_task, engine_version, schema_version, data_provenance hashes} + tier badge metadata.
 
-**Reproducibility invariant (audit-revised B4):** two runs of same project at T1 ≠ T2 with identical inputs + deterministic seeds → produced bundles + PDFs have **identical signatures** (despite different generated_at timestamps). Это allows verifier to confirm «same project re-generated» as legitimate state, не tampered.
+**Reproducibility invariant:** two runs of same project at T1 ≠ T2 с identical inputs + deterministic seeds → produced PDFs have **identical Ed25519 signatures** (despite different generated_at timestamps). Verifier confirms «same project re-generated» as legitimate, не tampered.
 
 **PDF signature embedding flow:**
-1. Generate PDF with placeholder `/AuroraSignatureSHA256` = "0000...".
-2. Compute canonical hash over bundle (exclude generated_at).
-3. Patch PDF info dict с computed hash via `lopdf` или similar low-level edit.
-4. Bundle ↔ PDF coupling: bundle's `signature_sha256` field IS the same hash, PDF's `/AuroraBundleHash` references it for cross-check.
+1. Sidecar generates PDF с placeholder `/AuroraSignatureEd25519` = "0000..." (64 zeros).
+2. Sidecar computes canonical message hash (exclude timestamps per scope above).
+3. Sidecar calls signing service (см. Section 7.1.B) → receives Ed25519 signature back.
+4. Sidecar patches PDF info dict с received signature via `lopdf` low-level edit.
+5. Bundle's `signature_sha256` = SHA-256 of canonical bundle data (for cross-check); PDF's `/AuroraBundleHash` mirrors it.
 
-#### 7.1.B WebAssembly verifier client
+#### 7.1.B Aurora signing service infrastructure (NEW Phase A scope per Антон 2026-05-05)
 
-**Stack:** Rust + `wasm-pack` → static JS bundle deployed на `verify.auroraai.pro`.
+Ed25519 asymmetric signing требует **central signing service** — приватный ключ хранится централизованно (НЕ на customer's machine, иначе компрометация одной installation = компрометация всех).
 
-**Bundle target size:** ≤ 500 KB gzipped (per Aurora Launch REUSE WASM bundle ≤ 200 KB target — но verifier needs ZIP + PDF parsers + SHA-256). Actual estimate: 350-450 KB gzipped.
+**Architecture:**
+
+```
+Customer machine (Aurora app sidecar)
+   │
+   │  1. Generates PDF с placeholder signature
+   │  2. Computes canonical message hash
+   │  3. POST /v1/sign  { canonical_hash, engine_version, license_token }
+   │     ↓ HTTPS
+   ┌────────────────────────────────────────┐
+   │  Aurora Signing Service                 │
+   │  (Vercel Edge Function — отдельный      │
+   │   endpoint от telemetry)                │
+   │                                          │
+   │  - Validates license token              │
+   │  - Reads private key from KMS           │
+   │  - Signs canonical_hash                 │
+   │  - Returns 64-byte Ed25519 signature    │
+   └─────────────┬──────────────────────────┘
+                 │
+                 ▼ HTTPS response
+   Customer machine
+   - Embeds signature в PDF info dict
+   - Bundle ready
+```
+
+**Why central service (vs distribute private key к installations):**
+- **Security:** одна installation compromise не разрушает все signatures.
+- **Key rotation simpler:** rotation в KMS → следующий sign uses new key, без re-distributing.
+- **Audit log:** server-side log «who signed what» (anonymized — license_id + canonical_hash, без bundle content).
+- **Trade-off:** требует always-online для PDF generation. Mitigation: **async sign queue** — если sidecar offline, PDF generates с placeholder signature + flagged `signature_pending`; на следующем online sync — request signature + patch PDF.
+
+**KMS infrastructure (per ADR-005):**
+- **Provider:** Yandex.Cloud KMS OR AWS KMS (TBD по существующей инфраструктуре Aurora Business). Decision deferred к Phase A start (Антон + Маша небесная).
+- **Master key pair:** Aurora master Ed25519 (single key Phase A; per-customer keys — Phase D+ consideration).
+- **Storage:** private key encrypted at rest в KMS. Sign operation выполняется через KMS API (private key никогда не покидает KMS).
+- **Public key distribution:**
+  - Embedded в WASM verifier bundle (compile-time): `pub const AURORA_PUBLIC_KEY_2026: &[u8; 32] = include_bytes!(...)`.
+  - Также available на `https://verify.auroraai.pro/aurora-public-key.pem` (PEM-encoded для standard tools openssl / gpg).
+  - Archive of past public keys: `https://verify.auroraai.pro/keys/archive/aurora-public-key-{year}.pem` для verification старых signatures после rotation.
+- **Rotation policy:** master key ротируется раз в 2 года. Old public keys остаются доступны (verifier checks all archived keys если current key fails).
+- **Compromise procedure:** runbook в `aurora-meta/SECURITY/key-compromise-runbook.md` (Маша небесная создаёт отдельной сессией). Revocation list при compromise.
+
+**Edge Function `POST /v1/sign` API spec:**
+```typescript
+// Request
+{
+  canonical_hash: string;        // hex SHA-256 (64 chars)
+  engine_version: string;        // e.g., "aurora-platform-core==0.1.0; aurora-launch==1.4.0"
+  license_token: string;         // JWT signed by Supabase
+  app_id: string;                // "aurora_launch" | "aurora_optimize" | ...
+}
+
+// Response 200 OK
+{
+  signature: string;             // hex Ed25519 (128 chars)
+  public_key_id: string;         // "aurora-master-2026-rotation-1"
+  signed_at: string;             // ISO 8601 UTC
+}
+
+// Response 401 (license invalid)
+{ error: "license_invalid", retry: false }
+
+// Response 429 (rate limit)
+{ error: "rate_limit", retry_after_seconds: 60 }
+```
+
+**Rate limiting:** 1000 sign operations / license / day default; configurable per tier (enterprise unlimited).
+
+**Privacy in signing:** server logs `(license_id_hashed, canonical_hash, timestamp)` — **NOT bundle content, NOT engine input, NOT model parameters**. canonical_hash itself — opaque SHA-256, не reveals data.
+
+#### 7.1.C WebAssembly verifier client
+
+**Stack:** Rust + `wasm-pack` → static JS bundle deployed на `verify.auroraai.pro`. Crypto: **`ed25519-dalek` crate** (audited Rust Ed25519 implementation, ~50 KB gzipped).
+
+**Bundle target size:** ≤ 500 KB gzipped (per ADR-005). Actual estimate с ed25519-dalek + lopdf + zip + sha2: 400-450 KB gzipped.
 
 **Functionality:**
 
 ```
 User opens verify.auroraai.pro
   ↓
-Drag-drop PDF + .aurora ZIP (both required)
+Drag-drop PDF (required) + .aurora bundle (optional, для cross-check)
   ↓
 WASM client:
-  1. Parses PDF info dictionary → extracts /AuroraSignature, /AuroraEngineVersion, /AuroraGeneratedAt, /AuroraBundleHash
-  2. Reads .aurora ZIP → extracts manifest.json
-  3. Verifies bundle's "signature" field == recomputed SHA-256 of canonical manifest.json bytes
-  4. Verifies PDF /AuroraBundleHash == bundle's signature
-  5. Displays результат:
-     ✓ Verified — signatures match. Engine version: <ver>. Generated: <ts>.
-     ✗ Mismatch — explanation of which check failed.
+  1. Parses PDF info dictionary → extracts:
+     /AuroraSignatureEd25519, /AuroraPublicKeyId, /AuroraEngineVersion,
+     /AuroraGeneratedAt, /AuroraBundleHash
+  2. Looks up Aurora public key by /AuroraPublicKeyId:
+     - First check: embedded current key.
+     - Fallback: fetch `https://verify.auroraai.pro/keys/archive/<key_id>.pem`.
+     - Если key_id unknown → "Untrusted issuer" error.
+  3. Reconstructs canonical message:
+     SHA-256(bundle_hash || engine_version || schema_version)  [excluding timestamps]
+  4. Verifies Ed25519: ed25519_dalek::verify(public_key, message, signature)
+  5. Optional bundle cross-check (если drag-dropped):
+     - Reads .aurora ZIP → extracts manifest.json
+     - Recomputes SHA-256 of bundle data → compares к /AuroraBundleHash
+  6. Displays результат:
+     ✓ Authenticity verified — этот документ выпущен Aurora и не был изменён.
+       Engine: <engine_version>. Generated: <ts>. Public key: <key_id>.
+     ✗ Signature invalid — конкретное расхождение (signature mismatch / unknown issuer / hash mismatch).
 ```
 
-**Deliberately NO network calls** during verification (verified via CSP headers + open-source code review).
+**Deliberately NO network calls** during verification *EXCEPT* for fallback fetch of archived public key (если PDF references rotated key). Это explicit + visible через DevTools (one HTTPS GET к `verify.auroraai.pro/keys/archive/...`). User data НЕ uploads — только static key fetch.
 
-#### 7.1.C UI Layout
+#### 7.1.D UI Layout
 
 Static HTML page (no SPA framework) с минималистичной UI per Aurora Hybrid Design System:
 
@@ -2242,10 +2369,11 @@ Static HTML page (no SPA framework) с минималистичной UI per Aur
 │   ─────────────────────────────────────────────────────────       │
 │                                                                    │
 │   Result:                                                          │
-│   ✓  Verified — signatures match.                                 │
+│   ✓  Authenticity verified — этот документ выпущен Aurora.        │
 │       Engine: aurora-platform-core==0.1.0; aurora-launch==1.4.0   │
 │       Generated: 2026-05-15 14:23 UTC                             │
 │       Project hash: a1b2c3...d4e5f6                               │
+│       Signed with: aurora-master-2026-rotation-1 (Ed25519)        │
 │                                                                    │
 │   [Privacy Notice] All processing in your browser. No upload.      │
 │                                                                    │
@@ -2258,129 +2386,170 @@ Static HTML page (no SPA framework) с минималистичной UI per Aur
 
 **Privacy banner:** prominent "All processing in your browser. No data leaves your device. Open-source: <link>." с clickable link to GitHub repo of WASM verifier.
 
-#### 7.1.D Hosting / deployment
+#### 7.1.E Hosting / deployment
 
-**Hosting:** Vercel (consistent с auroraai.pro static site).
+**Hosting:** Vercel (consistent с auroraai.pro static site + signing service Edge Function).
 
 **DNS:** `verify.auroraai.pro` CNAME к Vercel; existing auroraai.pro DNS provider unchanged.
 
 **Build:** GitHub Actions:
 - Trigger: push to `main` of `aurora-verifier-wasm` repo (new repo).
 - Steps: cargo build wasm32 + wasm-pack pack + bundle JS + deploy Vercel.
-- Output: static directory с `index.html`, `verifier.wasm`, `verifier.js`, locale strings.
+- Output: static directory с `index.html`, `verifier.wasm`, `verifier.js`, `aurora-public-key.pem`, locale strings.
 
-**Open source:** entire WASM verifier repo public on GitHub (`Ackold26/aurora-verifier`), MIT license. Audit-friendly — anyone can build from source + verify deployed bundle = source.
+**Open source:** entire WASM verifier repo public on GitHub (`Ackold26/aurora-verifier`), MIT license. Audit-friendly — anyone can build from source + verify deployed bundle = source. **Important:** marketing copy + verifier branding emphasize «officially hosted at verify.auroraai.pro» (audit fix R7 — preventing fork-and-host attacks). Forks с modified verification logic не accepted by ed25519 signature (need real Aurora private key access).
 
-#### 7.1.E Phase A scaffolding ↔ Phase B integration
+#### 7.1.F Phase A scaffolding ↔ Phase B integration
 
-**Phase A deliverable:**
-- Static `verify.auroraai.pro` site live.
-- WASM verifier handles PDF + `.aurora` v3.0 schema.
-- Methodology Certificate PDF generation hook в `aurora_inference.persistence` (signature embedding).
+**Phase A deliverable (per Антон 2026-05-05):**
+- Static `verify.auroraai.pro` site live с Ed25519 verification.
+- WASM verifier с embedded Aurora public key + ed25519-dalek.
+- Aurora signing service Edge Function deployed на Vercel.
+- KMS infrastructure setup (Yandex.Cloud OR AWS — TBD).
+- Methodology Certificate PDF generation hook в `aurora_inference.persistence` или `aurora_reporting` (signing service call + signature embedding).
+- Marketing one-pager про verifier (Маша небесная, отдельная сессия per ADR-005 references).
 
-**Phase B (Aurora Launch B4):** Methodology Certificate PDF generation per launch forecast (WeasyPrint per Aurora Launch S006 PDF generator decision). Phase A WASM verifier already supports this format.
+**Phase B (Aurora Launch B4):** Methodology Certificate PDF generation per launch forecast (WeasyPrint per Aurora Launch S006 PDF generator decision). Phase A WASM verifier already supports format. Phase B adds Aurora Launch–specific narrative templates.
 
 **Не входит:**
-- ❌ Server-side verification API (`POST /verify` endpoint) — explicitly NOT для privacy invariant.
+- ❌ Server-side verification API (`POST /verify` endpoint) — explicitly NOT для privacy invariant. Sign endpoint OK (требует customer's bundle hash, не bundle content).
 - ❌ Verification audit log (server-side history of verifications) — NOT для privacy.
-- ❌ PDF generation в WASM — Phase A scope = verifier only, generation = Inference Core / Aurora Launch B4.
-- ❌ Signature signing с асимметричной криптографией (Ed25519) — Phase A = symmetric SHA-256 hashing (deterministic reproducibility focus). Asymmetric signing — Phase D consideration if customer demand (e.g., customer wants Aurora's private key to sign, customer verifies с public key). 
+- ❌ PDF generation в WASM — Phase A scope = verifier only, generation = Inference Core / Reporting Studio / Aurora Launch B4.
 - ❌ Web verifier для других файлов (audit logs, other formats) — out-of-scope.
-- ❌ Multi-tab / batch verification — single PDF + single bundle at a time.
+- ❌ Multi-tab / batch verification — single PDF (с optional bundle) at a time.
+- ❌ Per-customer Ed25519 keys — Phase D+ consideration (ADR-005 alternatives section).
+- ❌ Hardware Security Module (HSM) для master key — Phase A uses cloud KMS (Yandex.Cloud / AWS). HSM — Phase D+ if regulatory pressure.
 
-### 7.2 Acceptance Criteria
+### 7.2 Acceptance Criteria (Ed25519 primary)
 
-**AC7.1 — Static site deployed + DNS resolves.**
+**AC7.1 — Static site deployed + DNS + Ed25519 setup.**
 - GIVEN production deployment.
 - WHEN user opens https://verify.auroraai.pro в browser.
-- THEN page loads within 2 sec; HTML render within 500 ms; WASM module fetched + initialized within 3 sec; UI fully interactive.
+- THEN page loads within 2 sec; HTML render within 500 ms; WASM module fetched + initialized within 3 sec on 5 Mbps connection (≤1 sec on 50 Mbps); embedded Aurora public key loaded; UI fully interactive.
 
-**AC7.2 — Drag-drop happy path.**
-- GIVEN valid Methodology Certificate PDF + companion `.aurora` bundle.
-- WHEN user drags PDF к first dropzone + bundle к second + clicks Verify.
-- THEN within 5 sec на reference machine: result displays "✓ Verified" + engine version + generated timestamp + project hash; no network calls observed (verified via DevTools Network tab).
+**AC7.2 — Authenticity verified (happy path).**
+- GIVEN valid Methodology Certificate PDF (signed Aurora master Ed25519 key, current rotation).
+- WHEN user drags PDF к dropzone + clicks Verify.
+- THEN within 3 sec: result displays «✓ Authenticity verified — этот документ выпущен Aurora» + engine version + generated timestamp + project hash + signed_with key_id; no upload of PDF detected (verified via DevTools Network tab).
 
-**AC7.3 — Detect tampered PDF (signature mismatch).**
-- GIVEN PDF где байт изменён (e.g., narrative text edited).
-- WHEN verified против untampered bundle.
-- THEN result "✗ Signature mismatch" + specific reason "PDF /AuroraSignature does not match recomputed hash".
-
-**AC7.4 — Detect tampered bundle (manifest mismatch).**
-- GIVEN bundle where manifest.json edited (e.g., adversary меняет engine_version).
-- WHEN verified против untampered PDF.
-- THEN result "✗ Bundle integrity failure" + reason "Recomputed bundle hash does not match manifest's signature field".
-
-**AC7.5 — Detect mismatched PDF + bundle pair.**
-- GIVEN PDF от project A + bundle от project B (different projects).
+**AC7.3 — Detect tampered PDF (Ed25519 signature invalid).**
+- GIVEN PDF где байт изменён (e.g., narrative text edited после signing).
 - WHEN verified.
-- THEN result "✗ Pair mismatch" + reason "PDF /AuroraBundleHash does not match supplied bundle's hash".
+- THEN result «✗ Signature invalid» + specific reason «Ed25519 verification failed — PDF был изменён после подписания Aurora».
 
-**AC7.6 — Privacy invariant (no network calls).**
-- GIVEN any verification flow (success или mismatch).
-- WHEN DevTools Network tab open during entire process.
-- THEN: only initial static asset fetches (HTML + WASM + CSS + i18n strings); zero requests during verification; CSP header `connect-src 'self'` set + verified.
+**AC7.4 — Detect tampered bundle hash (если bundle drag-dropped).**
+- GIVEN PDF unchanged (Ed25519 valid) + bundle где manifest.json edited (engine_version или data hash changed).
+- WHEN verified PDF + tampered bundle.
+- THEN result «✓ PDF authenticated» AND «✗ Bundle integrity warning — Recomputed bundle hash не matches PDF /AuroraBundleHash. Возможно bundle был изменён после генерации.»
 
-**AC7.7 — Error messages constructive (no false-positives).**
-- GIVEN incompatible PDF (e.g., regular non-Aurora PDF).
+**AC7.5 — Unknown public key (forged signature attempt).**
+- GIVEN PDF подписан unknown Ed25519 key (NOT Aurora's master key).
+- WHEN verified.
+- THEN result «✗ Untrusted issuer — `/AuroraPublicKeyId` не matches any known Aurora public key. Этот документ НЕ был выпущен Aurora.»
+
+**AC7.6 — Privacy invariant (no PDF/bundle upload).**
+- GIVEN any verification flow.
+- WHEN DevTools Network tab open during process.
+- THEN:
+  - Static asset fetches: HTML + WASM + CSS + i18n strings + embedded public key — at page load.
+  - Optional fetch: archived public key `verify.auroraai.pro/keys/archive/<key_id>.pem` если PDF references rotated key (visible + explicit).
+  - **Zero uploads of PDF or bundle content.** CSP `connect-src 'self'` strict (only same-origin fetches).
+
+**AC7.7 — Constructive error для non-Aurora PDF.**
+- GIVEN regular non-Aurora PDF (invoice, random doc).
 - WHEN dropped + Verify clicked.
-- THEN result "Not an Aurora Methodology Certificate" (detection by absence of `/AuroraSignature` PDF metadata key); does NOT say "verification failed" (would be misleading).
+- THEN result «Not an Aurora Methodology Certificate» (detection by absence of `/AuroraSignatureEd25519` info dict key); does NOT say «verification failed».
 
-**AC7.8 — i18n RU + EN.**
-- GIVEN browser language preference RU.
+**AC7.8 — i18n RU primary + EN secondary.**
+- GIVEN browser language preference (navigator.language).
 - WHEN page first opens.
-- THEN UI strings в RU; toggle "EN" в header.
-- WHEN toggle clicked.
-- THEN strings switch live к EN; preference saved в localStorage.
+- THEN UI strings auto-detected: RU primary fallback (фарма ICP); EN если navigator.language starts with 'en-'.
+- WHEN user toggles в header.
+- THEN strings switch live; preference saved в localStorage.
 
 **AC7.9 — a11y compliance.**
 - GIVEN keyboard-only navigation (Tab, Enter).
-- WHEN user navigates с keyboard.
-- THEN: drop zones reachable via Tab; pressing Enter opens file picker (fallback); verification result announced via screen reader (`aria-live="polite"`); WCAG AA contrast verified with auto-tools (axe-core или Lighthouse).
+- WHEN user navigates.
+- THEN: drop zones reachable via Tab; Enter opens file picker; verification result announced via screen reader (`aria-live="polite"`); WCAG AA contrast verified (axe-core or Lighthouse passes).
 
-**AC7.10 — Reproducibility test.** (audit-revised B4)
-- GIVEN same Aurora project trained twice with identical inputs + deterministic seeds (NumPyro `random.PRNGKey(42)`) at T1 и T2.
-- WHEN both runs export Methodology Certificate + bundle.
-- THEN: PDF byte-level NOT identical (different `/AuroraGeneratedAt` + `/CreationDate`); BUT **`/AuroraSignatureSHA256` values match** (signature scope excludes timestamps per Section 7.1.A); bundle `signature_sha256` matches between runs; verifier displays «✓ Verified — same project re-generated at different times».
-- This validates **content reproducibility**, не bytewise file equality (which is impossible due to embedded timestamps).
+**AC7.10 — Reproducibility test (signature stable across re-generation).**
+- GIVEN same Aurora project trained twice с identical inputs + deterministic seeds (NumPyro `random.PRNGKey(42)`) at T1 и T2.
+- WHEN both runs export Methodology Certificate (sign service called twice).
+- THEN: PDF byte-level NOT identical (different `/AuroraGeneratedAt` + `/CreationDate`); BUT **canonical message hash identical** (timestamps excluded from signature scope) → **same Ed25519 signature** returned by signing service для both runs. Verifier displays «✓ Authenticity verified — same project re-generated at different times».
+- This validates **content reproducibility**, не bytewise file equality.
 
-### 7.3 Definition of Done
+**AC7.11 — Key rotation backward compat.**
+- GIVEN Phase D+ scenario где Aurora master key rotated; PDF signed с old key (e.g., `aurora-master-2026-rotation-1`); current verifier embedded key = new (`aurora-master-2028-rotation-2`).
+- WHEN PDF verified.
+- THEN verifier reads `/AuroraPublicKeyId` from PDF → fetches archived key from `verify.auroraai.pro/keys/archive/aurora-master-2026-rotation-1.pem` → verifies signature → result «✓ Authenticity verified (signed с archived key, rotation 1)».
 
-- [ ] **AC7.1–AC7.10 все pass.**
-- [ ] **`aurora-verifier-wasm` GitHub repo published** (Ackold26/aurora-verifier), MIT license, README с build instructions.
-- [ ] **WASM bundle ≤ 500 KB gzipped** (measured + documented).
+**AC7.12 — Signing service rate limit + license check.**
+- GIVEN customer making 1001-st sign request в течение 24 часов (rate limit = 1000 / license / day).
+- WHEN sidecar calls `POST /v1/sign`.
+- THEN response 429 + `retry_after_seconds`; sidecar UI shows «Rate limit exceeded — Methodology Certificate generation queued, retry in N seconds»; PDF generates с placeholder signature + `signature_pending` flag.
+
+### 7.3 Definition of Done (Ed25519 в Phase A — расширенный scope per ADR-005)
+
+**KMS infrastructure:**
+- [ ] **KMS provider chosen + setup** (Yandex.Cloud KMS OR AWS KMS, decision Phase A start).
+- [ ] **Aurora master Ed25519 key pair generated** в KMS, encrypted at rest. Private key никогда не leaves KMS.
+- [ ] **Public key published** на `https://verify.auroraai.pro/aurora-public-key.pem` + embedded в WASM bundle (compile-time include_bytes!).
+- [ ] **Key archive infrastructure** ready (URL pattern `/keys/archive/<key_id>.pem`) — пустой Phase A, fills при rotation Phase D+.
+- [ ] **Key compromise runbook** documented в `aurora-meta/SECURITY/key-compromise-runbook.md` (Маша небесная — отдельная сессия).
+
+**Signing service:**
+- [ ] **Vercel Edge Function `aurora-signing-service`** deployed: `POST /v1/sign` (validates license + KMS sign + returns signature).
+- [ ] **License token validation** в signing service (uses Supabase JWT verification).
+- [ ] **Rate limiting** implemented (1000 sign / license / day default).
+- [ ] **Privacy audit:** signing service logs только `(license_id_hashed, canonical_hash, timestamp)` — НЕ bundle content. Verified через manual log review.
+- [ ] **Sidecar signing client** в `aurora_inference.persistence` (или `aurora_reporting`): `sign_methodology_pdf(canonical_hash) -> Ed25519 signature` с retry logic + offline queue.
+
+**Verifier:**
+- [ ] **AC7.1–AC7.12 все pass.**
+- [ ] **`aurora-verifier-wasm` GitHub repo published** (Ackold26/aurora-verifier), MIT license, README с build instructions + reproducible build verified.
+- [ ] **WASM bundle ≤ 500 KB gzipped** (с ed25519-dalek + lopdf + zip + sha2). Measured + documented.
 - [ ] **`verify.auroraai.pro` live** через Vercel + DNS configured + HTTPS verified.
-- [ ] **PDF info dictionary writer** в `aurora_inference.persistence` (или `aurora_reporting`): `embed_methodology_signature(pdf_path, signature, engine_version, ...)`.
-- [ ] **`.aurora` manifest.json schema v3.0** finalized с `signature` field — coordinated с C2 bundle composer.
-- [ ] **Pytest для verifier** (Rust unit tests на WASM module): hash computation, ZIP parsing, PDF info dict parsing, mismatch detection. ≥ 30 tests.
-- [ ] **E2E browser test** (Playwright): drag-drop PDF + bundle, verify success/mismatch flows. 5+ scenarios.
+- [ ] **PDF info dictionary writer** в `aurora_reporting`: `embed_methodology_signature_ed25519(pdf_path, signature_hex, public_key_id, engine_version, ...)`.
+- [ ] **`.aurora` manifest.json schema v3.0** finalized с `signature_sha256` field (для bundle cross-check) — coordinated с C2/C8.
+- [ ] **Pytest для verifier** (Rust unit tests на WASM module): Ed25519 verify happy path, tampered signature, unknown key_id, archived key fallback, hash computation, ZIP parsing, PDF info dict parsing. ≥ 40 tests.
+- [ ] **Integration test (sign → verify roundtrip):** generate PDF на real Aurora app → call signing service → verify через WASM → ✓ valid. Includes negative cases (tampered PDF → ✗ invalid).
+- [ ] **E2E browser test** (Playwright): drag-drop PDF, verify happy / tampered / unknown-issuer flows. 7+ scenarios.
 - [ ] **Privacy CSP audit:** `connect-src 'self'` strict, verified via response headers + manual audit.
 - [ ] **a11y audit report** (axe-core или Lighthouse) — passes WCAG AA.
 - [ ] **i18n strings** (RU + EN) frozen + reviewed by native speaker.
 - [ ] **CHANGELOG entry.**
-- [ ] **ADR:**
-  - `aurora-knowledge/Decisions/methodology-certificate-public-web-verifier.md` (Маша небесная pending) — verified Accepted.
-  - `aurora-knowledge/Decisions/aurora-pdf-signature-deterministic-sha256.md` (new) — rationale: SHA-256 vs Ed25519 trade-off для Phase A.
+- [ ] **Marketing one-pager** про verifier (Маша небесная — «Authenticity verified» с дня 1, для фарма / healthcare / enterprise).
+- [ ] **ADRs:**
+  - `aurora-meta/DECISIONS/ADR-005-methodology-certificate-public-web-verifier.md` (Accepted — `f6ba509`).
+  - **NEW:** `aurora-knowledge/Decisions/aurora-master-ed25519-key-management.md` — key rotation policy + KMS provider choice + compromise runbook.
 
 ### 7.4 Test Data Requirements
 
-**Reference Aurora project pairs (PDF + bundle):**
-- `tests/fixtures/verifier/valid_kagocel/` — PDF + bundle (from Aurora Эконометрика production-like flow).
-- `tests/fixtures/verifier/valid_launch_synthetic/` — PDF + bundle (from Aurora Launch Phase B test flow).
+**Reference signed PDFs (генерируются через real signing service на staging KMS key):**
+- `tests/fixtures/verifier/valid_kagocel.pdf` — Aurora Эконометрика flow, signed.
+- `tests/fixtures/verifier/valid_launch_synthetic.pdf` — Aurora Launch synthetic flow, signed.
+- `tests/fixtures/verifier/valid_kagocel.aurora` — companion bundle для AC7.4 cross-check.
 
 **Tampered cases:**
-- `tests/fixtures/verifier/tampered_pdf_text.pdf` — narrative byte-edited.
-- `tests/fixtures/verifier/tampered_pdf_metadata.pdf` — info dict edited.
-- `tests/fixtures/verifier/tampered_bundle_manifest.aurora` — manifest.json edited.
-- `tests/fixtures/verifier/mismatched_pair/` — PDF от project A + bundle от project B.
+- `tests/fixtures/verifier/tampered_pdf_text.pdf` — narrative byte-edited после signing → Ed25519 fails.
+- `tests/fixtures/verifier/tampered_pdf_metadata.pdf` — info dict edited (e.g., `/AuroraEngineVersion` changed) → Ed25519 fails (canonical message changed).
+- `tests/fixtures/verifier/tampered_bundle_manifest.aurora` — manifest.json edited → cross-check fails (`/AuroraBundleHash` mismatch).
+- `tests/fixtures/verifier/forged_unknown_key.pdf` — PDF подписан unknown Ed25519 key (not Aurora master) → `/AuroraPublicKeyId` lookup fails → «Untrusted issuer».
+
+**Key rotation cases (для AC7.11):**
+- `tests/fixtures/verifier/signed_with_old_key.pdf` — PDF signed с simulated «aurora-master-2024-rotation-0» (legacy archived key). Verifier должен fetch `/keys/archive/...` + verify successfully.
 
 **Edge cases:**
-- Non-Aurora PDF (regular invoice / random PDF).
-- Corrupted ZIP (invalid bytes).
-- Empty bundle.
-- Future schema_version="4.0" (backwards compat: should fail gracefully с "newer schema, please update verifier").
+- Non-Aurora PDF (regular invoice / random PDF) → «Not an Aurora Methodology Certificate».
+- PDF без `/AuroraSignatureEd25519` field (только legacy SHA-256 поле, hypothetical pre-Phase-A) → «Untrusted (legacy format, please request re-issue)».
+- Empty bundle / corrupted ZIP → cross-check skip, primary PDF verify still works.
+- Future schema_version="4.0" → verifier handles gracefully («newer schema, please update verifier»).
+
+**Signing service integration test:**
+- Sidecar generates PDF → calls real staging signing service → receives signature → embeds → re-reads through verifier → ✓ valid. Roundtrip test.
 
 **Reproducibility test:**
-- Two Aurora project runs с identical inputs + seeds → produced PDFs match byte-by-byte (per AC7.10).
+- Two Aurora project runs с identical inputs + seeds → both call signing service с same canonical_hash → both receive same Ed25519 signature → verifier validates both PDFs identically (per AC7.10).
 
 **Browser compatibility matrix:**
 - Chrome 120+, Firefox 121+, Edge 120+, Safari 17+ (manual smoke test).
@@ -2388,33 +2557,187 @@ Static HTML page (no SPA framework) с минималистичной UI per Aur
 ### 7.5 Зависимости
 
 **Внутренние:**
-- **Зависит от:** C1 Inference Core (`aurora_inference.persistence` для PDF info embedding hook), C2 Data Studio (bundle composer producing `signature` field), C6 Schema Registry (forward-compat для bundle schema version).
-- **Не зависит от:** C3 (workflow engine), C4 (Tauri shell), C5 (no auth required для verifier — public tool).
+- **Зависит от:** C8 Reporting Studio (`aurora_reporting.pdf_writer` имеет PDF generator + signing hook), C1 Inference Core (provides bundle data for canonical hash computation), C2 Data Studio (bundle composer producing `signature_sha256`), C6 Schema Registry (forward-compat для bundle schema version), C5 Common Services (license token validation в signing service Edge Function).
+- **Не зависит от:** C3 (workflow engine), C4 (Tauri shell — verifier = public web tool без app integration).
 
 **Блокирует:**
-- Aurora Launch Sprint B4 — Methodology Certificate ship requires verifier live (otherwise customer gets PDF без verification path).
-- Trust-builder для фарма pilot kickoffs (per S008 PILOT_CLIENT_PLAN — verifier mentioned in pilot trust-building materials).
+- Aurora Launch Sprint B4 — Methodology Certificate ship requires signing service + verifier live.
+- Aurora Эконометрика → Aurora Optimize rebrand — existing Эконометрика's hash в Methodology Certificate должен мигрировать к Ed25519 при rebrand.
+- Trust-builder для фарма + healthcare + enterprise pilot kickoffs (per S008 PILOT_CLIENT_PLAN — verifier mentioned + key marketing asset).
 
-**Внешние:**
-- **Rust + wasm-pack** для WASM build.
-- **lopdf Rust crate** для PDF info dict parsing (audit fix M7: chosen over pdfium-render — lopdf 200-500 KB vs pdfium 5+ MB; Phase A scope = info dict only, no full PDF rendering, lopdf sufficient).
-- **zip Rust crate** для ZIP parsing.
-- **sha2 Rust crate** для SHA-256.
-- **Vercel** hosting (free tier для static — Phase A; Pro tier ~$20/mo если бandwidth growth).
+**Внешние (Rust crates):**
+- **`ed25519-dalek` >= 2.0** — audited Ed25519 implementation (~50 KB gzipped в WASM).
+- **`lopdf` >= 0.32** — PDF info dict read/write (audit fix M7: chosen over pdfium-render — 200-500 KB vs 5+ MB).
+- **`zip` >= 0.6** — ZIP parsing.
+- **`sha2` >= 0.10** — SHA-256 для canonical hash.
+- **Rust + wasm-pack** toolchain.
+
+**Внешние (infra):**
+- **Vercel** hosting: static site (free tier Phase A) + Edge Function для signing service (Pro tier ~$20-50/mo при customer growth, sign rate limit configurable).
+- **KMS provider** (Yandex.Cloud KMS OR AWS KMS): private key storage + sign API. Cost ~$1/key/month + $0.03/10K sign operations. Decision Phase A start.
+- **Supabase** (existing): JWT license validation в signing service.
 
 **Координационные:**
-- **Маша небесная ADR sign-off:** `methodology-certificate-public-web-verifier.md`.
-- **Антон approval:** verifier scope (deterministic SHA-256 vs Ed25519 — Phase A choice). Confirmed default: SHA-256 для Phase A simplicity.
-- **Аntoн approval:** Vercel hosting cost projection (likely free для Phase A, scales to ~$20-50/mo при customer growth).
+- **Маша небесная ADR-005 sign-off:** ✅ Accepted commit `f6ba509`.
+- **Антон approval:** ✅ Ed25519 в Phase A (не SHA-256 path), +1-2 недели timeline acceptable, marketing «authenticity verified» с дня 1.
+- **Антон approval pending:** KMS provider choice (Yandex.Cloud vs AWS) + budget approval (~$50-100/month operational).
 
-### 7.6 Open questions для Маши небесной
+### 7.6 Open questions для Маши небесной / Антона
 
-1. **SHA-256 vs Ed25519 для signing (audit-revised H2):** Phase A default = SHA-256 deterministic hashing — это **integrity check (data not tampered)**, не **proof of origin**. Любой может recompute SHA-256 от bundle data — signature не доказывает что Aurora generated it. Для фарма regulatory trust — Ed25519 signing с Aurora's private key даёт proof of origin (verifier confirms «Aurora signed this»). PHASE_A spec future-proof'ен: PDF info dict использует suffixed `/AuroraSignatureSHA256`, легко добавить `/AuroraSignatureEd25519` Phase D+ без breaking. Marketing copy в Phase A UI HONESTLY framing'ует «integrity verified» вместо «authenticity verified» — overpromise рискует backfire при дispute scenario.
+1. ✅ **CLOSED 2026-05-05** — **Ed25519 в Phase A (НЕ SHA-256)** per Антон. Marketing «authenticity verified» с дня 1. ADR-005 Accepted commit `f6ba509`.
 
-2. **Scope of `bundle_metadata` в hash:** какие поля из manifest.json включаются в canonical hash computation? Default proposal: `target_app`, `target_task`, `engine_version`, `generated_at`, `schema_version`, `data_provenance`. Изменение reasons / human comments — не входит (allows customer-side annotations без breaking signature).
+2. **KMS provider — Yandex.Cloud vs AWS?** Default proposal Phase A: **AWS KMS** (mature SDK + Edge Function compat + cheaper at low volume). Альтернатива: **Yandex.Cloud KMS** (Russian data residency, consistent с потенциальным Yandex.Cloud telemetry migration trigger). Decision Phase A start. Cost difference ~$10-20/month negligible. Vercel Edge Functions + AWS KMS = simplest integration. **Recommend AWS** для simplicity.
 
-3. **Verifier UX flow для multi-page certificate (Pro+ tier):** Pro+ Methodology Certificate = 2 страницы (math + diagnostics). Single signature covers оба или per-page signatures? Default: single signature (entire PDF is one artifact).
+3. **Scope of canonical message в Ed25519 sign:** какие поля из bundle/PDF включаются в signature? Default: `SHA-256(bundle_data || target_app || target_task || engine_version || schema_version || data_provenance hashes)`. Excluded: timestamps + comments + tier badge metadata (per audit fix B4 reproducibility). Confirm.
 
-4. **Локаль для verifier по умолчанию:** RU primary (фарма ICP в РФ). Если browser language = EN (международные регуляторы / external auditors) — auto-switch к EN. Default: detect navigator.language, fallback к RU.
+4. **Verifier UX для multi-page certificate (Pro+ tier):** Pro+ = 2 страницы (math + diagnostics). Default: single Ed25519 signature covers entire PDF byte stream (info dict + content streams) excluding only timestamp fields. Confirm.
 
-5. **Verifier versioning:** verifier WASM version coupled с schema_version it supports. Если customer тестирует bundle v3.1 в verifier built for v3.0 → graceful "newer schema, please update verifier при https://verify.auroraai.pro" message. Phase A scope = single deployed version (latest); old verifier versions не archived. Confirm.
+5. **Локаль для verifier:** RU primary (фарма ICP в РФ). Если `navigator.language` starts с `'en-'` — auto-switch к EN. Default: detect → fallback RU. Confirm.
+
+6. **Verifier versioning при schema bumps:** WASM version coupled с supported schema_version. Если customer testing bundle v4.0 в verifier built for v3.0 → graceful «newer schema, please update verifier». Phase A scope = single deployed version (latest); old verifier versions не archived. Confirm.
+
+7. **Sidecar offline fallback:** если signing service недоступен (или customer offline), PDF generates с placeholder + `signature_pending` flag. Customer's app re-attempts signing через background sync. Acceptable UX? Default: yes, с UI badge «Methodology Certificate signature pending» + retry button.
+
+8. **Aurora Эконометрика production migration:** v1.2.0 уже у клиентов с SHA-256-only Methodology Certificate (legacy). Phase A roll-out: при upgrade к Aurora Optimize (rebrand) — PDFs re-issued с Ed25519 + old certificates показываются в verifier как «legacy format, please request re-issue». Confirm migration path.
+
+---
+
+## Component 8: Reporting Studio (NEW Phase A — minimal extraction)
+
+**Status:** NEW component added 2026-05-05 evening per Антон's answer + Маша небесная brief INBOX_TO_MM 03:30 МСК. Closes audit Session 1 finding M4 (Reporting Studio scope ambiguity).
+
+**Goal:** Extract Aurora Эконометрика's existing reporting layer (`aurora_html/`, `aurora_pptx/`, Rust XLSX writer, `narrative_adapter`) в standalone sub-package `aurora-platform-core/aurora_reporting/`. **Минимальная версия — НЕ расширение функционала**, только modular extraction чтобы остальные Suite apps (Aurora Launch, Brand, Optimize rebrand) могли reuse без копирования. Полноценный Reporting Studio с новыми templates + кастомизацией — Phase B+.
+
+### 8.1 Scope
+
+**Входит (extraction baseline):**
+
+| Module (extracted) | Source path в Эконометрике | Public API surface | Breaking changes |
+|---|---|---|---|
+| `aurora_reporting.html` | `sidecar/econometrica/aurora_html/` (HTML interactive report adapter, ECharts-based) | `render_report(model_data, template_id, output_path) -> Path` | Никаких. 1:1 extract. |
+| `aurora_reporting.pptx` | `sidecar/econometrica/aurora_pptx/` (PPTX template engine, 14-section report) | `render_pptx(model_data, template_id, output_path) -> Path` | Никаких. 1:1. |
+| `aurora_reporting.xlsx` | `src-tauri/src/xlsx_writer/` (Rust XLSX writer) | Tauri command `export_xlsx(model_data, output_path)` exposed как Python wrapper через PyO3 OR re-implementation in Python `openpyxl` | **Refactor decision:** Phase A — keep Rust writer + expose через Python wrapper для cross-app usage. Аlternative: Python `openpyxl` re-impl (simpler distribution, slightly slower). Default proposal: Rust wrapper (preserves existing performance). |
+| `aurora_reporting.narrative_adapter` | `sidecar/econometrica/engines/narrative_adapter.py` (812 LOC, Trust 3 narrative) | `compute_narrative(model_data, kpi_config) -> NarrativeResult` (Pydantic model) | Никаких. Audit-tested 65 unit tests already (`tools/test_narrative_adapter.py`). |
+| `aurora_reporting.charts` | `sidecar/econometrica/charts/` + `engines/html_export.py` + `engines/pptx_export.py` | Chart generators (waterfall, response curves, ROI, etc.) | Никаких. 1:1. |
+| `aurora_reporting.pdf_writer` | **NEW Phase A** (new module) | `render_methodology_certificate(model_data, signing_callback) -> Path` (WeasyPrint-based) | NEW for Methodology Certificate (per Aurora Launch Sprint B4 deliverable + C7 integration). **Sign callback** = `aurora_reporting.pdf_writer` invokes C7 signing service после PDF generation. |
+
+**Phase A scope tightly bounded** (per Антон):
+- ✅ 1:1 extraction of existing Эконометрика reporting code в `aurora-platform-core/aurora_reporting/`.
+- ✅ Cross-app callable contract: any Suite app calls `aurora_reporting.<format>.render(model_data, template_id, output_path)`.
+- ✅ Methodology Certificate PDF writer (NEW, Phase A) с C7 signing integration.
+- ✅ Existing 14-section Эконометрика templates preserved as-is (no new templates Phase A).
+
+**Не входит (Phase B+ scope):**
+- ❌ NEW templates per Suite app (Aurora Launch 8-section forecast / Aurora Brand bridge / etc.) — Phase B+.
+- ❌ User-facing template editor — Phase B+ Pro feature (per ADR-006 monetization scaffold).
+- ❌ Custom branding (customer logos, color overrides) — Phase B+ Pro feature.
+- ❌ PDF export beyond Methodology Certificate (executive summaries, lineage diagrams) — Phase B+.
+- ❌ DOCX export — Phase B+.
+- ❌ Real-time collaborative editing — never (out-of-scope ever).
+- ❌ Re-architecture to template engine (Jinja2 / Mustache) — Phase B+ if needed.
+
+### 8.2 Acceptance Criteria
+
+**AC8.1 — Pure extraction, zero functional drift.**
+- GIVEN Aurora Эконометрика regression corpus (Кагоцел trained model + Венарус).
+- WHEN `aurora_reporting.html.render_report(model_data, template_id="optimize_v3.0_html_14sec")` invoked.
+- THEN HTML output byte-identical к Эконометрика v1.2.0 baseline (modulo timestamps); 65/65 narrative_adapter tests + 34 PPTX brand tests + 43 narrative tests pass без regression (per `project_econometrica_output_quality_v1012.md`).
+
+**AC8.2 — Cross-app reuse contract.**
+- GIVEN spawned Aurora Launch app calls `from aurora_reporting.html import render_report`.
+- WHEN Phase B Aurora Launch B4 implements new launch_forecast template (post-Phase A).
+- THEN render_report dispatch'ит на template_id, новый template добавляется без modifying core renderer.
+
+**AC8.3 — Methodology Certificate PDF generation.**
+- GIVEN trained model + license token.
+- WHEN `aurora_reporting.pdf_writer.render_methodology_certificate(model_data, signing_callback)` invoked.
+- THEN PDF produced via WeasyPrint (per Aurora Launch S006 PDF generator decision); signing_callback invoked с canonical_hash → returns Ed25519 signature; signature embedded в PDF info dict; PDF passes C7 verifier.
+
+**AC8.4 — Backward compat для Aurora Эконометрика frontend.**
+- GIVEN existing Aurora Эконометрика v1.2.0 frontend calling sidecar `/export/html`, `/export/pptx`.
+- WHEN Эконометрика sidecar deps switched к `aurora-platform-core==0.1.0`.
+- THEN endpoints continue working без UI changes; rendered output byte-identical (modulo timestamps).
+
+**AC8.5 — XLSX writer cross-platform.**
+- GIVEN Phase A built на Windows reference machine.
+- WHEN XLSX writer invoked (Rust binary OR Python openpyxl path).
+- THEN output XLSX opens correctly in Excel 2019+ / LibreOffice Calc 7+ / Google Sheets; addresses audit issue `project_econometrica_xlsx_export_issues` (CI=0 / Δ=0 / Текущий ROI=0 broken columns) **NOT regressed** (existing fixes from Эконометрика preserved).
+
+**AC8.6 — Charts rendering parity.**
+- GIVEN ECharts waterfall chart rendered via `aurora_reporting.charts`.
+- WHEN compared к Aurora Эконометрика v1.2.0 visual reference.
+- THEN visual diff < 5% pixel difference (small font rendering variations acceptable cross-platform).
+
+**AC8.7 — narrative_adapter Trust 3 produced PDFs/PPTXs identical.**
+- GIVEN Кагоцел Trust 3 hierarchical Bayesian baseline.
+- WHEN `aurora_reporting.narrative_adapter.compute_narrative()` invoked.
+- THEN narrative text identical к Эконометрика v1.0.16 ship (commits `a2fa0bc` + Trust 3 baseline); all 65 unit tests pass.
+
+**AC8.8 — Performance budget.**
+- GIVEN typical project (Кагоцел, 156 weeks).
+- WHEN full report bundle generated (HTML + PPTX + XLSX + Methodology Certificate PDF).
+- THEN total time < 60 seconds (HTML <5s, PPTX <20s, XLSX <10s, PDF <15s, signing service round-trip <5s, остальное margin).
+
+### 8.3 Definition of Done
+
+- [ ] **AC8.1–AC8.8 все pass.**
+- [ ] **Code merged в `aurora-platform-core/aurora_reporting/`** + tagged.
+- [ ] **6 modules extracted** (html, pptx, xlsx, narrative_adapter, charts, pdf_writer NEW).
+- [ ] **WeasyPrint dependency added** (~50 MB) к platform-core install profile.
+- [ ] **C7 signing integration:** `pdf_writer.render_methodology_certificate(signing_callback)` callable; sidecar provides signing_callback that invokes C7 Edge Function.
+- [ ] **Pytest suite migrated:** 65 narrative_adapter + 34 PPTX brand + 43 narrative + 16 HTML/XLSX unit tests = ~158 tests от Эконометрика, parallel-runnable, all pass.
+- [ ] **Integration regression:** Aurora Эконометрика v1.0.16 + v1.2.0 fixtures generate reports → byte-equal modulo timestamps к baseline.
+- [ ] **API docs:** `aurora-platform-core/docs/reporting.md` — public API + template_id catalog (existing 14 sections).
+- [ ] **Migration guide для Aurora Эконометрика:** `aurora-platform-core/docs/migration_econometrica_reporting.md` — replace inline reporting calls с `aurora_reporting.<format>.render(...)`.
+- [ ] **CHANGELOG entry.**
+- [ ] **ADR (NEW):** `aurora-knowledge/Decisions/aurora-reporting-extraction-minimal-phase-a.md` — extraction rationale + scope boundary (Phase A minimal vs Phase B+ expansion).
+
+### 8.4 Test Data Requirements
+
+**Synthetic (CI-friendly):**
+- Aurora Эконометрика regression corpus reused (Кагоцел + Венарус anonymized models).
+- `tests/fixtures/reporting/baseline_outputs/` — golden HTML / PPTX / XLSX от Эконометрика v1.2.0 ship для byte-comparison.
+
+**Visual regression:**
+- Selenium / Playwright screenshots HTML chart sections, compared к baseline (5% threshold).
+
+**Edge cases:**
+- Untrained channel guard (decomposer warning) — должен render correctly во всех форматах.
+- Hierarchical N=1 degeneracy — narrative должен flag warning без crash.
+- F1 cumulative anchor convention preserved (audit-fixed v1.0.16) — backend + report consistent.
+- XLSX broken columns CI=0/Δ=0/Текущий ROI=0 — **NOT regress** (existing fixes preserved).
+
+### 8.5 Зависимости
+
+**Внутренние:**
+- **Зависит от:** C1 Inference Core (`aurora_inference.persistence` provides model_data dicts), C6 Schema Registry (model_data schema versioning).
+- **Используется:** C7 Web verifier (signing callback integration), C2 Data Studio (bundle composer optionally embeds rendered reports), Aurora Launch Phase B4 (extends с Aurora Launch–specific templates).
+- **Не зависит от:** C3 Workflow Engine (workflow `artifact_export` step calls aurora_reporting но не блокируется), C4 Tauri shell, C5 Common Services.
+
+**Блокирует:**
+- C7 Web verifier — `pdf_writer.render_methodology_certificate` consumer of C7 signing service. Concurrent Phase A development.
+- Aurora Launch Phase B4 (Methodology Certificate per launch forecast).
+- Aurora Эконометрика → Aurora Optimize rebrand — Optimize uses platform-core's aurora_reporting.
+
+**Внешние:**
+- **WeasyPrint >= 60.0** — PDF generation (existing decision per Aurora Launch S006).
+- **python-pptx >= 0.6.23** — PPTX (already в Эконометрика).
+- **ECharts** (JavaScript, embedded в HTML output) — already.
+- **Rust XLSX writer** crates (`rust_xlsxwriter` или existing) — already.
+- **Pydantic v2** — narrative_adapter models.
+
+**Координационные:**
+- **Антон approval:** ✅ Reporting Studio как 8-й Phase A component (минимальная версия) — 2026-05-05.
+- **Маша небесная ADR pending:** `aurora-reporting-extraction-minimal-phase-a.md` (NEW). Не критично — extraction relatively non-controversial.
+
+### 8.6 Open questions
+
+1. **Rust XLSX writer vs Python openpyxl re-impl:** Rust = preserves performance + matches existing Эконометрика production behavior; openpyxl = simpler distribution + cross-platform Phase D+. Default Phase A proposal: **Rust wrapper** (preserves existing). Consider migration к Python Phase B+ если cross-platform pain.
+
+2. **WeasyPrint heavy dep (~50 MB GTK-related):** добавляет к sidecar install. Alternative: Rust `printpdf` или `genpdf` (5 MB) — но менее feature-rich для Methodology Certificate's 2-page math layout. Default proposal: **WeasyPrint** (per existing decision Aurora Launch S006).
+
+3. **Template versioning:** existing 14-section Эконометрика template = `optimize_v3.0_html_14sec`. Future Aurora Launch B4 = `launch_v3.0_html_8sec`. Naming convention для template_id: `<bundle_layout_id>_<format>_<n>sec`? Confirm.
+
+4. **Cross-app shared narrative library:** Кагоцел narrative_adapter Trust 3 — sales-specific; Aurora Brand awareness narrative — different domain. Phase A: keep narrative_adapter as-is (sales-focused), Aurora Brand добавит свой `aurora_brand_narrative.py` Phase B. Phase A не unifies.
+
+5. **Existing Эконометрика frontend transition:** старый Эконометрика frontend hits `/export/html`, `/export/pptx` endpoints. C3 Workflow Engine BC shim уже handles workflow translation, но reporting endpoints — отдельная concern. Default: shim также маршрутизирует `/export/*` → workflow engine `artifact_export` step → `aurora_reporting.<format>.render()`. Smooth transition. Confirm подход.
