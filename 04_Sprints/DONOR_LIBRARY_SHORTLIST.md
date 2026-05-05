@@ -35,15 +35,16 @@
 | Transferable parameters | adstock decay (per-channel posterior), hill saturation gamma + half-saturation, category seasonality (52-week pattern, осень-зима peak), long-term trend |
 | Excluded parameters | β coefficients, baseline, residual variance |
 
-### Candidate 2 — VEN-anonymized (Венарус)
+### Candidate 2 — VEN-anonymized / BIN-anonymized (Венарус)
 
 | Field | Value |
 |---|---|
 | Original brand | Венарус |
-| Manufacturer | (Servier? — `?` уточнить у Антона; в memory упомянут Materia Medica? как preliminary) |
-| Anonymization code | `VEN-2024` |
+| Manufacturer | **Биннофарм** (бывшая OBL Pharm) — confirmed Антоном 2026-05-05 |
+| Anonymization code (brand) | `VEN-2024` |
+| Anonymization code (manufacturer audit trail) | `BIN-2024` (per Антон's 2026-05-05 answer; manufacturer field удаляется при anonymization, но code сохраняется в audit log Антона для cross-reference) |
 | Category L1/L2/L3 | OTC / venotonic / chronic_venous_insufficiency |
-| ATC class | C05CA (bioflavonoids) |
+| ATC class | C05CA (bioflavonoids — диосмин/гесперидин) |
 | Pricing tier | PREMIUM |
 | Brand size | CHALLENGER |
 | Distribution | NATIONAL |
@@ -52,7 +53,7 @@
 | Data history | Live-test проводился (см. memory `project_econometrica_v1_1_0_live_test_polish.md`) — exact horizon уточнить |
 | Aurora model status | Trust 3 v1.1.0 live-test ready, post-polish 14 fixes applied |
 | Reason for inclusion | Categorical diversity vs Кагоцел (venotonic ≠ antiviral). PREMIUM pricing tier coverage. ALWAYS-ON media pattern (контраст к PULSING Кагоцела). |
-| Open question | Manufacturer confirmation (для anonymization context) |
+| Open question | ✅ closed 2026-05-05 — manufacturer = Биннофарм per Антон. |
 
 ---
 
@@ -83,7 +84,7 @@
 **Запрос Антону:**
 1. Какие 3 _новых_ бренда из existing Эконометрика clients готовы к anonymization? (фарма приоритет, не FMCG / cosmetics — per ICP correction 2026-05-05)
 2. Допустимо ли использовать данные Эконометрика клиентов БЕЗ их прямого consent (anonymization достаточна) или нужен informational notice? (Per Section 3 protocol — техническая anonymization достаточна по Антону, но для critical clients double-check.)
-3. **Производитель Венарус** — preliminary в memory упомянут «Materia Medica?». На самом деле Венарус (диосмин/гесперидин, ATC C05CA) производится **OBL Pharm / Оболенское фармпредприятие** в России (генерик Detralex от Servier). Подтверди — это правильный manufacturer для anonymization audit trail (хотя поле удаляется, но для аудита Антона нужно зафиксировать).
+3. ✅ **CLOSED 2026-05-05 — manufacturer Венарус = Биннофарм** (бывшая OBL Pharm) per Антон's answer через Машу небесную INBOX_TO_MM 03:30 МСК. Anonymization audit code `BIN-2024` зарегистрирован в Section 1 Candidate 2 table.
 
 ---
 
