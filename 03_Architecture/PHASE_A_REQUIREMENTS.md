@@ -273,6 +273,43 @@ class SourceAdapter(ABC):
 
 `AdapterResult` Pydantic v2 model — canonical output schema (см. 2.1.D).
 
+**Source taxonomy (audit-revised B10 + H10):** task profile YAML `sources` field references **9 source kinds**, не только 5 raw adapters:
+
+| Source kind | Type | Phase A | Description |
+|---|---|---|---|
+| `dsm_group` | raw_adapter | ✅ | DSM Group monthly XLSX (above table) |
+| `mediascope_adex` | raw_adapter | ✅ | Mediascope AdEx (above table) |
+| `mediascope_tv_index` | raw_adapter | ✅ | Mediascope TV Index Polometers (above) |
+| `digitalbudget` | raw_adapter | ✅ | DigitalBudget (above) |
+| `custom_xlsx` | raw_adapter | ✅ | Tier 2 LLM fallback (above) |
+| `mediascope_brandpulse` | raw_adapter | ❌ Phase B+ | Brand health tracker — adapter pending Sprint S2 после Phase A. Task profiles using BrandPulse declare `phase_availability: phase_b_plus` per field. |
+| `aurora_artifact_reference` | artifact_reference | ✅ | Existing `.aurora` bundle, **referenced not parsed**. Use cases: scenario_what_if reads prior budget_optimization output; new_brand_forecast imports Эконометрика project as proxy (per strategic correction 2026-05-05). Schema-versioned via SchemaRegistry BFS migration on read. |
+| `derived_internal` | derived | ✅ | Engine-computed (Chow-Lin disaggregation, seasonality decomposition, etc.) — НЕ user upload. Studio computes from other sources. Task profile may also accept `user_input_form` override. |
+| `user_input_form` | ui_input | ✅ | Structured form values (Pydantic-validated). Не file upload, не parsed source. Examples: ProxyBrandMetadata, RecipientAnchorsV1, target_audience definition. |
+
+**`AuroraArtifactReferenceAdapter`** (новый класс, audit B10):
+```python
+class AuroraArtifactReferenceAdapter(SourceAdapter):
+    """References existing .aurora bundle without re-parsing.
+
+    metadata fields (in adapter result):
+        referenced_bundle_path: Path
+        referenced_app: str            # "aurora_optimize", "aurora_econometrica", ...
+        referenced_task: str | None    # "budget_optimization" if known
+        live_project: bool             # True если bundle still being edited
+        legacy: bool                   # True для pre-v3.0 bundles
+        original_schema_version: str
+    """
+    source_id: str = "aurora_artifact_reference"
+
+    def detect(self, file_path: Path) -> DetectResult:
+        """Detect .aurora ZIP signature + schema_version compatibility."""
+
+    def parse(self, file_path: Path, variant: str | None = None) -> AdapterResult:
+        """Read manifest.json, run SchemaRegistry.migrate() to v3.0,
+        return AdapterResult с extracted metadata + bundle path для downstream consumption."""
+```
+
 #### 2.1.B AI parser stack (Tier 1 / Tier 2 / Tier 3)
 
 Per ADR-001 `tiered-hybrid-ai-parser`:
@@ -334,6 +371,22 @@ def must_have_check(spec: TaskSpec, available_fields: set[str]) -> CheckResult:
 #### 2.1.D Bundle composer
 
 `aurora_data_studio.engines.bundle_composer` — пишет `.aurora` bundle (ZIP container per Aurora Launch ADR-002).
+
+**Schema namespace separation (audit-revised B9):** manifest.json combines TWO independent identifiers — НЕ путать:
+- **`schema_version`** — registry-managed bundle schema (per C6 SchemaRegistry kind `aurora_bundle`). Single value across ALL bundles regardless of source task: `"3.0"` Phase A. Drives forward-compat / migration.
+- **`bundle_layout_id`** — task-specific layout identifier (e.g., `optimize_v3.0`, `optimize_scenario_v3.0`, `launch_v3.0`, `brand_bridge_v3.0`). Describes WHICH parquet files + JSON shapes are inside (per task profile YAML `output_bundle_target.bundle_layout_id`). НЕ semver-versioned per task — увеличивается suffix `_v2` если layout changes additively.
+
+Example manifest.json:
+```json
+{
+  "schema_version": "3.0",
+  "bundle_layout_id": "launch_v3.0",
+  "bundle_metadata": {...},
+  ...
+}
+```
+
+Naming convention для `bundle_layout_id`: `<app_short>_<task_short_optional>_v<n>` где app_short = aurora prefix removed (`optimize`, `launch`, `brand`). Documented в `04_Task_Profiles/README.md`.
 
 ```
 my_project.aurora (ZIP)
