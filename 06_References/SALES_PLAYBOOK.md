@@ -279,6 +279,33 @@ Use S008 PILOT_CLIENT_PLAN Section 4 questions, prioritized:
 6. Pre-test creative данные есть? (Aurora boost)
 7. Decision-makers по procurement? (sales process)
 
+### 3.2a Proxy Selection Discovery (NEW — D002 protocol 2026-05-06)
+
+**Если квалификация пройдена (use case fit = yes, timing = 2-6 months):**
+
+**Proxy discussion (3-5 min из 15-min discovery window):**
+
+Aurora Launch использует ad-hoc proxy intake — клиент сам называет свой proxy-бренд под конкретный кейс (см. `03_Architecture/PROXY_INTAKE_PROTOCOL.md`). **Нет предзаготовленной библиотеки учителей.** Это намеренно — каждый кейс уникален, индивидуальный подбор всегда точнее заранее заготовленного.
+
+**Скрипт вопросов:**
+1. "В вашей категории есть бренд-конкурент, который вы считаете наиболее похожим на ваш будущий бренд?" (often клиент сам называет 1-3 кандидата — он знает свой рынок лучше нас)
+2. Если затрудняется — Aurora-консультант помогает сузить по 6 параметрам:
+   - **Категория и подкатегория** (например, OTC.cold_flu vs OTC.allergy)
+   - **Ценовой сегмент** (Economy / Mainstream / Premium / Luxury)
+   - **Размер бренда** (Leader / Challenger / Niche)
+   - **Дистрибуция** (National / Regional / Local)
+   - **Медиа-зрелость** (Always-on / Pulsing / Promo-driven / Dormant)
+   - **Стадия зрелости** (New / Growing / Mature / Declining)
+3. **Финальный proxy выбор — за клиентом**, Антон документирует в discovery notes
+
+**Доступность данных проверка (2-3 min):**
+- "Сколько месяцев исторических данных есть по [proxy бренду]?" (минимум 104 недели для надёжной модели)
+- "Есть ли у вас DSM Group или Mediascope подписка на этот proxy?" (если нет — Aurora может закупить ad-hoc, документируется в коммерческом предложении)
+
+**Note для Антона:**
+
+Aurora Launch работает не только в фарме — Эконометрика сместилась в агентства+FMCG. Будущие клиенты могут быть из косметики, продуктов питания, телекома, банкинга, e-commerce. **Не ограничиваем ICP фарма-отраслью** — proxy intake протокол работает identically для любой категории где есть DSM-подобные данные продаж + Mediascope-подобные данные рекламы.
+
 **Aurora pitch (5 min):**
 
 Brief framing:
@@ -306,10 +333,13 @@ Brief framing:
 
 ### 4.1 Pre-Demo Preparation
 
-**Primary demo path: real client data** (per ADR launch-demo-strategy-real-client-data-first):
-- Если prospect = existing Эконометрика-клиент → демо на ЕГО собственном проекте (perfect fit, максимальный impact)
-- Если prospect = warm intro → запросить у refer'ера согласие показать его данные (anonymized brand name)
-- Если prospect = cold + категория совпадает с существующим case study → анонимизированная копия real проекта
+**Primary demo path: real client data** (per ADR launch-demo-strategy-real-client-data-first + восстановленное D002 «proxy intake ad-hoc»):
+
+Demo path всегда на конкретном customer-nominated proxy — нет предзаготовленной демо-library. Per `03_Architecture/PROXY_INTAKE_PROTOCOL.md`, каждый demo это working invocation 7-step protocol на real (или anonymized real) proxy данных.
+
+- Если prospect = existing Эконометрика-клиент → демо на ЕГО собственном проекте (perfect fit, максимальный impact). His Эконометрика project serves as proxy для нового запуска (lossless transfer recipient_brand_metadata + posterior priors).
+- Если prospect = warm intro → запросить у refer'ера согласие показать его данные (anonymized brand name + synchronized random factor R + period shift -12mo per anonymization protocol)
+- Если prospect = cold + категория совпадает с существующим case study → анонимизированная копия real проекта (демо строится на anonymized proxy ad-hoc, не из библиотеки)
 
 **Secondary demo path: synthetic** (только когда нужен):
 - Cold outreach к новой категории без case study

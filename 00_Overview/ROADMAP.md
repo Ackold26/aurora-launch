@@ -50,16 +50,16 @@ Aurora Launch не стартует до завершения Phase A:
 
 ### Sprint B0.5: BC Test Corpus & Format Adapters (1 неделя) - ADDED AFTER AUDIT
 
-**Goal:** ensure backwards compatibility + multi-version data ingestion before schema changes.
+**Goal:** ensure backwards compatibility + multi-version data ingestion before schema changes. **Corpus = ad-hoc proxy intake validation harness, не предзаготовленная donor library** (per restored D002 2026-05-06; см. `03_Architecture/PROXY_INTAKE_PROTOCOL.md`).
 
 **Deliverables:**
-- 10+ старых .aurora projects corpus (Кагоцел, Венарус, synthetic) с описаниями каждого case
-- Parametrized pytest на каждый corpus item
-- Format adapters: `DsmFormatAdapterV2023`, `V2024`, `V2025` + auto-detection logic
-- Plug-in architecture skeleton: abstract `ProxyDataSource` interface
+- Ad-hoc proxy intake validation corpus: 8+ synthetic .aurora projects (категории FMCG / OTC / cosmetics / telecom / awareness — coverage диверсификация для testing pipeline, **НЕ предзаготовленная library учителей**) + опционально 1-2 anonymized real cases когда первый клиент придёт
+- Parametrized pytest на каждый corpus item — verifies workflow приёма proxy ad-hoc от 7-step protocol works
+- Format adapters: `DsmFormatAdapterV2023`, `V2024`, `V2025` + auto-detection logic (применяются к **любому** proxy от клиента, не только pre-built)
+- Plug-in architecture skeleton: abstract `ProxyDataSource` interface (per-deal proxy ingestion при customer engagement)
 - CI gate: schema changes без BC test pass = blocked
 
-**Why:** обнаружено в audit (A2, A3) - формат меняется год от года, BC tests insufficient в исходном плане.
+**Why:** обнаружено в audit (A2, A3) - формат меняется год от года, BC tests insufficient в исходном плане. **Per D002 restored 2026-05-06** — corpus тестирует workflow приёма proxy ad-hoc, не валидирует предзаготовленную library.
 
 ### Sprint B1: Pickle Schema Extension + Schema Registry (1 неделя)
 
@@ -182,8 +182,8 @@ Aurora Launch не стартует до завершения Phase A:
 - ✅ S010 Sales Playbook - `06_References/SALES_PLAYBOOK.md` (outreach + discovery + demo + conversion + onboarding + ops)
 
 **Deliverables:**
-- Pilot session с 3 parallel клиентами (Pharma OTC + FMCG + Cosmetics, Tier 1 prioritized = existing Эконометрика clients)
-- **Эконометрика → Launch project migration integration** (UI-кнопка в Эконометрике "Использовать как proxy в Aurora Launch", lossless transfer recipient_brand_metadata + recent posterior как proxy_priors)
+- Pilot session с 3 parallel клиентами (Pharma OTC + FMCG + Cosmetics, Tier 1 prioritized = existing Эконометрика clients). **Каждый pilot — first pilot case для своей категории, не permanent stage.** Customer называет свой proxy ad-hoc per `03_Architecture/PROXY_INTAKE_PROTOCOL.md`, не выбирает из предзаготовленной library.
+- **Эконометрика → Launch project migration integration** (UI-кнопка в Эконометрике "Использовать как proxy в Aurora Launch", lossless transfer recipient_brand_metadata + recent posterior как proxy_priors). **Customer-nominated proxy** (existing Эконометрика project клиента), не library-based.
 - Bug fixes по live-test findings
 - Onboarding tour (Welcome experience, glossary, sample dataset)
 - Templates library (FMCG Snacks, OTC Pharma, Premium Cosmetic, Energy Drink)
@@ -203,6 +203,7 @@ Aurora Launch не стартует до завершения Phase A:
 |---|---|---|---|---|
 | S001 | Concept finalization (10 principles) | 2026-05-04 | DONE | - |
 | S002 | Data Requirements Spec deep-dive (этой сессии Variant 2) | 2026-05-04 | DONE | - |
+| **D002 RESTORE** | **Антон restored D002 «отказ от donor library» — `04_Sprints/DONOR_LIBRARY_SHORTLIST.md` удалён, заменён `03_Architecture/PROXY_INTAKE_PROTOCOL.md`. Aurora Launch — продукт прогноза для любых отраслей с ad-hoc proxy intake от клиента.** | 2026-05-06 | ✅ DONE (commit `152a0ad`) | B0.5 + B6 sprint descriptions clarified |
 | S003 | Proxy Similarity Framework - 6 dimensions + scoring + weights + multi-aggregation | 2026-05-04 | ✅ DONE | ~~Sprint B2~~ resolved |
 | S004 | Adaptation Rules detail - 5 shape params + magnitude calibration + cross-category matrix + ADR-003 pre-train | 2026-05-04 | ✅ DONE | ~~Sprint B3~~ resolved |
 | **S005a** | **Storage Layer Decision: ZIP archive container (Option D)** | 2026-05-04 | ✅ DONE (ADR-002) | ~~Sprint B1~~ resolved |
