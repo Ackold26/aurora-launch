@@ -197,7 +197,7 @@
 - `tests/fixtures/synthetic_awareness_trajectory.json` — known Weibull adstock + S-curve params (для AC1.8).
 
 **Real anonymized (slower, ground truth = production accepted):**
-- `tests/fixtures/kagocel_v1.0.16_baseline.pickle` — anonymized Кагоцел trained model (per donor anonymization protocol Section 3 of DONOR_LIBRARY_SHORTLIST). Used as **acceptance** baseline для `rtol=1e-6` numeric comparison.
+- `tests/fixtures/kagocel_v1.0.16_baseline.pickle` — anonymized Кагоцел trained model (per anonymization protocol `03_Architecture/PROXY_INTAKE_PROTOCOL.md` Шаг 3). Used as **acceptance** baseline для `rtol=1e-6` numeric comparison.
 - `tests/fixtures/venarus_v1.1.0_baseline.pickle` — anonymized Венарус (PREMIUM tier categorical contrast).
 
 **Edge cases (regression registry):**
