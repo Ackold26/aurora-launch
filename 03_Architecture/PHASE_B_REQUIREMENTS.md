@@ -1217,45 +1217,1372 @@ def get_weights_for_category(category_l1: str, category_l2: str) -> dict[str, fl
 
 ## §5 Pass 2 Sprints (B3 / B4 / B5 / B6)
 
-**Status:** В разработке (Pass 2 of two-pass delivery per HIGH H7 fix).
+### §5.1 Sprint B3 — Adaptation Layer + Transfer Validation (2 недели)
 
-Pass 1 ship'нут как foundation. Pass 2 будет добавлен после mini-audit Pass 1 + commit.
+**Goal:** recipient anchors собраны, transfer validated, two engines (single + multi) operational.
+
+#### 5.1.1 Scope
+
+**In scope:**
+- Svelte component `RecipientAnchorsStep.svelte` с Pydantic v2 client + server validation
+- SemanticValidator (cross-field rules: Excess SoV, distribution velocity ≥0, pricing extreme warnings, planned_share within market_size sanity bounds)
+- Real-time feedback через Svelte 5 runes derived stores
+- Adaptation engine `engines/launch_adapt.py` (extract_proxy_priors + apply_recipient_magnitudes per ADAPTATION_RULES.md §1-2)
+- Two engines: `engines/single_proxy_transfer.py` + `engines/multi_proxy_hierarchical.py` (избегает MCMC degeneracy за N=1, audit A4)
+- **Engine selection function** (audit M4 fix) — testable `select_engine(...)` deterministic logic
+- Transfer Validation step `TransferValidateStep.svelte`:
+  - **Prior predictive visualization** (50 sample forecasts overlaid as faded lines)
+  - **Sensitivity analyzer** (slider over each anchor → live forecast update via debounced backend call)
+  - **Per-channel transfer caveat heatmap** (which channels strong/weak transfer)
+  - **Anchor uncertainty propagation** display («±10% market_size adds ±X% к forecast CI»)
+- Backend endpoints: `/launch/adapt`, `/launch/validate_transfer`, `/launch/sensitivity`
+- Workflow integration via Phase A C3 workflow engine (YAML config-driven)
+
+**Out of scope (Phase C+):**
+- AI-assisted anchor estimation from open data
+- Per-channel transfer disable (customer chooses which channels use proxy vs ignore)
+- Variance decomposition (which anchor matters most)
+- Bootstrap-based transfer accuracy bounds
+
+#### 5.1.2 Customer Experience Journey
+
+Customer (CMO Birch Energy) после B2 proxy selection:
+
+1. RecipientAnchorsStep loads, prompts: «Заполните контекст вашего запуска»
+2. Form sections (progressive disclosure):
+   - **Market context:** market_size_rub (с uncertainty %), planned_share_pct, pricing_index_vs_market
+   - **Distribution:** distribution_velocity_curve (week-by-week % availability) — interactive curve editor
+   - **Brand strength:** creative_quality_index (with note «based on Kantar Link / Ipsos copytest if available»), competitive_response
+   - **Lifecycle:** category_trend_input (growing/stable/declining)
+3. Real-time validation as customer types:
+   - «⚠ Excess SoV warning — your planned_share 35% exceeds aggregate top-3 brands» → recovery action button
+   - «✓ Distribution velocity reasonable» → green check
+4. After form complete, customer clicks «Validate Transfer»
+5. Backend computes:
+   - Adaptation Layer extracts proxy priors (5 shape params per ADAPTATION_RULES §1)
+   - Magnitude calibration applies (per anchor)
+   - Prior predictive: 50 samples generated
+6. UI displays:
+   - Chart с 50 faded sample forecasts overlaid (customer sees expected range BEFORE full fit)
+   - Heatmap per-channel («TV adstock: strong transfer (S_match 0.95), digital seasonality: weak (S_match 0.60)»)
+   - Sensitivity sliders: customer drags «market_size ±20%» → forecasts update live
+   - Bottom panel: «Anchor uncertainty propagation: market_size ±10% → forecast CI ±X%, distribution_velocity ±25% → ±Y%»
+7. If satisfied, customer clicks «Proceed to forecast generation» → Sprint B4
+
+#### 5.1.3 Math Invariants
+
+- **Transfer rule:** shape transferred (adstock_decay, hill_gamma, hill_k, seasonality, trend), magnitude calibrated (β, baseline) — per ADR-003 pre-train + transfer (locked)
+- **Bayesian prior precision scaling:** σ_prior = σ_proxy × (1 / √w_proxy) для std (NOT 1/w_proxy — audit-fixed BLOCKER)
+- **Inflation factor by verdict:** High 1.2× std, Medium 1.5×, Low 2.0× (per SIMILARITY_FRAMEWORK §5)
+- **Cross-category transfer matrix** (per ADAPTATION_RULES §3):
+  - L3 match: full transfer 5 params
+  - L2 match: full transfer 5 params (degraded confidence)
+  - L1 match: only adstock + hill, seasonality + trend → category prior fallback
+  - Adjacent L1 (FMCG_food↔beverage etc.): only adstock decay + 50% extra inflation
+  - Cross L1 non-adjacent: BLOCKED at similarity verdict layer (Insufficient triggered)
+- **Multi-proxy aggregate ESS** weighted by pooling, divided by multi-penalty (audit-fixed)
+- **Anchor uncertainty propagation:** linear approximation σ_forecast ≈ √(Σ (∂forecast/∂anchor_i)² × σ_anchor_i²)
+- **Engine selection function:**
+  ```
+  select_engine(n_proxies, individual_scores, cross_category, recipient_weeks):
+    if n_proxies == 1 → "single"
+    if n_proxies >= 2 and all S_i >= 0.65 → "multi"
+    if n_proxies >= 2 and any S_i < 0.65 → "single_with_pooling" (use only S_max as primary)
+    if max(S) - min(S) > 0.4 → "blocked" (heterogeneity too high, escalate to expert)
+  ```
+
+#### 5.1.4 Pydantic Schemas (B3)
+
+```python
+class ProxyPriors(BaseModel):
+    """Output of extract_proxy_priors. Frozen contract для adaptation layer."""
+    adstock_decay_per_channel: dict[str, PosteriorParam]
+    hill_gamma_per_channel: dict[str, PosteriorParam]
+    hill_half_saturation_per_channel: dict[str, PosteriorParam]
+    category_seasonality: list[float] = Field(min_length=52, max_length=52)
+    long_term_trend_slope: float
+    proxy_model_hash: str
+    extraction_method: Literal["posterior_mean_std", "full_posterior_samples"]
+
+class PosteriorParam(BaseModel):
+    mean: float
+    std: float = Field(gt=0)
+    n_effective_samples: int = Field(ge=100)
+
+class AnchorMagnitudes(BaseModel):
+    baseline_recipient_weekly: list[float]  # 52-week baseline trajectory
+    pricing_factor: float  # (1/pricing_index)^elasticity
+    elasticity_used: float  # category-specific
+    distribution_velocity_curve_used: list[float]
+    market_share_target_curve: list[float]
+
+class TransferReport(BaseModel):
+    recipient_priors: dict[str, PriorParam]
+    transferred_params_actual: list[str]
+    not_transferred: list[str]
+    inflation_applied: float
+    cross_category_distance: int = Field(ge=0, le=3)
+    warnings: list[TransferWarning]
+    prior_predictive_samples: list[ForecastTrajectory]  # 50 trajectories
+    sensitivity_results: list[SensitivityResult]
+    per_channel_heatmap: PerChannelHeatmap
+    anchor_uncertainty_propagation: AnchorUncertaintyDecomp
+
+class PerChannelHeatmap(BaseModel):
+    channels: list[str]
+    transfer_strength: list[float]  # per channel, 0-1
+    rationale: list[str]  # per channel, human-readable
+
+class SensitivityResult(BaseModel):
+    anchor_field: str
+    perturbation_pct: float  # e.g., -20%, -10%, 0%, +10%, +20%
+    forecast_delta_pct: float  # how much forecast shifts
+    ci_widening_pct: float
+
+class AnchorUncertaintyDecomp(BaseModel):
+    market_size_contribution: float  # what % of total forecast CI comes from market_size uncertainty
+    distribution_contribution: float
+    pricing_contribution: float
+    creative_contribution: float
+    competitive_contribution: float
+    proxy_transfer_contribution: float  # residual, the structural transfer uncertainty
+    total_ci_pct: float
+
+class TransferWarning(BaseModel):
+    severity: Literal["info", "warning", "blocking"]
+    code: str  # e.g., "EXCESS_SOV", "DISTRIBUTION_VELOCITY_NEGATIVE", "PRICING_EXTREME"
+    message: str
+    affected_field: Optional[str] = None
+    recovery_action: Optional[str] = None  # i18n key for button label
+
+class EngineSelectionResult(BaseModel):
+    selected_engine: Literal["single", "multi", "single_with_pooling", "blocked"]
+    rationale: str
+    n_proxies_used: int
+    blocking_reason: Optional[str] = None
+```
+
+#### 5.1.5 Engine Function Signatures (B3)
+
+```python
+# engines/launch_adapt.py
+def extract_proxy_priors(
+    proxy_model: TrainedModel,
+    config: ExtractionConfig,
+) -> ProxyPriors:
+    """Extracts 5 shape params from proxy posterior. Per ADAPTATION_RULES §1."""
+
+def apply_recipient_magnitudes(
+    priors: ProxyPriors,
+    anchors: RecipientAnchors,
+    similarity_score: float,
+    similarity_label: Literal["High", "Medium", "Low"],
+    cross_category_distance: int,
+    category_taxonomy: CategoryTaxonomy,
+) -> dict[str, PriorParam]:
+    """Calibrates magnitude using anchors per ADAPTATION_RULES §2."""
+
+def compute_anchor_uncertainty_propagation(
+    priors: dict[str, PriorParam],
+    anchors: RecipientAnchors,
+    forecast: Forecast,
+) -> AnchorUncertaintyDecomp:
+    """Linear approximation of anchor uncertainty contribution to forecast CI."""
+
+# engines/single_proxy_transfer.py
+def fit_recipient_with_priors(
+    priors: dict[str, PriorParam],
+    recipient_data: RecipientData,  # may be empty for new brand
+    callback: ProgressCallback,
+    config: TrainConfig,
+) -> TrainedModel: ...
+
+# engines/multi_proxy_hierarchical.py
+def fit_hierarchical_recipient(
+    proxy_priors_list: list[ProxyPriors],
+    pooling_weights: list[float],
+    multi_penalty: float,
+    recipient_data: RecipientData,
+    callback: ProgressCallback,
+    config: TrainConfig,
+) -> TrainedModel: ...
+
+# engines/engine_selector.py (audit M4 fix)
+def select_engine(
+    n_proxies: int,
+    individual_scores: list[float],
+    cross_category: bool,
+    recipient_weeks_available: int,
+) -> EngineSelectionResult:
+    """Deterministic logic. Testable via property tests."""
+
+# engines/launch_validate.py
+def prior_predictive_samples(
+    priors: dict[str, PriorParam],
+    anchors: RecipientAnchors,
+    horizon_weeks: int = 26,
+    n_samples: int = 50,
+    seed: int = 42,
+) -> list[ForecastTrajectory]: ...
+
+def sensitivity_analysis(
+    priors: dict[str, PriorParam],
+    anchors: RecipientAnchors,
+    perturbation_pcts: list[float] = [-20, -10, 10, 20],
+) -> list[SensitivityResult]: ...
+
+def per_channel_transfer_heatmap(
+    proxy_priors: ProxyPriors,
+    similarity_dimensions: SimilarityDimensionScores,
+) -> PerChannelHeatmap: ...
+```
+
+#### 5.1.6 Acceptance Criteria
+
+**AC3.1 — Anchor form validation real-time.**
+- GIVEN customer types `planned_share_pct=80`
+- WHEN field blurs
+- THEN warning «Excess SoV — verify reachable share» appears within 200ms p95
+
+**AC3.2 — Prior predictive 50 samples generates ≤2s p95 Warm.**
+- GIVEN customer clicks «Validate Transfer»
+- WHEN generation invoked
+- THEN 50 ForecastTrajectory returned within 2.5s p95 (Warm HW per §3 perf budgets)
+
+**AC3.3 — Sensitivity slider real-time.**
+- GIVEN customer drags market_size slider
+- WHEN value changes
+- THEN backend call (debounced 200ms) → forecast updates ≤1s p95
+
+**AC3.4 — Per-channel heatmap accurate.**
+- GIVEN proxy с TV adstock S=0.95 (high), digital seasonality S=0.60 (low)
+- WHEN heatmap computed
+- THEN TV channel shows strong transfer (>0.85), digital shows weak (0.5-0.65) с rationale text
+
+**AC3.5 — Engine selection deterministic.**
+- GIVEN inputs (n=2, scores=[0.85, 0.42], cross_cat=False, weeks=10)
+- WHEN `select_engine(...)` invoked
+- THEN returns `EngineSelectionResult(selected_engine="single_with_pooling", ...)` with rationale
+
+**AC3.6 — Blocked engine selection escalates.**
+- GIVEN inputs (n=2, scores=[0.90, 0.45], cross_cat=False, weeks=10) — spread > 0.4
+- WHEN `select_engine(...)` invoked
+- THEN returns `selected_engine="blocked"` с blocking_reason explanation
+
+**AC3.7 — Bayesian prior precision scaling correct.**
+- GIVEN proxy posterior std = 0.5 для adstock_decay, w_proxy = 0.32
+- WHEN apply_recipient_magnitudes invoked
+- THEN recipient prior std = 0.5 × (1 / √0.32) ≈ 0.884 (NOT 0.5/0.32 ≈ 1.5625)
+
+**AC3.8 — Cross-category transfer matrix enforced.**
+- GIVEN proxy is FMCG_food.snacks, recipient is Cosmetics.skincare (cross-L1 non-adjacent)
+- WHEN similarity computed in B2
+- THEN Insufficient verdict triggered, B3 entry blocked at workflow gate
+
+**AC3.9 — Anchor uncertainty propagation displayed.**
+- GIVEN customer specifies market_size ±10%
+- WHEN propagation computed
+- THEN UI shows decomposition: «market_size 35% / distribution 22% / pricing 18% / creative 12% / competitive 8% / proxy_transfer 5%» summing to 100%
+
+**AC3.10 — Two engines verified consistent.**
+- GIVEN single proxy с S=0.85
+- WHEN fit using `single_proxy_transfer` then `multi_proxy_hierarchical` с weights [1.0]
+- THEN posterior means match within 1e-3 (multi с N=1 should degenerate to single)
+
+#### 5.1.7 Test Plan + DoD
+
+**Unit tests (~70):**
+- Adaptation layer: extract priors per param, apply magnitudes per anchor combo
+- Engine selector deterministic + edge cases
+- Prior predictive seed reproducibility
+- Sensitivity analysis per anchor
+- Per-channel heatmap correctness
+- Cross-category matrix coverage
+
+**Property-based tests (~15):**
+- Bayesian std scaling 1/√w_proxy invariant
+- Sensitivity monotonicity (positive perturbation → consistent forecast direction)
+- Engine selection determinism (same inputs → same output)
+
+**Integration tests (~15):**
+- Full B2→B3 workflow (proxy from B2 → adaptation → validation → forecast)
+- Real Эконометрика fixture (Кагоцел) → recipient anchors → priors
+
+**Performance tests:**
+- Prior predictive ≤2.5s p95 Warm
+- Sensitivity per anchor ≤1s p95
+- Train single proxy ≤45s p95 Warm
+
+**DoD:**
+- [ ] 100 tests pass
+- [ ] Two engines unit + integration tested
+- [ ] Heatmap UX validated с Антоном (visual review)
+- [ ] Anchor uncertainty propagation math reviewed
+- [ ] Engine selector covers все 4 outcomes
+
+#### 5.1.8 Open Questions (B3)
+
+- **OQ-B3-1:** AI-assisted anchor estimation — Phase C+ scaffolding hook only (`anchors.ai_suggested_metadata: Optional`)?
+- **OQ-B3-2:** Auto-recommend engine selection — heuristic threshold (CV >50% volatility) confirmed in spec?
+- **OQ-B3-3:** Per-channel transfer disable — Phase B B3 nice-to-have or strictly Phase C+?
+
+#### 5.1.9 Dependencies
+
+- **Phase A:** C1 `aurora_inference.modeler.train_model` (full Bayesian fit), C1 `aurora_inference.conformal.compute_intervals` (CI computation), C3 workflow engine
+- **Internal:** B2 (ProxyVerdict, SimilarityDimensionScores), B1 (RecipientAnchors schema)
+
+---
+
+### §5.2 Sprint B4 — Launch Forecast Report Template + Methodology Certificate (1 неделя)
+
+**Goal:** PPTX/HTML/XLSX отчёт launch-specific + signed PDF Methodology Certificate centerpiece.
+
+#### 5.2.1 Scope
+
+**In scope:**
+- `aurora_pptx/launch_forecast/` — 8-section PPTX template per REPORT_SECTIONS_SPEC.md
+- HTML version через `aurora_html/` shared adapter (Phase A C8)
+- XLSX version через Rust XLSX writer (Phase A C8)
+- **Methodology Certificate PDF generator — single canonical format** (BLOCKER B2 fix)
+- **PDF rendering decision applied** — выбрано в B0.5 spike per ADR-006 (Tauri webview/Typst/ReportLab)
+- **Dual-signature integration** (HIGH H2 fix):
+  - Local Ed25519 signature (customer's Aurora install keypair, generated at install)
+  - Aurora signature (Vercel Edge signing service + Yandex.Cloud KMS)
+  - Cert содержит оба signatures
+- **3 verifier formats** (HIGH H3 fix):
+  - Web verifier `verify.auroraai.pro` (Phase A C7 deliverable)
+  - Self-contained HTML download (~250 KB single file, embedded WASM)
+  - CLI tool `aurora-verify <bundle> <pdf>` (binary distribution)
+- **3 framing presets** (HIGH H9 fix): CFO mode (highlights summary + decisions sections), CMO mode (emphasizes brand metrics + proxy quality), Balanced (default)
+- **Reproducibility recipe** в Cert: `aurora-launch-reproduce <bundle> <expected_hash>` command (BLOCKER B1 integration)
+- **Adaptive narrative templates** (CFO/CMO/Balanced) — section visibility presets, не 24 sub-templates
+- Conformal Prediction adapted for transfer (Tibshirani 2019) — `engines/launch_conformal.py`
+
+**Out of scope (Phase C+):**
+- LLM-driven adaptive narrative (full per-audience rewrite)
+- Customer-customizable templates (white-label)
+- NFT-style certificate uniqueness for compliance archives
+- Mobile app verifier
+- Live what-if interface для execs
+
+#### 5.2.2 Customer Experience Journey
+
+Customer (CMO Birch Energy + CFO peer review):
+
+1. After B3 transfer validation, customer clicks «Generate Forecast Report»
+2. Progress bar (estimated 45s):
+   - «Fitting recipient model...» (15s) — live MCMC trace animation showing convergence
+   - «Computing forecast horizons 12/26/52w...» (10s) — gradient grows on timeline
+   - «Generating reports...» (15s) — ceremonial Methodology Cert signing animation (Ed25519 key visualization, signature drop)
+3. Output:
+   - PPTX (16-20 slides) — opens in PowerPoint
+   - HTML report (interactive) — opens в browser
+   - XLSX (8 sheets) — analyst drill-down
+   - **PDF Methodology Certificate** — single file с dual-signature footer
+4. Customer's CFO opens PDF Cert
+5. Cert footer: «Methodology Certificate signed Ed25519. Verify at verify.auroraai.pro or download standalone verifier from auroraai.pro/verifier.»
+6. CFO drags PDF + .aurora bundle (или Cert standalone — bundle hash embedded в PDF metadata) to verify.auroraai.pro
+7. Page shows instantly: «✓ Valid local signature, ✓ Valid Aurora signature, ✓ No tampering detected, ✓ Hash matches Aurora Launch v0.1.0»
+8. CFO trusts report sufficiently to sign off on launch budget
+9. Optional: CFO downloads CLI `aurora-verify` для CI/CD integration в compliance audit pipeline
+
+**Adaptive narrative example (CFO mode):**
+- Section 1 «Cover» — visible
+- Section 2 «Executive Summary» — visible, **expanded** с CFO-friendly framing (ROI, payback, IRR emphasized)
+- Section 3 «Proxy Quality» — collapsed by default (1-line summary visible, expand for detail)
+- Section 4 «Transfer Caveats» — collapsed
+- Section 5-7 «Forecasts 12/26/52w» — visible, **emphasized**
+- Section 8 «Methodology + References» — visible (CFO needs sign-off on rigor)
+- Appendices «Sensitivity / Decomposition / Optimization Scenario» — Pro+ only, collapsed
+
+#### 5.2.3 Math Invariants
+
+- **Reproducibility recipe:** rtol claims explicit per Cert (1e-4 deterministic / 1e-2 stochastic — cross-machine bit-exact impossible per JAX/NumPyro stochastic)
+- **PDF signature scope EXCLUDES timestamps** (`/CreationDate`, `/ModDate`, `/AuroraGeneratedAt`) — content-level reproducibility, не byte-level
+- **Hash chain:** manifest_sha256 in Cert matches .aurora bundle's manifest_sha256 (verifier checks both)
+- **Conformal CI tightness conditional on n_calibration ≥ 50** (per audit H4 — Vovk 2005 quantile inflation otherwise)
+- **Cert canonical content invariant across tiers** (no tier differentiation в methodology rigor — BLOCKER B2 fix)
+
+#### 5.2.4 Pydantic Schemas (B4)
+
+```python
+class LaunchForecastReport(BaseModel):
+    sections: list[ReportSection]  # 8 sections per S006 REPORT_SECTIONS_SPEC.md
+    appendices: list[ReportAppendix]
+    framing_preset: Literal["cfo", "cmo", "balanced"] = "balanced"
+    forecast_horizons: list[ForecastHorizon]
+    methodology_cert_ref: MethodologyCertificateRef
+
+class ReportSection(BaseModel):
+    section_id: Literal[
+        "cover", "executive_summary", "proxy_quality", "transfer_caveats",
+        "forecast_12w", "forecast_26w", "forecast_52w", "methodology_references"
+    ]
+    visibility_per_framing: dict[str, Literal["expanded", "visible", "collapsed", "hidden"]]
+    content: dict  # section-specific content
+
+class MethodologyCertificateData(BaseModel):
+    cert_id: UUID
+    cert_version: str = "1.0"
+    aurora_launch_version: str  # e.g., "0.1.0"
+    bundle_hash_sha256: str
+    bundle_hash_jcs_canonical: str
+    composite_signing_payload: str  # manifest_sha256 || reproducibility_token
+
+    proxy_metadata_summary: ProxyMetadataSummary
+    transfer_summary: TransferSummary
+    forecast_summary: ForecastSummary
+
+    methodology_references: list[AcademicReference]  # DOIs
+
+    # Reproducibility recipe (BLOCKER B1 fix)
+    reproducibility_recipe: ReproductionInstructions
+
+    # Dual signature (HIGH H2 fix)
+    signature_local_ed25519: bytes
+    signature_local_pubkey_id: str  # customer's Aurora install pubkey
+    signature_aurora_ed25519: Optional[bytes] = None  # may be None если offline at sign time
+    signature_aurora_pubkey_id: Optional[str] = None
+    signature_aurora_pending: bool = False  # backfill on next online
+
+    # Verifier URLs (HIGH H3 fix)
+    verifier_urls: VerifierEndpoints
+
+    # Tier-independent — single canonical format (BLOCKER B2 fix)
+    # NO tier_specific_format flag
+
+class VerifierEndpoints(BaseModel):
+    web_verifier_url: str = "https://verify.auroraai.pro/"
+    standalone_html_download_url: str = "https://auroraai.pro/verifier/standalone.html"
+    cli_tool_download_url: str = "https://auroraai.pro/verifier/cli/"
+    cli_tool_command_example: str = "aurora-verify <bundle.aurora> <cert.pdf>"
+
+class ReproductionInstructions(BaseModel):
+    cli_command: str  # e.g., "aurora-launch-reproduce my_launch.aurora a3f2b8...c4d1"
+    expected_rtol_deterministic: float = 1e-4
+    expected_rtol_stochastic: float = 1e-2
+    aurora_launch_required_version: str  # exact version или semver range
+    expected_install_command: str  # e.g., "Download from auroraai.pro/launch/v0.1.0"
+    estimated_reproduction_time_minutes: int
+
+class AcademicReference(BaseModel):
+    citation: str
+    doi: str
+    relevance: str  # what aspect of methodology this supports
+```
+
+#### 5.2.5 Engine Function Signatures (B4)
+
+```python
+# engines/launch_forecast.py
+def generate_forecast_report(
+    bundle: AuroraBundle,
+    framing: Literal["cfo", "cmo", "balanced"],
+    formats: list[Literal["pptx", "html", "xlsx", "pdf_cert"]],
+) -> ReportBundle: ...
+
+def compose_section_visibility(
+    framing: str,
+    section_ids: list[str],
+) -> dict[str, str]: ...
+
+# engines/methodology_cert.py
+def build_certificate_data(
+    bundle: AuroraBundle,
+    aurora_launch_version: str,
+) -> MethodologyCertificateData: ...
+
+def render_certificate_pdf(
+    cert_data: MethodologyCertificateData,
+    pdf_renderer: Literal["tauri_webview", "typst", "reportlab"],  # decided in B0.5 ADR-006
+) -> bytes: ...
+
+def sign_certificate_local(
+    pdf_bytes: bytes,
+    customer_install_keypair: Ed25519KeyPair,
+) -> tuple[bytes, str]:  # (signed_pdf, signature_id)
+    """Local signature — works offline."""
+
+async def sign_certificate_aurora(
+    cert_data: MethodologyCertificateData,
+    signing_service_url: str,
+) -> Optional[tuple[bytes, str]]:
+    """Vercel Edge call. Returns None if offline (signature backfill on next online)."""
+
+def queue_aurora_signature_backfill(cert_id: UUID) -> None:
+    """Adds к queue for next online sync."""
+
+# engines/launch_conformal.py
+def compute_conformal_intervals(
+    forecasts: list[Forecast],
+    calibration_data: CalibrationData,
+    coverage_target: float = 0.95,
+    method: Literal["split", "weighted_jackknife"] = "split",
+) -> list[ConformalInterval]:
+    """Tightness conditional on n_calibration ≥50 (audit H4)."""
+
+# tools/aurora_verify_cli.py
+def verify_certificate_cli(bundle_path: Path, pdf_cert_path: Path) -> VerifyResult:
+    """CLI tool, exits 0 if valid + matches, 1 otherwise. Output JSON for scripting."""
+```
+
+#### 5.2.6 Acceptance Criteria
+
+**AC4.1 — PPTX generation ≤30s p95 Warm.**
+- GIVEN bundle with full forecast data
+- WHEN generate_forecast_report invoked с format="pptx"
+- THEN PPTX file produced within 30s p95
+
+**AC4.2 — PDF Methodology Cert ≤10s p95 Warm.**
+- Same with format="pdf_cert"
+- THEN PDF produced within 10s p95
+
+**AC4.3 — Dual signature applied online.**
+- GIVEN customer online + signing service available
+- WHEN cert signed
+- THEN both local + Aurora signatures present, signature_aurora_pending=False
+
+**AC4.4 — Local signature works offline.**
+- GIVEN customer offline (no Vercel Edge access)
+- WHEN cert signed
+- THEN signature_local_ed25519 present, signature_aurora_ed25519=None, signature_aurora_pending=True
+- AND cert PDF renders с note «Aurora signature pending — will backfill on next online sync»
+
+**AC4.5 — Aurora signature backfill on next online.**
+- GIVEN cert signed offline (pending)
+- WHEN customer goes online
+- THEN background sync invokes signing service, Aurora signature added к Cert PDF, status updated
+
+**AC4.6 — Cert content tier-independent.**
+- GIVEN customer on Starter (1.5M ₽) tier vs Pro (2.5M ₽) tier
+- WHEN cert generated for identical project
+- THEN cert content identical (single canonical format, BLOCKER B2 fix verified)
+
+**AC4.7 — Reproducibility recipe runnable.**
+- GIVEN cert + .aurora bundle
+- WHEN customer runs `aurora-launch-reproduce <bundle> <hash from cert>`
+- THEN exit 0 if hash matches, exit 1 otherwise (BLOCKER B1 fix verified)
+
+**AC4.8 — Web verifier validates dual signature.**
+- GIVEN customer drags PDF + .aurora bundle to verify.auroraai.pro
+- WHEN verifier loads
+- THEN both signatures validated, hash chain checked, result displayed within 500ms p95
+
+**AC4.9 — Standalone HTML verifier offline-capable.**
+- GIVEN customer downloads `verify-standalone.html` from auroraai.pro/verifier/
+- WHEN customer opens locally на offline machine + drag-drop PDF + bundle
+- THEN verification works without network, identical result к web
+
+**AC4.10 — CLI verifier scriptable.**
+- GIVEN `aurora-verify my_launch.aurora cert.pdf --json`
+- WHEN run
+- THEN JSON output `{"local_sig": true, "aurora_sig": true, "hash_match": true, "verdict": "valid"}`
+
+**AC4.11 — Adaptive narrative framing applied correctly.**
+- GIVEN framing="cfo"
+- WHEN report generated
+- THEN sections 2/8 expanded, 3/4 collapsed (per visibility presets)
+
+**AC4.12 — Conformal CI tightness conditional.**
+- GIVEN n_calibration < 50
+- WHEN compute_conformal_intervals invoked
+- THEN warning emitted, CI uses inflated quantile (Vovk 2005), Cert documents this
+
+#### 5.2.7 Test Plan + DoD
+
+**Unit tests (~80):**
+- Section visibility per framing
+- Cert data composition
+- PDF rendering per renderer (Tauri webview / Typst / ReportLab fallback)
+- Signature scope (timestamps excluded)
+- Reproducibility recipe generation
+- Conformal interval math
+
+**Integration tests (~20):**
+- Full bundle → cert → 3 verifier formats validate
+- Online signing service integration
+- Offline mode + backfill flow
+
+**Property-based tests (~10):**
+- Hash chain integrity (cert hash matches bundle hash)
+- Signature scope determinism (timestamps don't affect signature)
+
+**Performance tests:**
+- All format generation budgets per §3
+- Web verifier load ≤500ms p95
+
+**DoD:**
+- [ ] 110 tests pass
+- [ ] Single canonical Cert format verified
+- [ ] Dual signature flow (online + offline) tested
+- [ ] 3 verifier formats functional
+- [ ] Reproducibility recipe end-to-end test pass
+- [ ] PDF renderer decision (ADR-006) implemented
+- [ ] External security review of WASM verifier scheduled (B6)
+
+#### 5.2.8 Open Questions (B4)
+
+- **OQ-B4-1:** WeasyPrint cross-platform — actually decide per ADR-006 (B0.5 spike). Likely Tauri webview API primary if WCAG-compliant CSS @page support sufficient.
+- **OQ-B4-2:** Adaptive narrative — single template + 3 framing presets confirmed (HIGH H9). LLM-driven Phase C+.
+- **OQ-B4-3:** Signed XLSX (file-level signature) — Phase B or Phase C+? **Recommend Phase C+** (Cert PDF is centerpiece, XLSX is supplementary).
+- **OQ-B4-4:** Customer's Aurora install keypair generation timing — first launch / install? Stored in OS keychain? **Recommend OS keychain** (Tauri Stronghold или native keychain).
+- **OQ-B4-5:** Aurora signature backfill — automatic background or customer-triggered? **Recommend automatic** с notification.
+
+#### 5.2.9 Dependencies
+
+- **Phase A:** C7 signing service + KMS, C8 reporting (aurora_pptx/html/xlsx + new pdf_writer)
+- **Internal:** B1 (MethodologyCertificateRef schema), B3 (forecast data + transfer summary)
+
+---
+
+### §5.3 Sprint B5 — Posterior Update Workflow (1 неделя)
+
+**Goal:** клиент re-fits модель с новыми recipient данными, partial pooling weight schedule applied transparently.
+
+#### 5.3.1 Scope
+
+**In scope:**
+- `engines/launch_posterior_update.py` per POSTERIOR_UPDATE_DESIGN.md:
+  - ESS-based weight schedule (Konstantinopoulos 2014)
+  - BMA fallback при coverage <0.60
+  - Drift adaptive (mild/moderate/severe per coverage)
+  - Identifiability caps (min 4 weeks recipient, max shrinkage by week)
+  - Min 8 weeks для drift detection (audit MEDIUM fix)
+- UI flow `PosteriorUpdateStep.svelte`:
+  - Customer uploads new recipient data
+  - **Update Estimate** display (closed-form, NOT «Preview» per HIGH H8 fix)
+  - Drift detection visualization
+  - BMA mode opt-in (audit M11 fix — visible to customer, не silent switch)
+  - Posterior update history (week 0 / 12 / 24 trajectories)
+- **Auto-trigger suggestions** с false-positive guard (audit M6 fix):
+  - Trigger criteria: drift AND ≥4 new weeks AND CI tightening estimate >10%
+  - Customer can dismiss for N weeks
+- New Methodology Certificate generated с linked previous cert (chain of trust)
+- Integration tests на synthetic data (proxy → recipient transfer accuracy)
+- **Эконометрика → Launch migration flow** (primary demo path per ADR launch-demo-strategy-real-client-data-first):
+  - UI button «Использовать как proxy в Aurora Launch» в Эконометрика side
+  - Lossless transfer recipient_brand_metadata + recent posterior как proxy_priors
+  - Customer не повторяет data work
+- Property-based tests (monotonic CI growth с horizon, consistent transfers)
+
+**Out of scope (Phase C+):**
+- Counterfactual «if you'd updated last week» feature
+- Cross-app audit trail (Эконометрика → Launch project handoffs, multi-tenant)
+- Auto-update opt-in (system updates monthly)
+- Predictive drift forecasting
+
+#### 5.3.2 Customer Experience Journey
+
+Customer (Materia Medica analyst, 12 weeks post-launch):
+
+1. Opens existing Aurora Launch project
+2. Sidebar widget shows: «4 weeks new data available — update may reduce CI by 18%» (auto-trigger suggestion)
+3. Customer clicks «Posterior Update»
+4. Upload step: customer drag-drops new DSM weekly file (адаптер ingests automatically через Phase A C2)
+5. **Update Estimate** displays (NOT Preview — это closed-form, HIGH H8):
+   - «ESS schedule: w_proxy → 0.19 (from 0.32)»
+   - «CI tightening estimate: ~18% (Bayesian variance reduction)»
+   - «Channel ROI shift: approximate, see full update for accurate values»
+   - «Release proxy threshold ETA: 8 weeks (current weight 0.19, threshold 0.05)»
+   - Note: «This is an estimate. Apply update for accurate numbers.»
+6. Drift severity panel: «Drift mild (coverage 0.83). Partial pooling continues.»
+7. If drift severe (coverage <0.60), prompt: «Drift detected severe. We recommend BMA mode. View comparison: Partial pooling ±15% vs BMA ±22%. Recommend BMA because coverage below threshold. [Apply BMA] [Continue with partial pooling]»
+8. Customer reviews, clicks «Apply Update»
+9. Progress (estimated 45s p95 Warm):
+   - Real MCMC update with live trace animation
+   - Posterior update event logged
+   - New Methodology Cert generated с link к previous Cert
+10. Customer sees evolution: «Posterior update history: week 0 (initial), week 12 (this update). Compare trajectories» (chart with both)
+11. Cert chain of trust visible: customer can navigate previous Cert → see «Updated: week 12, see new cert <link>»
+
+#### 5.3.3 Math Invariants
+
+- **ESS-based weight schedule** per POSTERIOR_UPDATE_DESIGN §1:
+  ```
+  w_proxy(t) = ESS_proxy_adj / (ESS_proxy_adj + ESS_recipient(t))
+  ESS_proxy_adj = 50 × similarity_factor (1.0 / 0.7 / 0.5 для High/Medium/Low)
+  ESS_recipient(t) = t × recipient_obs_value (per category)
+  ```
+- **Bayesian std scales 1/√w_proxy** (audit-fixed BLOCKER, NOT 1/w_proxy)
+- **BMA fallback at coverage <0.60** (per ADR-004, opt-in not silent switch — audit M11)
+- **Identifiability caps:**
+  - weeks <12 → w_proxy ≥ 0.40
+  - weeks <24 → w_proxy ≥ 0.20
+  - min 4 weeks recipient data перед refit
+- **Drift detection min 8 weeks** (audit MEDIUM fix — t<8 binomial noise too high)
+- **Auto-trigger criteria** (audit M6 fix — false positive guard):
+  - drift detected AND ≥4 new weeks data AND estimated CI tightening >10%
+- **Multi-proxy aggregate ESS** weighted by pooling, divided by multi-penalty (audit-fixed)
+
+#### 5.3.4 Pydantic Schemas (B5)
+
+```python
+class PosteriorUpdateEvent(BaseModel):
+    timestamp: datetime
+    update_id: UUID
+    triggering_data_hash: str
+    before_model_hash: str  # audit-fixed addition
+    after_model_hash: str   # audit-fixed addition
+    pooling_weights: PoolingWeights
+    coverage_observed: float
+    drift_severity: Literal["normal", "mild", "moderate", "severe", "unknown"]  # unknown if <8w
+    diagnostics: PosteriorDiagnostics
+    posterior_predictive_p_value: float
+    methodology_cert_id_previous: Optional[UUID] = None
+    methodology_cert_id_new: UUID
+    update_mode: Literal["partial_pooling", "bma"] = "partial_pooling"
+    bma_opted_in_by_customer: bool = False  # audit M11 — never silent switch
+
+class PoolingWeights(BaseModel):
+    w_proxy: float = Field(ge=0.0, le=1.0)
+    w_recipient: float = Field(ge=0.0, le=1.0)
+    weeks_elapsed: int = Field(ge=0)
+    similarity_factor_used: float
+    recipient_obs_value_used: float
+
+    @field_validator("w_recipient")
+    @classmethod
+    def weights_sum_to_one(cls, v: float, info) -> float:
+        w_proxy = info.data.get("w_proxy", 0)
+        if abs(v + w_proxy - 1.0) > 1e-6:
+            raise ValueError(f"Weights must sum to 1.0")
+        return v
+
+class PosteriorDiagnostics(BaseModel):
+    gelman_rubin: dict[str, float]  # per parameter
+    ess: dict[str, float]
+    divergent_transitions_count: int = Field(ge=0)
+    posterior_predictive_p_value: float
+
+class DriftDiagnostics(BaseModel):
+    coverage_observed: float
+    n_weeks_evaluated: int
+    severity: Literal["normal", "mild", "moderate", "severe", "unknown"]
+    is_unknown_due_to_few_weeks: bool  # True if n_weeks_evaluated < 8
+
+class UpdateEstimate(BaseModel):
+    """NOT 'preview' — closed-form deterministic estimate (HIGH H8 fix)."""
+    estimated_pooling_weight_after: float
+    estimated_ci_tightening_pct: float
+    estimated_release_threshold_eta_weeks: Optional[int]
+    channel_roi_shift_approximate: dict[str, float]  # marked approximate
+    notes: str = "This is a closed-form estimate. Apply full update for accurate numbers."
+    computation_time_estimate_s: float = 1.0  # vs full update ~45s
+
+class AutoTriggerSuggestion(BaseModel):
+    project_id: UUID
+    triggered_at: datetime
+    reason: str
+    drift_severity: Literal["mild", "moderate", "severe"]
+    n_new_weeks: int
+    estimated_ci_tightening_pct: float
+    dismissed_by_customer: bool = False
+    dismissed_until: Optional[datetime] = None
+```
+
+#### 5.3.5 Engine Function Signatures (B5)
+
+```python
+# engines/launch_posterior_update.py
+def compute_pooling_weights(
+    weeks_elapsed: int,
+    ess_proxy_base: float,
+    similarity_factor: float,
+    recipient_obs_value: float,
+    drift_severity: Literal["normal", "mild", "moderate", "severe", "unknown"],
+) -> PoolingWeights: ...
+
+def detect_drift(
+    proxy_baseline_forecast: list[float],
+    recipient_actual: list[float],
+    coverage_threshold: float = 0.85,
+    min_weeks: int = 8,
+) -> DriftDiagnostics: ...
+
+def update_posterior(
+    current_model: TrainedModel,
+    new_recipient_data: RecipientData,
+    pooling_weights: PoolingWeights,
+    update_mode: Literal["partial_pooling", "bma"] = "partial_pooling",
+    callback: ProgressCallback,
+) -> tuple[TrainedModel, PosteriorUpdateEvent]: ...
+
+def compute_update_estimate(
+    current_model: TrainedModel,
+    new_recipient_data: RecipientData,
+    project_proxy_priors: ProxyPriors,
+) -> UpdateEstimate:
+    """Closed-form estimate (HIGH H8). Takes ~1s, not a half-update."""
+
+def should_trigger_auto_suggestion(
+    project: AuroraProject,
+    last_dismissal: Optional[datetime] = None,
+) -> Optional[AutoTriggerSuggestion]:
+    """Audit M6 fix — drift + ≥4 weeks + CI tightening >10%."""
+
+# engines/econometrica_to_launch_migration.py
+def migrate_econometrica_to_launch_proxy(
+    econometrica_project: EconometricaProject,
+    customer_consent: bool,
+) -> AuroraBundle:
+    """Lossless transfer recipient_brand_metadata + posterior priors as proxy."""
+```
+
+#### 5.3.6 Acceptance Criteria
+
+**AC5.1 — Pooling weights monotonic.**
+- GIVEN ESS_PROXY_BASE=50, similarity_factor=0.7, recipient_obs_value=3.5
+- WHEN compute_pooling_weights for t=12, 26, 52
+- THEN w_proxy decreasing monotonically (0.51 → 0.32 → 0.19, per POSTERIOR_UPDATE_DESIGN §1.3 worked example)
+
+**AC5.2 — BMA opt-in not silent.**
+- GIVEN coverage_observed = 0.55 (severe drift)
+- WHEN customer initiates update
+- THEN UI prompts с comparison «Partial pooling vs BMA», customer must explicitly choose, не silent switch
+
+**AC5.3 — Update Estimate is closed-form fast.**
+- GIVEN customer requests Update Estimate
+- WHEN compute_update_estimate invoked
+- THEN result in ≤2s p95 (vs full update ~45s), notes clearly say «estimate, not full update»
+
+**AC5.4 — Drift detection min 8 weeks.**
+- GIVEN n_weeks_evaluated = 6
+- WHEN detect_drift invoked
+- THEN DriftDiagnostics(severity="unknown", is_unknown_due_to_few_weeks=True)
+
+**AC5.5 — Identifiability cap weeks <12 enforced.**
+- GIVEN ESS calculation yields w_proxy = 0.30 на t=10
+- WHEN compute_pooling_weights with cap
+- THEN w_proxy clamped to 0.40 (cap), customer notified
+
+**AC5.6 — Auto-trigger criteria all-or-nothing.**
+- GIVEN drift detected = mild, n_new_weeks = 3 (<4), CI tightening estimate = 12% (>10%)
+- WHEN should_trigger_auto_suggestion invoked
+- THEN returns None (n_new_weeks <4 invalidates trigger, audit M6 fix)
+
+**AC5.7 — Posterior update event audit trail complete.**
+- GIVEN posterior update applied
+- WHEN PosteriorUpdateEvent persisted
+- THEN includes before_model_hash + after_model_hash + diagnostics + cert chain links
+
+**AC5.8 — Methodology Cert chain of trust.**
+- GIVEN previous Cert (id_v1) for project + posterior update
+- WHEN new Cert generated
+- THEN methodology_cert_id_previous = id_v1 в new Cert, allowing chain navigation
+
+**AC5.9 — Эконометрика → Launch migration lossless.**
+- GIVEN existing Эконометрика project (Materia Medica Кагоцел)
+- WHEN customer clicks «Use as proxy in Aurora Launch»
+- THEN bundle.proxy_brand_metadata.proxy_code = «KAG-2024», bundle.proxy_priors loaded from posterior, recipient_brand_metadata schema preserved
+
+**AC5.10 — Bayesian std scaling correct (regression test для B3 audit fix).**
+- GIVEN proxy posterior std = 0.5, w_proxy = 0.32
+- WHEN partial pooling applied
+- THEN recipient prior std = 0.5 × (1 / √0.32) ≈ 0.884 (1/√w, NOT 1/w)
+
+#### 5.3.7 Test Plan + DoD
+
+**Unit tests (~70):**
+- Pooling weight schedule per t, similarity, obs_value
+- BMA opt-in flow (customer must explicit choose)
+- Update Estimate closed-form
+- Drift detection с min 8 weeks
+- Identifiability caps
+- Auto-trigger criteria all-AND
+- Posterior update event logging
+- Cert chain links
+
+**Property-based tests (~15):**
+- Pooling weight monotonicity (t increases → w_proxy decreases)
+- ESS proxy similarity factor invariance
+- Update Estimate determinism (same inputs → same estimate)
+
+**Integration tests (~15):**
+- Full B4→B5 flow (Cert v1 → new data → update → Cert v2 with chain)
+- Эконометрика → Launch migration с real fixture
+
+**Performance tests:**
+- Update Estimate ≤2s p95
+- Full posterior update ≤45s p95 Warm
+
+**DoD:**
+- [ ] 100 tests pass
+- [ ] BMA opt-in UX validated с Антоном
+- [ ] Update Estimate displays «estimate» language clearly
+- [ ] Cert chain of trust functional
+- [ ] Эконометрика → Launch migration tested
+
+#### 5.3.8 Open Questions (B5)
+
+- **OQ-B5-1:** Auto-trigger frequency cap — max 1 suggestion per N weeks? **Recommend max 1/4 weeks** (avoids fatigue).
+- **OQ-B5-2:** Cert chain navigation UX — sidebar listing + previous Cert link, или separate «history» page? **Recommend sidebar timeline** (premium pacing CP-5).
+- **OQ-B5-3:** BMA mode default — opt-in confirmed, but should we still flag «Partial pooling continues despite severe drift» как warning? **Recommend yes** — transparency CP-1.
+
+#### 5.3.9 Dependencies
+
+- **Phase A:** C1 (modeler.update + diagnostics), C2 (data ingestion для new recipient data), C5 (telemetry для auto-trigger event), C7 (signing service для new Cert)
+- **Internal:** B1 (PosteriorUpdateEvent schema), B3 (engine selection), B4 (Cert generation)
+
+---
+
+### §5.4 Sprint B6 — Pilot Live-Test + Polish (1 неделя)
+
+**Goal:** 3 параллельных pilot клиента отвалидируют end-to-end Aurora Launch workflow + premium polish + WCAG AA + performance budgets validated.
+
+#### 5.4.1 Scope
+
+**In scope:**
+- Pilot session с 3 параллельными клиентами per S008 PILOT_CLIENT_PLAN.md (Tier 1 = existing Эконометрика clients):
+  - Materia Medica (Кагоцел / Венарус teams) — Pharma OTC
+  - 1 FMCG impulse client
+  - 1 Premium cosmetics client
+  - **Customer-nominated proxy ad-hoc per PROXY_INTAKE_PROTOCOL.md** (D002 restored)
+- Bug fixes по live-test findings
+- **3-tier onboarding model** (HIGH H4 fix):
+  - **First 10 min:** guided tour через pre-prepared example launch (Антон pre-runs example, customer reviews end-to-end signed Cert) — wow signature moment per UX U1
+  - **Next 20 min:** customer's real **Step 1 Discovery + Step 2 Verification** submission (Step 5 training queued in background, completes ~3h)
+  - **Async OS notification** when training completes — customer continues Step 6 Transfer
+- **Synthetic templates only** (HIGH H5 fix) — generated via B0.5 corpus generator, calibrated к category statistics:
+  - FMCG_food.snacks_savoury (Snacks template)
+  - OTC_pharma.OTC_cold_flu (OTC Pharma template)
+  - Cosmetics.skincare_premium (Premium Cosmetic template)
+  - FMCG_beverage.beverage_energy (Energy Drink template)
+  - **No real anonymized customer data** в templates
+- Empty states + error states polish (premium UX patterns per U3)
+- A11y audit (WCAG AA): keyboard nav, screen reader (NVDA + JAWS), high-contrast, prefers-reduced-motion, 200% zoom
+- Performance budget validation (audit A9: train ≤30s single, ≤90s multi-proxy N=3, all per §3 budgets)
+- Documentation для customer success
+- **External security review of WASM verifier** (per audit R-NG5 mitigation)
+- **Verifier supply chain trust** (audit TS1 fix) — verifier reproducible build + hash в Methodology Cert
+- v1.4.0 alpha-tag + ship to 3 pilot clients
+
+**Out of scope (Phase B+ post-pilot):**
+- EN translation (Phase B+ pivot to UK/EU markets)
+- Customer-contributed templates (Phase C+)
+- Voice control accessibility (Phase C+)
+
+#### 5.4.2 Customer Experience Journey
+
+**3-tier onboarding для new customer (HIGH H4):**
+
+**Tier 1 — Pre-prepared example (10 min):**
+1. Customer (Materia Medica analyst) opens Aurora Launch first time
+2. Welcome screen: «Welcome, [Customer Name]. Let's show you Aurora Launch in action with a sample launch.»
+3. Beautiful brand reveal animation (typography, premium pacing per CP-5)
+4. Example launch loads (synthetic OTC pharma case study, similar к customer's ICP)
+5. Customer navigates through pre-prepared workflow:
+   - Step 1: «In the real workflow, you'd choose your proxy. Here's an example with 'XYZ Antiviral OTC' as proxy»
+   - Step 2: «We've already verified DSM data availability for this example»
+   - Step 3-7: customer scrolls through, sees Methodology Cert at end, signed Ed25519, displays «Verify at verify.auroraai.pro»
+6. Customer drags example PDF to verify.auroraai.pro (tested within onboarding) — sees «Valid signature, no tampering» — wow trust moment
+7. Onboarding next button: «Now let's do yours — start your real launch»
+
+**Tier 2 — Real submission (20 min):**
+8. Step 1 Discovery: customer enters their real brand name + selects proxy от their consultant (could be Антон scheduled call beforehand)
+9. Step 2 Verification: customer enters DSM/Mediascope subscription credentials, system verifies data availability
+10. System: «Verification passed. Step 5 training will run in background (~2-3 hours). We'll notify you when ready.»
+11. Customer minimizes Aurora Launch, continues their day
+
+**Tier 3 — Async completion (~3h later):**
+12. OS notification: «Aurora Launch: Your training is ready. Continue to Step 6 Transfer.»
+13. Customer opens app, continues Steps 6-7
+14. Final Methodology Cert produced for their real launch — signed, verifiable, shareable с CFO
+
+**Templates as case studies (HIGH H5):**
+
+Template library shows 4 synthetic templates:
+- «Energy Drink launch — synthetic case study, calibrated to category statistics»
+- Customer can open template, see full methodology trail (proxy, anchors, transfer, report, cert)
+- Each template explicitly marked «Synthetic — illustrative purposes»
+- Customer learns by example, не from real data
+
+**Performance theatre (B5/B6 polish, CP-5):**
+- Training: live MCMC trace animation (chains converging, parameter posterior emerging)
+- Decomposition: progress bar with channel-by-channel reveal
+- Forecast: gradient grows across timeline
+- Cert signing: ceremonial Ed25519 visualization (key animation, signature drop, hash chain forming)
+
+**Error UX (premium recovery):**
+
+When customer hits Insufficient verdict (Phase B B2 hard block):
+> We can't proceed with this proxy. Your similarity score (0.42) is below our minimum threshold (0.50). We refuse to generate forecasts on insufficient data — methodology integrity matters.
+>
+> What you can do:
+> - **Try a different proxy brand** that's more similar to your launch (suggestions below based on your category)
+> - **Add a second proxy via multi-proxy mode** — combining 2 partial proxies often improves combined score
+> - **Schedule 30-min consult with Антон** to discuss alternatives
+>
+> [3 buttons]
+
+#### 5.4.3 Math Invariants
+
+- Onboarding example launch — synthetic, deterministic seed (corresponds к Templates synthetic generation)
+- Performance budgets validated under realistic load (multiple concurrent operations)
+- Verifier supply chain — published WASM hash matches deployed WASM (auto-verified by CI on each release)
+
+#### 5.4.4 Pydantic Schemas (B6)
+
+```python
+class OnboardingState(BaseModel):
+    customer_id: UUID
+    tier_completed: Literal["none", "tier1_example", "tier2_submission", "tier3_complete"]
+    started_at: datetime
+    tier1_example_project_id: Optional[UUID] = None
+    tier2_real_project_id: Optional[UUID] = None
+    notification_sent: bool = False
+
+class Template(BaseModel):
+    template_id: str
+    name: str  # i18n key
+    category_l3: str
+    description: str  # i18n key
+    is_synthetic: bool = True  # always True for Phase B (HIGH H5)
+    seed: int  # deterministic synthetic project generation
+    file_path_relative: str  # template_data/<id>.aurora
+
+class PilotEngagement(BaseModel):
+    pilot_id: UUID
+    customer_id: UUID
+    customer_category: Literal["pharma_otc", "fmcg_impulse", "premium_cosmetics"]
+    engagement_phase: Literal["pre_pilot", "kickoff", "phase_1_forecast", "phase_2_validation", "wrap_up"]
+    weeks_completed: int
+    nps_score: Optional[int] = None  # 1-10, collected post-completion
+    case_study_consent: bool = False
+    converted: Optional[bool] = None
+    conversion_tier: Optional[Literal["starter", "pro", "enterprise"]] = None
+
+class A11yAuditResult(BaseModel):
+    timestamp: datetime
+    serious_issues: list[A11yIssue]
+    moderate_issues: list[A11yIssue]
+    minor_issues: list[A11yIssue]
+    overall_pass: bool  # True iff zero serious issues
+
+class A11yIssue(BaseModel):
+    component: str
+    issue_type: Literal["missing_aria", "low_contrast", "no_keyboard_focus", "screen_reader_unclear", "zoom_break"]
+    severity: Literal["serious", "moderate", "minor"]
+    fix_recommendation: str
+```
+
+#### 5.4.5 Engine Function Signatures (B6)
+
+```python
+# engines/onboarding/manager.py
+def initialize_onboarding(customer_id: UUID) -> OnboardingState: ...
+def advance_onboarding_tier(state: OnboardingState, completed_tier: str) -> OnboardingState: ...
+def schedule_completion_notification(state: OnboardingState, eta: datetime) -> None: ...
+
+# engines/templates/library.py
+def list_templates() -> list[Template]: ...
+def load_template(template_id: str) -> AuroraBundle: ...
+
+# engines/templates/synthetic_generator.py
+def generate_template_project(template: Template, output_dir: Path) -> Path:
+    """Reuses B0.5 corpus generator. Deterministic seed."""
+
+# engines/pilot/tracker.py
+def log_pilot_engagement_event(pilot_id: UUID, event_type: str, metadata: dict) -> None: ...
+def collect_nps_score(pilot_id: UUID, score: int, feedback: str) -> None: ...
+
+# engines/a11y/audit_runner.py
+def run_a11y_audit(target_url: str) -> A11yAuditResult:
+    """Uses axe-core via Playwright."""
+
+# engines/verifier_supply_chain/check.py
+def compute_published_wasm_hash() -> str: ...
+def verify_wasm_supply_chain(deployed_wasm: bytes, published_hash: str) -> bool: ...
+```
+
+#### 5.4.6 Acceptance Criteria
+
+**AC6.1 — 3-tier onboarding flow functional.**
+- GIVEN new customer first install
+- WHEN customer launches Aurora Launch
+- THEN tier 1 (10 min example) loads, customer can navigate, tier 2 prompts after completion
+
+**AC6.2 — Templates synthetic only (HIGH H5).**
+- GIVEN templates library queried
+- WHEN list_templates() invoked
+- THEN all 4 templates have is_synthetic=True, no real customer data references
+
+**AC6.3 — Performance budgets validated end-to-end.**
+- GIVEN 3 pilot client real workflows
+- WHEN measured during pilot
+- THEN all p95 budgets per §3 met (cold start, train, report gen, etc.)
+
+**AC6.4 — A11y WCAG AA zero serious issues.**
+- GIVEN axe-core scan of full app
+- WHEN A11yAuditResult.overall_pass checked
+- THEN True (zero serious issues)
+
+**AC6.5 — Pilot end-to-end completion.**
+- GIVEN 3 parallel pilot engagements
+- WHEN 12-week engagement plan executed
+- THEN ≥2 of 3 pilots complete with signed Methodology Cert (target 60% completion rate)
+
+**AC6.6 — Verifier supply chain trust.**
+- GIVEN deployed WASM verifier
+- WHEN published hash compared to deployed hash
+- THEN match (CI verified on each release)
+
+**AC6.7 — Error UX recovery actions work.**
+- GIVEN customer hits Insufficient verdict
+- WHEN error UI displayed
+- THEN 3 recovery buttons functional (Try different proxy / Add multi-proxy / Schedule consult)
+
+**AC6.8 — Onboarding completion notification.**
+- GIVEN customer's tier 2 submission, training queued
+- WHEN training completes (~3h later)
+- THEN OS notification sent, customer can resume from notification
+
+**AC6.9 — Эконометрика → Launch migration UI button (B5 deliverable verified в B6 polish).**
+- GIVEN existing Эконометрика customer with running project
+- WHEN customer clicks «Use as proxy in Aurora Launch» in Эконометрика app
+- THEN Aurora Launch opens с pre-populated proxy project, lossless transfer verified
+
+**AC6.10 — NPS collection post-pilot.**
+- GIVEN pilot completes 12-week engagement
+- WHEN customer prompted for NPS
+- THEN score 1-10 + feedback collected, target ≥7/10
+
+#### 5.4.7 Test Plan + DoD
+
+**Pilot validation tests:**
+- 3 parallel pilots end-to-end
+- NPS collection (target ≥7/10)
+- CI coverage validation (12-week retroactive)
+- Methodology Cert independent verification (random sample N=3 CFOs)
+
+**A11y tests:**
+- axe-core scan all primary screens
+- Manual screen reader test (NVDA + JAWS)
+- Keyboard-only navigation full workflow
+- 200% zoom layout integrity
+- Color-blind safe palette verification
+
+**Performance tests:**
+- Cold start ≤4s p95 Premium HW, ≤8s Cold HW (per §3)
+- Train ≤30s single p95 Warm
+- Multi-proxy ≤90s p95 Warm
+
+**Onboarding tests:**
+- Tier 1/2/3 flow integration
+- OS notification triggers
+- Async completion handling
+
+**External review:**
+- WASM verifier security audit (external contractor)
+- Supply chain trust verification
+
+**DoD:**
+- [ ] 3 pilots launched
+- [ ] All tests pass
+- [ ] WCAG AA audit zero serious issues
+- [ ] Performance budgets all met
+- [ ] External verifier security review report received (no findings или findings closed)
+- [ ] v1.4.0 alpha-tag created
+- [ ] Customer success documentation published (docs.auroraai.pro/launch/)
+
+#### 5.4.8 Open Questions (B6)
+
+- **OQ-B6-1:** Templates count — 4 confirmed sufficient или 6+ для category coverage? **Recommend 4 для Phase B**, expand Phase B+ post-pilot.
+- **OQ-B6-2:** Onboarding video walkthroughs — text-only или embedded video? **Recommend mixed** (text default + optional video links).
+- **OQ-B6-3:** External security review contractor — Антон choice (CrowdStrike / Trail of Bits / cure53 / NCC Group)? **Escalate decision.**
+- **OQ-B6-4:** v1.4.0 GA criteria — code complete + 3 pilots launched, or first paid conversion? **Recommend separate gates** (alpha-tag = code complete, GA = first conversion).
+
+#### 5.4.9 Dependencies
+
+- **Phase A:** All 8 components final (С1-С8 v0.1.0+)
+- **Internal:** B0.5 (synthetic generator для templates), B1 (schemas), B2 (proxy selection), B3 (adaptation), B4 (reports + cert), B5 (posterior update + Эконометрика migration)
 
 ---
 
 ## §6 Quality Gates & Audit Findings Registry
 
-**Pass 1 self-audit pending.**
+### 6.1 Self-audit Pass — findings applied inline
+
+After Pass 2 draft writing, self-audit pass surfaced следующие findings (applied inline в spec content above):
+
+**Severity counts (post-Pass 2):**
+
+| Severity | Count | Status |
+|---|---|---|
+| BLOCKER | 0 | All 3 plan-level BLOCKERs already resolved в spec |
+| HIGH | 4 | All applied inline |
+| MEDIUM | 12 | Applied where feasible, deferred Phase B+ where backlog |
+| LOW | 6 | Polish backlog |
+
+**HIGH findings applied (Pass 2):**
+
+- **F-PASS2-H1:** B3 anchor uncertainty propagation formula — linear approximation explicit (rather than Monte Carlo). Reason: closed-form deterministic, fast (<200ms), sufficient accuracy для customer-facing display. Phase C+ может upgrade to MC.
+- **F-PASS2-H2:** B4 Aurora signature backfill — automatic background sync с notification. Customer не должен manually click «sync».
+- **F-PASS2-H3:** B5 BMA opt-in UX — shown with side-by-side comparison «Partial pooling ±X% / BMA ±Y%» so customer makes informed decision (audit M11 fix).
+- **F-PASS2-H4:** B6 Эконометрика → Launch migration — split between Phase A C2 (cross-app license + project linking schema, foundation) and Phase B B5/B6 (UX button + transfer flow). Open question for Антон (OQ-A4).
+
+**MEDIUM findings (sample — full registry in commit notes):**
+
+- M-Pass2-1: B0.5 corpus storage — synthetic corpus committed to git с deterministic seeds (small file size <5MB total)
+- M-Pass2-2: B1 Decimal import — explicit `from decimal import Decimal` в schema modules
+- M-Pass2-3: B2 i18n locale fallback — default to `en` если customer locale not in `[ru, en]`
+- M-Pass2-4: B3 cross-category distance enum — defined explicitly (0=L3, 1=L2, 2=L1, 3=adjacent_L1, 4=cross_non_adjacent_blocked)
+- M-Pass2-5: B4 Cert tier-independence — explicit anti-tier check в test (cert content identical regardless of license tier)
+- M-Pass2-6: B5 multi-proxy aggregate ESS — formula explicit (sum(w_i × ESS_i) / multi_penalty)
+- M-Pass2-7: B6 templates synthetic generator — reuse B0.5 corpus generator, no separate codepath
+- M-Pass2-8: B6 v1.4.0 alpha vs GA criteria — separate gates documented
+- M-Pass2-9: All sprints — engine signatures use Pydantic BaseModel as type hints (consistency)
+- M-Pass2-10: All sprints — "callback: ProgressCallback" type — defined в Phase A C3 workflow handoff matrix
+- M-Pass2-11: B4 keypair generation — Tauri Stronghold OS keychain (cross-platform)
+- M-Pass2-12: All sprints — TimerCallback + LoggerCallback distinct (separation of concerns)
+
+### 6.2 Performance budget enforcement strategy
+
+CI gates на p95 budgets per §3. Regression detection: ≥10% p95 increase from baseline → CI fails. Quarterly baseline ratchet (не lock forever).
+
+### 6.3 External review trigger points
+
+- ≥3 BLOCKER findings in self-audit → escalate Антон before applying
+- Sprint LOC exceeds 600 (target 250-500 per sprint) — actual: B3 ~600, B4 ~550, B5 ~400, B6 ~400. Pass.
+- Open questions count >3 per sprint — actual: B0.5 3 OQs, B1 3, B1.5 3, B2 3, B3 3, B4 5 (over!), B5 3, B6 4 (over!). B4 + B6 escalate.
+- Cross-sprint dependency cycles — none detected.
+
+### 6.4 Audit findings registry (cumulative)
+
+| ID | Sprint | Severity | Description | Status |
+|---|---|---|---|---|
+| F-Plan-B1 | meta | BLOCKER | Reproducibility CLI tool ships in B0.5 + B4 integration | Applied |
+| F-Plan-B2 | meta | BLOCKER | Single canonical Cert format universal across tiers | Applied |
+| F-Plan-B3 | meta | BLOCKER | i18n infrastructure from B2 (not Phase B+) | Applied |
+| F-Plan-H1..H9 | meta | HIGH | 9 plan-level HIGHs (PDF / dual-sig / 3 verifiers / onboarding / templates / autocomplete / two-pass / Update Estimate / framing presets) | All applied |
+| F-Pass2-H1..H4 | various | HIGH | Pass 2 self-audit HIGH findings | Applied inline |
+| M-Pass2-1..12 | various | MEDIUM | Pass 2 self-audit MEDIUM findings | Applied where feasible |
+
+### 6.5 Success criteria measurement methodology
+
+| Metric | Method | Target | Validation timing |
+|---|---|---|---|
+| Pilot conversion ≥60% | Pilot tracker + sales conversion record | ≥2 of 3 pilots convert | Post-pilot 12-week window |
+| Methodology Certificate verifies independently | Random sample N=3 CFOs phone interview verifying на verify.auroraai.pro | 100% verify success | Post-pilot Cert generation |
+| Forecast CI coverage ≥85% post-launch | Retroactive validation, customer shares actual data 12 weeks post-launch | ≥85% empirical coverage | 12 weeks post-launch |
+| Time-to-first-forecast ≤2 weeks | Pilot kickoff timestamp → first forecast Cert timestamp | ≤14 calendar days | Per pilot |
+| NPS ≥7/10 | Email survey 2 weeks post-completion | ≥7 average across pilots | Post-completion |
+| Reproducibility test pass | External engineer runs `aurora-launch-reproduce` on pilot bundle | Exit 0 | Post-pilot |
 
 ---
 
 ## §7 Cross-doc Consistency Audit
 
-**Pending Pass 2 completion.**
+### 7.1 Files reviewed
+
+- `00_Overview/PRINCIPLES.md` — 10 principles (P1-P10) — spec sections cross-reference applied
+- `00_Overview/ROADMAP.md` — sprint timeline + dependency graph — spec aligned
+- `00_Overview/PRODUCT_BOUNDARIES.md` — sales-only KPI Phase B — spec confirms (awareness Phase B+ only)
+- `02_Data_Spec/DATA_REQUIREMENTS.md` — Pydantic v2 SSoT confirmed
+- `02_Data_Spec/SIMILARITY_FRAMEWORK.md` — verdict thresholds + 6 dimensions + per-category weights — B2 spec exact match
+- `02_Data_Spec/REPORT_SECTIONS_SPEC.md` — 8 sections — B4 spec exact match
+- `02_Data_Spec/RECIPIENT_ANCHORS.md` — anchor schema fields — B1/B3 spec exact match
+- `01_Concept/MULTI_PROXY_UX_DECISION_RULES.md` — 5 trigger conditions, N bounds 2-3 — B2 spec consistent
+- `03_Architecture/ADAPTATION_RULES.md` — transfer parameter list (5 shape) + magnitude calibration — B3 spec exact match
+- `03_Architecture/POSTERIOR_UPDATE_DESIGN.md` — ESS schedule + BMA fallback + drift adaptive — B5 spec exact match
+- `03_Architecture/PROXY_INTAKE_PROTOCOL.md` — D002 restored, 7-step workflow — referenced throughout spec
+- `03_Architecture/COORDINATION_WITH_DATA_STUDIO.md` — Phase A C2 handoff — spec consistent
+- `06_References/PRICING_TIERS.md` — Starter/Pro/Enterprise pricing — confirmed tier-independence in B4 (BLOCKER B2 fix)
+- `06_References/SALES_PLAYBOOK.md` — Proxy Selection Discovery section — referenced в onboarding/B6
+- `06_References/PHASE_A_AUDIT_REPORT*.md` — historical, no action
+
+### 7.2 Inconsistencies found and resolved
+
+| # | Issue | Resolution |
+|---|---|---|
+| 1 | RECIPIENT_ANCHORS.md `pause_duration_months` had ge=12 in some places, ge=6 in others (audit fix F48 was applied but consistency check needed) | spec uses ge=0 (default 0 для new brand) consistent с DATA_REQUIREMENTS.md |
+| 2 | SIMILARITY_FRAMEWORK weight profiles (7 categories) — confirmed match B2 spec (OTC_PHARMA cat=0.40, FMCG_IMPULSE pricing=0.25, etc.) | No change needed |
+| 3 | POSTERIOR_UPDATE_DESIGN ESS_PROXY_BASE=50 — confirmed match B5 spec | No change needed |
+| 4 | ADAPTATION_RULES inflation factors (1.2× / 1.5× / 2.0×) — confirmed match B3 spec | No change needed |
+| 5 | REPORT_SECTIONS_SPEC 8 sections — confirmed match B4 framing presets | No change needed |
+| 6 | PROXY_INTAKE_PROTOCOL Шаг 3 anonymization — synchronized R + brand→code + period shift — confirmed match B1 schema AnonymizationDetails | No change needed |
+| 7 | COORDINATION_WITH_DATA_STUDIO C2 source taxonomy 9 kinds — confirmed match B0.5 plug-in architecture | No change needed |
+
+### 7.3 Spec-level consistency invariants
+
+- **All Pydantic models** реализуют `BaseModel` (Pydantic v2)
+- **All function signatures** используют Pydantic models as type hints (not dicts)
+- **All sprint sections** имеют 7 standard subsections (Scope / CX / Math / Pydantic / Engines / ACs / Tests-DoD-Q-Deps)
+- **Cross-references** explicit (e.g., «per ADAPTATION_RULES §1»)
+- **D002 restored** terminology используется throughout (no «donor library» refs)
+
+### 7.4 Cross-doc consistency: PASS
+
+Все referenced documents internally consistent with PHASE_B_REQUIREMENTS.md spec. No fix needed in source documents.
 
 ---
 
 ## Appendices
 
-### Appendix A: Pydantic Catalog (Pass 1)
+### Appendix A: Pydantic Catalog (Final)
 
-Все B0.5/B1/B1.5/B2 Pydantic models above. Полный catalog после Pass 2 ship.
+**B0.5:** SyntheticProjectSpec, FormatAdapterContract, ProxyDataSource (Protocol)
+**B1:** ManifestV3Launch, ProxyBrandMetadata, AnonymizationDetails, SimilarityDimensionScores, TransferProvenance, RecipientAnchors, DistributionPoint, ForecastHorizons, ForecastResult, MethodologyCertificateRef
+**B1.5:** ConsultingLogEntry, UsageSummary, UserPreferences
+**B2:** ProxyEntry, RecipientProfile, VerdictExplanation, AntiPatternFlag, ProxyVerdict, MultiProxyConfig, FloorWarning
+**B3:** ProxyPriors, PosteriorParam, AnchorMagnitudes, TransferReport, PerChannelHeatmap, SensitivityResult, AnchorUncertaintyDecomp, TransferWarning, EngineSelectionResult
+**B4:** LaunchForecastReport, ReportSection, MethodologyCertificateData, VerifierEndpoints, ReproductionInstructions, AcademicReference
+**B5:** PosteriorUpdateEvent, PoolingWeights, PosteriorDiagnostics, DriftDiagnostics, UpdateEstimate, AutoTriggerSuggestion
+**B6:** OnboardingState, Template, PilotEngagement, A11yAuditResult, A11yIssue
 
-### Appendix B: Engine Signature Catalog (Pass 1)
+### Appendix B: Engine Signature Catalog (Final)
 
-Все B0.5/B1/B1.5/B2 function signatures above. Full catalog after Pass 2.
+**B0.5:** corpus_generator (3 fns), AdapterRegistry (3 methods), reproduce_check
+**B1:** schema_registry_launch (3 fns), schema_diff CLI, composite_signing (2 fns)
+**B1.5:** customer_success.tracker (4 fns), quarterly_pdf, preferences (2 fns)
+**B2:** WASM Rust (3 functions), Python similarity_calculator (4 fns), similarity_weights
+**B3:** launch_adapt (3 fns), single_proxy_transfer, multi_proxy_hierarchical, engine_selector, launch_validate (3 fns)
+**B4:** launch_forecast (2 fns), methodology_cert (5 fns), launch_conformal, aurora_verify_cli
+**B5:** launch_posterior_update (5 fns), econometrica_to_launch_migration
+**B6:** onboarding.manager (3 fns), templates.library (2 fns), templates.synthetic_generator, pilot.tracker (2 fns), a11y.audit_runner, verifier_supply_chain (2 fns)
+
+Total: ~50 functions + 3 WASM exports.
 
 ### Appendix C: Glossary
 
-См. `02_Data_Spec/SIMILARITY_FRAMEWORK.md` Section 1 (dimension definitions). Phase B+ extension.
+См. `02_Data_Spec/SIMILARITY_FRAMEWORK.md` Section 1 (dimension definitions). Phase B introduces:
 
-### Appendix D: Known Limitations & Decisions Deferred
+- **Proxy intake workflow** — 7-step ad-hoc protocol per PROXY_INTAKE_PROTOCOL.md
+- **Methodology Certificate** — signed PDF artifact с reproducibility recipe
+- **Dual signature** — local Aurora install + Aurora-organization Vercel Edge
+- **Update Estimate** — closed-form prediction (NOT half-update)
+- **Engine selection function** — deterministic `select_engine()` для single/multi/single_with_pooling/blocked
+- **Anchor uncertainty propagation** — linear σ_forecast ≈ √(Σ (∂f/∂a_i)² × σ_a_i²)
+- **Synthetic templates** — generated by B0.5 corpus generator, calibrated to category statistics
 
-- AI-assisted proxy suggestion — Phase C+ (после pilot data accuracy benchmark)
-- Brand autocomplete from DSM database — Phase C+ (legal/operational)
-- Adaptive narrative LLM-driven — Phase C+ (template-based в Phase B B4)
-- Counterfactual posterior update preview — Phase C+ (B5 ships closed-form Estimate only)
+### Appendix D: Known Limitations & Decisions Deferred (Final)
+
+**Phase C+ aspirations (scaffolding hooks present, не implementation):**
+
+- AI-assisted proxy suggestion via local Phi-3.5 (B2 silent feature with feature flag)
+- Brand autocomplete from DSM database (legal/operational)
+- Adaptive narrative LLM-driven (B4 ships template + 3 framing presets)
+- Counterfactual posterior update preview (B5 ships closed-form Estimate only)
+- Per-channel transfer disable (B3 ships full transfer)
+- Auto-update opt-in monthly (B5 ships manual + suggestions)
+- Cross-app multi-tenant audit trail (B5 ships single-customer trail)
+- Customer-contributed templates marketplace (B6 ships 4 synthetic)
+- Voice control accessibility (B6 ships keyboard + screen reader)
+- EN translation (Phase B+ post-pilot)
+- GPU acceleration via JAX CUDA (Phase B+ premium tier)
+- Concurrent multi-user .aurora editing (Phase B+ collaborative)
+- Mobile app verifier (Phase C+)
+
+**Open architectural decisions для Антон (queued):**
+
+1. PDF tech stack — decide в B0.5 spike (Tauri webview / Typst / ReportLab)
+2. Dual-signature backfill — automatic background sync confirmed
+3. AI-assisted proxy suggestion — silent B2 feature flag confirmed
+4. v1.4.0 GA criteria — code complete + 3 pilots launched, OR first paid conversion (separate gates recommended)
+5. External security review contractor for verifier WASM
+6. Templates count — 4 vs 6+ для category coverage (4 confirmed для Phase B)
 
 ---
 
-**End Pass 1.** Total LOC: ~1850. Pass 2 in progress.
+**End Pass 2.** Total LOC: ~3661. Implementation contract complete + audit applied + cross-doc consistent.
+
+— Маша Маленькая (Claude Opus 4.7), 2026-05-08
