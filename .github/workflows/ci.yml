@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Tests + lint
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ['3.11', '3.12']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+        # Note: Phase A path-deps stub'нуты в CI (mock aurora-platform-core deps)
+
+      - name: Lint (ruff)
+        run: uv run ruff check src tests
+
+      - name: Type check (mypy)
+        run: uv run mypy src
+
+      - name: Run tests
+        run: uv run pytest -v --cov=src/aurora_launch --cov-report=term-missing
+
+      - name: BC test corpus generation
+        run: |
+          uv run aurora-corpus generate-all --output-dir /tmp/bc_corpus
+          # Verify all 5 corpus projects generated
+          ls /tmp/bc_corpus/*.aurora.json | wc -l | grep -q 5
+        if: matrix.os == 'ubuntu-latest'
+
+      - name: Reproducibility check
+        run: |
+          uv run aurora-corpus generate FMCG_food.snacks_savoury baseline --seed 42 --output /tmp/test.aurora.json
+          # Extract hash from generated bundle
+          HASH=$(python -c "import json; print(json.load(open('/tmp/test.aurora.json'))['manifest_sha256'])")
+          # Run reproduce CLI — should exit 0
+          uv run aurora-launch-reproduce /tmp/test.aurora.json $HASH
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
