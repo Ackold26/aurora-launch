@@ -124,12 +124,14 @@ Bundle подписывается через C7 Web Verifier (Ed25519 + Yandex.C
 
 ## Pending items
 
-~~- Маше небесной отправить уведомление в INBOX_TO_MN: `DONOR_LIBRARY_SHORTLIST.md` удалён, восстановлено D002, ADRs в aurora-meta нужно update~~ ✅ Done 2026-05-05 06:30 МСК (INBOX_TO_MN)
-~~- Phase B B6 sprint scope в `00_Overview/ROADMAP.md` — убрать упоминания «5 trained donors before pilot», заменить на «proxy intake protocol ready»~~ ✅ Done 2026-05-06 (ROADMAP.md B0.5 + B6 clarified)
-~~- Sales playbook (`06_References/SALES_PLAYBOOK.md`) — добавить раздел «Proxy Selection Discovery» в discovery call structure~~ ✅ Done 2026-05-06 (строки 286-307)
-- `03_Architecture/PHASE_A_REQUIREMENTS.md` line 200 — stale reference на `DONOR_LIBRARY_SHORTLIST` в test fixtures description ✅ Done 2026-05-08 (reconciliation pass)
+~~- Маше небесной отправить уведомление в INBOX_TO_MN: `DONOR_LIBRARY_SHORTLIST.md` удалён, восстановлено D002, ADRs в aurora-meta нужно update~~ ✅ Done 2026-05-06 22:33 МСК (INBOX_TO_MN запись «D002 RESTORED»)
+~~- Phase B B6 sprint scope в `00_Overview/ROADMAP.md` — убрать упоминания «5 trained donors before pilot», заменить на «proxy intake protocol ready»~~ ✅ Done 2026-05-06 commit `188d4d7` (ROADMAP.md B0.5 + B6 clarified)
+~~- Sales playbook (`06_References/SALES_PLAYBOOK.md`) — добавить раздел «Proxy Selection Discovery» в discovery call structure~~ ✅ Done 2026-05-06 commit `188d4d7` (NEW §3.2a + §4.1 update)
+~~- `03_Architecture/PHASE_A_REQUIREMENTS.md` line 200 — stale reference на `DONOR_LIBRARY_SHORTLIST` в test fixtures description~~ ✅ Done 2026-05-08 commit `9047811` (reconciliation pass)
 
-**Все pending items закрыты.** Reconciliation pass complete 2026-05-08.
+**Pending в зоне Маши небесной (aurora-meta repo):** уведомление 2026-05-06 22:33 МСК отправлено, но 7 конкретных stale-ссылок ещё не закрыты её стороной. Список передан повторно через INBOX_TO_MN 2026-05-08 (см. запись «aurora-meta D002 cleanup checklist»).
+
+**Aurora Launch repo:** все pending items закрыты. Reconciliation pass complete 2026-05-08.
 
 ## История
 

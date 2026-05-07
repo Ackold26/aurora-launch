@@ -100,7 +100,7 @@ Aurora Launch не стартует до завершения Phase A:
 
 **Deliverables:**
 - Svelte cabinet `ProxySelectionStep.svelte`:
-  - Single-proxy mode (default): один проктси-бренд + 6 similarity dimensions
+  - Single-proxy mode (default): один прокси-бренд + 6 similarity dimensions
   - Multi-proxy mode (expert toggle): 2-3 прокси с partial pooling weights
 - Live similarity radar chart (С3 в UX_PRINCIPLES)
 - Quality stamp panel (similarity score, verdict, warnings)
