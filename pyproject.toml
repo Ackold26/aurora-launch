@@ -42,6 +42,8 @@ dev-dependencies = [
 [project.scripts]
 aurora-launch-reproduce = "aurora_launch.tools.reproduce:main"
 aurora-corpus = "aurora_launch.tools.corpus_cli:main"
+aurora-launch-export-ts = "aurora_launch.tools.export_typescript:main"
+aurora-launch-schema-diff = "aurora_launch.tools.schema_diff:main"
 
 [build-system]
 requires = ["hatchling"]
