@@ -84,7 +84,12 @@ CATEGORY_WEIGHT_PROFILES: dict[str, dict[str, float]] = {
 
 
 def _get_weight_profile_id(category_l1: str, category_l2: str = "") -> str:
-    """Lookup profile id from category."""
+    """Lookup profile id from category.
+
+    FIX B-A3-3: Cosmetics differentiated mass vs premium (was lumping all Cosmetics
+    к PREMIUM_COSMETICS, breaking mass-market scoring). Mass cosmetics use
+    FMCG_STAPLES weights (distribution matters more than premium pricing).
+    """
     if category_l1 == "OTC_pharma":
         return "OTC_PHARMA"
     if category_l1 == "Rx_pharma":
@@ -96,6 +101,10 @@ def _get_weight_profile_id(category_l1: str, category_l2: str = "") -> str:
     if category_l1.startswith("FMCG"):
         return "FMCG_STAPLES"
     if category_l1.startswith("Cosmetics"):
+        # B-A3-3 fix: distinguish mass vs premium subcategories
+        # Mass cosmetics behave like FMCG (distribution-sensitive)
+        if "mass" in category_l2.lower():
+            return "FMCG_STAPLES"
         return "PREMIUM_COSMETICS"
     if category_l1 in ("Telecom", "Banking"):
         return "TELECOM_BANKING"

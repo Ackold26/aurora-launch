@@ -29,12 +29,20 @@ def split_conformal_intervals(
     Inputs:
         point_forecasts: list of weekly point predictions
         calibration_residuals: |y_actual - y_predicted| from calibration set
-        coverage_target: typically 0.95
+        coverage_target: typically 0.95 (must be в (0, 1))
         n_calibration: explicit count (default: len(calibration_residuals))
 
     Returns ConformalInterval per week. Tight intervals when n_cal ≥ 50;
-    inflated when below (Vovk 2005 quantile correction).
+    inflated when below (Vovk 2005 quantile correction approximation).
+
+    FIX H-A3-5: explicit coverage_target validation.
     """
+    if not 0.0 < coverage_target < 1.0:
+        raise ValueError(
+            f"coverage_target must be в (0, 1), got {coverage_target}. "
+            f"Typical values: 0.90, 0.95, 0.99."
+        )
+
     forecasts = list(point_forecasts)
     n_cal = n_calibration if n_calibration is not None else len(calibration_residuals)
 

@@ -64,7 +64,11 @@ class CustomerSuccessTracker:
             conn.close()
 
     def log_event(self, entry: ConsultingLogEntry) -> bool:
-        """Insert event. Returns True if new, False if duplicate event_id (idempotent)."""
+        """Insert event. Returns True if new, False if duplicate event_id.
+
+        FIX M-A3-6: narrow IntegrityError handling — only PRIMARY KEY conflicts
+        treated as duplicates; other constraint violations re-raise (catches bugs).
+        """
         conn = sqlite3.connect(self.db_path)
         try:
             try:
@@ -87,9 +91,12 @@ class CustomerSuccessTracker:
                 )
                 conn.commit()
                 return True
-            except sqlite3.IntegrityError:
-                # Duplicate event_id — idempotent no-op
-                return False
+            except sqlite3.IntegrityError as exc:
+                # Only treat PRIMARY KEY violations as duplicates (idempotent)
+                if "UNIQUE constraint failed: consulting_log.event_id" in str(exc):
+                    return False
+                # Other integrity errors (NULL, FK, CHECK) — re-raise as bugs
+                raise
         finally:
             conn.close()
 
@@ -214,9 +221,10 @@ class CustomerSuccessTracker:
         if summary.total_hours_used == Decimal("0"):
             return None
 
-        # Hours per day (rolling rate)
+        # FIX M-A3-1: use Decimal.from_float to avoid binary precision artifacts
         days_elapsed = (period_end - period_start).total_seconds() / 86400
-        hours_per_day = summary.total_hours_used / Decimal(days_elapsed)
+        days_decimal = Decimal(str(days_elapsed))  # via str avoids float precision noise
+        hours_per_day = summary.total_hours_used / days_decimal
 
         if hours_per_day == Decimal("0"):
             return None
@@ -230,7 +238,12 @@ class CustomerSuccessTracker:
         period_start: datetime,
         period_end: datetime,
     ) -> str:
-        """CSV export для billing."""
+        """CSV export для billing.
+
+        FIX H-A3-1: CSV injection protection — escape leading control chars
+        (=, +, -, @, \\t, \\r) by prefixing apostrophe (Excel-safe).
+        FIX H-A3-2: UTF-8 BOM prefix для Russian Excel compatibility.
+        """
         conn = sqlite3.connect(self.db_path)
         try:
             cursor = conn.execute(
@@ -245,13 +258,26 @@ class CustomerSuccessTracker:
         finally:
             conn.close()
 
+        # H-A3-1 + H-A3-2: CSV injection protection + UTF-8 BOM
+        def _sanitize(value: object) -> object:
+            """Prefix apostrophe before formula triggers (=, +, -, @, \\t, \\r)."""
+            if isinstance(value, str) and value:
+                first = value[0]
+                if first in ("=", "+", "-", "@", "\t", "\r"):
+                    return "'" + value
+            return value
+
+        sanitized_rows = [tuple(_sanitize(v) for v in row) for row in rows]
+
         buf = StringIO()
+        # UTF-8 BOM для Russian Excel compatibility
+        buf.write("﻿")
         writer = csv.writer(buf)
         writer.writerow([
             "event_id", "timestamp_start", "event_type", "duration_minutes",
             "project_id", "notes", "consulting_hours_charged",
         ])
-        writer.writerows(rows)
+        writer.writerows(sanitized_rows)
         return buf.getvalue()
 
 

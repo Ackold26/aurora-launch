@@ -136,17 +136,29 @@ def signing_payload_bytes(cert_data: MethodologyCertificateData) -> bytes:
 
     Same cert content → same signature, regardless of when it was generated.
     Reproducibility-friendly.
+
+    FIX B-A3-2: References use length-prefixed encoding to prevent separator
+    collision (citation strings could contain '|'). Format per reference:
+    "<len(doi)>:<doi>|<len(citation)>:<citation>". Length-prefix makes encoding
+    unambiguous regardless of content.
     """
-    # Use composite_signing_payload as canonical signing input
-    # Plus methodology references (deterministic)
-    refs_canonical = "|".join(
-        f"{ref.doi}:{ref.citation}" for ref in cert_data.methodology_references
-    )
+    def _len_prefix(s: str) -> str:
+        b = s.encode("utf-8")
+        return f"{len(b)}:{s}"
+
+    refs_canonical_parts = []
+    for ref in cert_data.methodology_references:
+        # Format: <len(doi)>:doi|<len(citation)>:citation|<len(relevance)>:relevance
+        refs_canonical_parts.append(
+            f"{_len_prefix(ref.doi)}|{_len_prefix(ref.citation)}|{_len_prefix(ref.relevance)}"
+        )
+    refs_canonical = "||".join(refs_canonical_parts)  # double-pipe between refs
+
     payload = (
         f"{cert_data.composite_signing_payload}"
         f"|{cert_data.aurora_launch_version}"
         f"|{cert_data.cert_version}"
-        f"|{refs_canonical}"
+        f"|REFS:{refs_canonical}"
     )
     return payload.encode("utf-8")
 

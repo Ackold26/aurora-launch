@@ -158,10 +158,17 @@ def compute_pooling_weights(
 def detect_drift(
     proxy_baseline_forecast: list[float],
     recipient_actual: list[float],
+    forecast_ci_lower: list[float] | None = None,
+    forecast_ci_upper: list[float] | None = None,
     coverage_threshold: float = 0.85,
     min_weeks: int = MIN_WEEKS_FOR_DRIFT_CHECK,
 ) -> DriftDiagnostics:
     """Coverage-based drift detection per POSTERIOR_UPDATE_DESIGN §6.
+
+    FIX B-A3-1: TRUE empirical CI coverage when bounds provided.
+    coverage = fraction of weeks where actual ∈ [CI_lower, CI_upper].
+
+    Falls back к ±20% relative-diff approximation when CI bounds absent.
 
     Returns severity:
         normal:   coverage ≥ 0.90
@@ -180,22 +187,36 @@ def detect_drift(
             is_unknown_due_to_few_weeks=True,
         )
 
-    # Coverage = fraction of weeks где actual within reasonable distance of forecast
-    # Simplified: Δ < 20% of forecast considered "covered"
+    use_real_ci = (
+        forecast_ci_lower is not None
+        and forecast_ci_upper is not None
+        and len(forecast_ci_lower) >= n_weeks
+        and len(forecast_ci_upper) >= n_weeks
+    )
+
     n_covered = 0
-    for forecast, actual in zip(
-        proxy_baseline_forecast[:n_weeks],
-        recipient_actual[:n_weeks],
-        strict=False,
-    ):
-        if forecast == 0:
-            # Edge case: forecast zero — actual also зеро is covered
-            if actual == 0:
+    if use_real_ci:
+        # TRUE empirical CI coverage (B-A3-1 fix)
+        for i in range(n_weeks):
+            actual = recipient_actual[i]
+            ci_lo = forecast_ci_lower[i]  # type: ignore[index]
+            ci_hi = forecast_ci_upper[i]  # type: ignore[index]
+            if ci_lo <= actual <= ci_hi:
                 n_covered += 1
-            continue
-        relative_diff = abs(actual - forecast) / abs(forecast)
-        if relative_diff < 0.20:
-            n_covered += 1
+    else:
+        # Fallback: ±20% relative diff approximation
+        for forecast, actual in zip(
+            proxy_baseline_forecast[:n_weeks],
+            recipient_actual[:n_weeks],
+            strict=False,
+        ):
+            if forecast == 0:
+                if actual == 0:
+                    n_covered += 1
+                continue
+            relative_diff = abs(actual - forecast) / abs(forecast)
+            if relative_diff < 0.20:
+                n_covered += 1
 
     coverage = n_covered / n_weeks
 
@@ -236,6 +257,13 @@ def should_trigger_auto_suggestion(
     All three must be True. Customer dismissal honored для cooldown period.
     """
     now = now or datetime.now(timezone.utc)
+
+    # FIX M-A3-5: timezone normalization protects against TypeError
+    # if last_dismissal passed timezone-naive (legacy callers).
+    if last_dismissal is not None and last_dismissal.tzinfo is None:
+        last_dismissal = last_dismissal.replace(tzinfo=timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
 
     # Check dismissal cooldown
     if last_dismissal and last_dismissal > now:
@@ -353,7 +381,20 @@ async def detect_drift_handler(ctx: Any, **kwargs: Any) -> dict[str, Any]:
 
 
 async def update_posterior_handler(ctx: Any, **kwargs: Any) -> dict[str, Any]:
-    """Workflow handler — posterior update."""
+    """Workflow handler — posterior update.
+
+    FIX H-A3-4 docs: BMA mode currently LABELS the update mode but actual
+    Bayesian Model Averaging fitting (separate posterior + arithmetic averaging
+    of predictive distributions per ADR-004) is Phase B+ deliverable. Current
+    implementation:
+
+    - update_mode='partial_pooling' (default): ESS-based weight schedule applied
+      via prior precision scaling (1/√w_proxy). Real implementation.
+    - update_mode='bma': labeled when severe drift + customer opt-in. Currently
+      degrades к partial_pooling fit с recipient_obs_value × 3 amplifier (drift
+      severe). Full BMA = Phase B+ когда ADR-004 §3.2 BMA-mixing implementation
+      ships.
+    """
     weeks_elapsed = kwargs.get("weeks_elapsed", 12)
     similarity_label = kwargs.get("similarity_label", "Medium")
     category_l3 = kwargs.get("category_l3", "FMCG_food.snacks")

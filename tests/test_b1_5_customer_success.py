@@ -221,8 +221,12 @@ class TestCsvExport:
         )
         reader = csv.reader(StringIO(csv_text))
         rows = list(reader)
-        assert rows[0] == [
-            "event_id", "timestamp_start", "event_type", "duration_minutes",
+        # CSV starts with UTF-8 BOM (H-A3-2 fix) — first cell of first row
+        # has BOM prefix `﻿`. Strip для comparison.
+        first_header = rows[0][0].lstrip("﻿")
+        assert first_header == "event_id"
+        assert rows[0][1:] == [
+            "timestamp_start", "event_type", "duration_minutes",
             "project_id", "notes", "consulting_hours_charged",
         ]
         assert len(rows) == 2  # header + 1 entry
