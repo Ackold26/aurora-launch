@@ -6,48 +6,134 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  lint:
+    name: Lint & type-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Install deps
+        run: uv pip install --system -e ".[]" --no-deps && uv pip install --system pydantic numpy pandas rfc8785 click rich ruff mypy pyyaml
+
+      - name: ruff check
+        run: ruff check src tests
+
+      - name: ruff format --check
+        run: ruff format --check src tests
+
+      - name: mypy
+        run: mypy src
+        continue-on-error: true  # Phase B+ — strict typing rollout
+
   test:
-    name: Tests + lint
+    name: Tests (${{ matrix.os }} / py${{ matrix.python-version }})
+    needs: lint
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ['3.11', '3.12']
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v4
         with:
           enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
 
-      - name: Set up Python
+      - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
-      - name: Install dependencies (skip path deps for CI)
+      - name: Install dependencies
         # CI runners don't have aurora-platform-core sibling checkout.
-        # Use minimal dependency install (production deps only, no local path overrides).
         # Tests that require Phase A integration auto-skip via path checks.
         run: uv pip install --system -e ".[]" --no-deps && uv pip install --system pydantic numpy pandas rfc8785 click rich pytest pytest-cov hypothesis ruff mypy pyyaml
 
-      - name: Lint (ruff)
-        run: ruff check src tests
-
-      - name: Type check (mypy)
-        run: mypy src
-        continue-on-error: true  # Phase B+ — strict typing rollout
-
       - name: Run tests
-        run: pytest -v --cov=src/aurora_launch --cov-report=term-missing
+        run: pytest -v --cov=src/aurora_launch --cov-report=term-missing --cov-report=xml
 
-      - name: BC test corpus generation
-        # Cross-platform path via Python tempfile, не /tmp hardcoded
+      - name: Upload coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 7
+
+  corpus-check:
+    name: BC corpus & reproducibility
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv pip install --system -e ".[]" --no-deps && uv pip install --system pydantic numpy pandas rfc8785 click rich pytest
+
+      - name: BC corpus generation
         run: |
-          python -c "import tempfile, os, subprocess, sys; d=tempfile.mkdtemp(); subprocess.check_call([sys.executable,'-m','aurora_launch.tools.corpus_cli','generate-all','--output-dir',d]); n=len([f for f in os.listdir(d) if f.endswith('.aurora.json')]); assert n==5, f'Expected 5 projects got {n}'"
+          python -c "
+          import tempfile, os, subprocess, sys
+          d = tempfile.mkdtemp()
+          subprocess.check_call([sys.executable, '-m', 'aurora_launch.tools.corpus_cli', 'generate-all', '--output-dir', d])
+          n = len([f for f in os.listdir(d) if f.endswith('.aurora.json')])
+          assert n == 5, f'Expected 5 projects got {n}'
+          print(f'BC corpus: {n} projects OK')
+          "
 
       - name: Reproducibility check
         run: |
-          python -c "import tempfile, os, json, subprocess, sys; d=tempfile.mkdtemp(); p=os.path.join(d,'test.aurora.json'); subprocess.check_call([sys.executable,'-m','aurora_launch.tools.corpus_cli','generate','FMCG_food.snacks_savoury','baseline','--seed','42','--output',p]); h=json.load(open(p))['manifest_sha256']; r=subprocess.run([sys.executable,'-m','aurora_launch.tools.reproduce',p,h]); sys.exit(r.returncode)"
+          python -c "
+          import tempfile, os, json, subprocess, sys
+          d = tempfile.mkdtemp()
+          p = os.path.join(d, 'test.aurora.json')
+          subprocess.check_call([sys.executable, '-m', 'aurora_launch.tools.corpus_cli', 'generate', 'FMCG_food.snacks_savoury', 'baseline', '--seed', '42', '--output', p])
+          h = json.load(open(p))['manifest_sha256']
+          r = subprocess.run([sys.executable, '-m', 'aurora_launch.tools.reproduce', p, h])
+          sys.exit(r.returncode)
+          "
+
+  # TODO(block-2): Add Tauri/Rust build jobs here after src-tauri is created
+  # rust:
+  #   name: Rust check (${{ matrix.os }})
+  #   runs-on: ${{ matrix.os }}
+  #   strategy:
+  #     matrix:
+  #       os: [ubuntu-latest, windows-latest, macos-latest]
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: dtolnay/rust-toolchain@stable
+  #       with:
+  #         components: rustfmt, clippy
+  #     - name: cargo fmt --check
+  #       run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+  #     - name: cargo clippy
+  #       run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+  #     - name: cargo test
+  #       run: cargo test --manifest-path src-tauri/Cargo.toml

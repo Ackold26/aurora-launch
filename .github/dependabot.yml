@@ -1,0 +1,29 @@
+version: 2
+
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 5
+    ignore:
+      # Aurora platform-core deps managed manually per ADR
+      - dependency-name: "aurora-*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 5
+
+  # TODO(block-2): Add cargo ecosystem after src-tauri is created
+  # - package-ecosystem: "cargo"
+  #   directory: "/src-tauri"
+  #   schedule:
+  #     interval: "weekly"

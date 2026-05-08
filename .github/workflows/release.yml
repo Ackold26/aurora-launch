@@ -1,0 +1,141 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false  # never cancel a release in flight
+
+jobs:
+  validate:
+    name: Validate release tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract.outputs.version }}
+      is_prerelease: ${{ steps.extract.outputs.is_prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version info
+        id: extract
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          if echo "$VERSION" | grep -qE '(alpha|beta|rc|b[0-9])'; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+          fi
+          echo "Tag: $TAG, Version: $VERSION"
+
+      - name: Verify pyproject.toml version matches tag
+        run: |
+          PYPROJECT_VER=$(python -c "import tomllib; d=tomllib.load(open('pyproject.toml','rb')); print(d['project']['version'])")
+          TAG_VER="${GITHUB_REF#refs/tags/v}"
+          if [ "$PYPROJECT_VER" != "$TAG_VER" ]; then
+            echo "ERROR: pyproject.toml version '$PYPROJECT_VER' != tag '$TAG_VER'"
+            exit 1
+          fi
+          echo "Version match: $PYPROJECT_VER OK"
+
+  test-release:
+    name: Full test suite (${{ matrix.os }} / py${{ matrix.python-version }})
+    needs: validate
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv pip install --system -e ".[]" --no-deps && uv pip install --system pydantic numpy pandas rfc8785 click rich pytest pytest-cov hypothesis ruff mypy pyyaml
+
+      - name: Run full test suite
+        run: pytest -v --cov=src/aurora_launch --cov-report=term-missing
+
+      - name: ruff check
+        run: ruff check src tests
+
+      - name: ruff format --check
+        run: ruff format --check src tests
+
+  # TODO(block-2): Add Tauri binary matrix here after src-tauri is created
+  # build-tauri:
+  #   name: Build installer (${{ matrix.os }})
+  #   needs: [validate, test-release]
+  #   runs-on: ${{ matrix.os }}
+  #   strategy:
+  #     matrix:
+  #       include:
+  #         - os: windows-latest
+  #           artifact: aurora-launch_${{ needs.validate.outputs.version }}_x64-setup.exe
+  #         - os: macos-latest
+  #           artifact: aurora-launch_${{ needs.validate.outputs.version }}_universal.dmg
+  #         - os: ubuntu-latest
+  #           artifact: aurora-launch_${{ needs.validate.outputs.version }}_amd64.deb
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: dtolnay/rust-toolchain@stable
+  #     - uses: tauri-apps/tauri-action@v0
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #         TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+  #         TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+  create-release:
+    name: Create GitHub Release
+    needs: [validate, test-release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract CHANGELOG entry
+        id: changelog
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          # Extract section for this version from CHANGELOG.md
+          NOTES=$(awk "/^## \[${VERSION}\]/{found=1; next} found && /^## \[/{exit} found{print}" CHANGELOG.md)
+          if [ -z "$NOTES" ]; then
+            NOTES="See CHANGELOG.md for details."
+          fi
+          # Multiline output
+          {
+            echo 'notes<<CHANGELOG_EOF'
+            echo "$NOTES"
+            echo 'CHANGELOG_EOF'
+          } >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Aurora Launch v${{ needs.validate.outputs.version }}"
+          body: |
+            ## Aurora Launch v${{ needs.validate.outputs.version }}
+
+            ${{ steps.changelog.outputs.notes }}
+
+            ---
+
+            > **Beta release** — installer builds will be added in Block 2 (Tauri frontend).
+            > Full test suite: ✅ passing on Ubuntu / Windows / macOS × Python 3.11/3.12.
+          prerelease: ${{ needs.validate.outputs.is_prerelease }}
+          generate_release_notes: false
