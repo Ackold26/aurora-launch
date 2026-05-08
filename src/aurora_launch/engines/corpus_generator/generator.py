@@ -102,6 +102,24 @@ def generate_synthetic_project(
     # data needs to recompute ALL three, but data_artifacts_hash is already
     # baked in во manifest_sha256 (so changing it changes manifest), and
     # version is signed at compile time. Composite hash detects any drift.
+    #
+    # Domain validation (defense-in-depth): composite inputs must NOT contain
+    # '|' separator character. Aurora Launch's actual inputs (hex strings +
+    # semver version) cannot contain '|', but explicit check protects against
+    # future schema changes введущие ambiguity. Per cross-language hash
+    # compatibility test (test_cross_language_hash.py separator collision case).
+    for name, value in (
+        ("manifest_sha256", manifest_sha256),
+        ("data_artifacts_hash", data_artifacts_hash),
+        ("aurora_launch_version", __version__),
+    ):
+        if "|" in value:
+            raise ValueError(
+                f"Composite signing input {name!r} contains separator character '|' — "
+                f"this would create hash collision risk. Aurora Launch inputs must be "
+                f"hex strings or semver. Got: {value!r}"
+            )
+
     repro_input = (
         manifest_sha256.encode("utf-8")
         + b"|"
