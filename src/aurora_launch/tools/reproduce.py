@@ -64,6 +64,28 @@ def main(
         "rtol_used": rtol,
     }
 
+    # FIX H-Audit-1: version skew check
+    try:
+        with bundle_path.open("r", encoding="utf-8") as f:
+            bundle_preview = json.load(f)
+        bundle_version = bundle_preview.get("aurora_launch_version", "unknown")
+    except (OSError, json.JSONDecodeError) as exc:
+        result["status"] = "error"
+        result["error"] = f"Cannot read bundle: {exc}"
+        _emit_result(result, json_output)
+        sys.exit(2)
+
+    result["bundle_aurora_launch_version"] = bundle_version
+    result["tool_aurora_launch_version"] = __version__
+
+    if bundle_version != __version__:
+        result["version_skew_warning"] = (
+            f"Bundle was created с Aurora Launch {bundle_version}, "
+            f"but verifying с {__version__}. "
+            f"Hashes may legitimately differ across versions. "
+            f"For exact reproduction, install matching version."
+        )
+
     try:
         manifest_hash, repro_token = compute_bundle_hash(bundle_path)
     except json.JSONDecodeError as exc:
@@ -72,7 +94,7 @@ def main(
         _emit_result(result, json_output)
         sys.exit(2)
     except ValueError as exc:
-        # Internal manifest hash mismatch — bundle corrupted
+        # Internal manifest или repro_token hash mismatch — bundle corrupted/tampered
         result["status"] = "error"
         result["error"] = str(exc)
         _emit_result(result, json_output)

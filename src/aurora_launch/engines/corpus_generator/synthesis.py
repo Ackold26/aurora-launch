@@ -16,6 +16,8 @@ deterministic cross-platform reproducibility (NOT global np.random.seed).
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -158,15 +160,24 @@ def _hill_saturation(adstocked: NDArray, gamma: float, k_normalized: float) -> N
     return adstocked**gamma / (adstocked**gamma + k**gamma)
 
 
+def _is_awareness_category(category_l3: str) -> bool:
+    """Awareness categories require different synthesis (logit-scale, ceiling 100)."""
+    return category_l3.startswith("awareness.")
+
+
 def synthesize_project_data(spec: SyntheticProjectSpec) -> dict:
     """Generate complete synthetic project data structure.
 
     Returns dict with keys:
-    - meta: project metadata
+    - meta: project metadata (includes `kpi_type`)
     - response_params: MMM response curve parameters
     - seasonality: 52-week deviation pattern
-    - weekly_data: list of week records (date_iso, sales_volume, channel_spends_dict)
+    - weekly_data: list of week records — sales-driven categories use
+      `sales_volume`; awareness categories use `awareness_pct` (logit-scaled).
     - canonical_columns: list of CanonicalFieldName equivalents
+
+    FIX B-Audit-5: awareness categories now produce logit-scale `awareness_pct`
+    trajectory с ceiling 100 (per Aurora Эконометрика awareness module).
     """
     rng = _make_rng(spec.seed)
 
@@ -220,45 +231,63 @@ def synthesize_project_data(spec: SyntheticProjectSpec) -> dict:
 
     noise = rng.normal(0, noise_scale, size=spec.n_weeks)
 
-    sales_normalized = baseline_mean + 0.5 * total_response + full_seasonality + trend + noise
-    sales_normalized = np.maximum(sales_normalized, 0.05)  # prevent negatives
+    is_awareness = _is_awareness_category(spec.category_l3)
 
-    # Scale to absolute (millions of packs typical)
-    base_volume = rng.uniform(50_000, 5_000_000)
-    sales_volume = sales_normalized * base_volume
+    if is_awareness:
+        # Awareness — logit-scale trajectory с ceiling 100.
+        # Baseline awareness (e.g., 5-15% для new brand)
+        baseline_awareness = rng.uniform(0.05, 0.15)
+        # Awareness response: logit transform → linear sum → inverse logit
+        # Adstock-decayed media drives awareness lift
+        media_lift = 0.5 * total_response  # normalized
+        # Combine in logit space
+        eps = 1e-9
+        baseline_logit = np.log(baseline_awareness / (1 - baseline_awareness + eps) + eps)
+        full_logit = baseline_logit + media_lift + 0.5 * full_seasonality + trend + noise
+        kpi_normalized = 1.0 / (1.0 + np.exp(-full_logit))
+        kpi_values = np.clip(kpi_normalized * 100.0, 0.0, 100.0)  # awareness % с ceiling 100
+        kpi_field_name = "awareness_pct"
+        kpi_type = "awareness"
+    else:
+        # Sales-driven categories (FMCG/OTC/Cosmetics/Telecom/Banking/etc.)
+        sales_normalized = baseline_mean + 0.5 * total_response + full_seasonality + trend + noise
+        sales_normalized = np.maximum(sales_normalized, 0.05)
+        base_volume = rng.uniform(50_000, 5_000_000)
+        kpi_values = sales_normalized * base_volume
+        kpi_field_name = "sales_volume"
+        kpi_type = "sales"
 
-    # Generate week dates (weekly Monday starting from Jan 2024)
-    start_year = 2024
-    start_week_offset = rng.integers(0, 4)
-    week_dates = []
-    for w in range(spec.n_weeks):
-        # ISO week date approximation
-        day_of_year = (start_week_offset * 7) + (w * 7) + 1
-        year = start_year + (day_of_year - 1) // 365
-        day_in_year = ((day_of_year - 1) % 365) + 1
-        # Approximate to ISO month-day (good enough для synthetic)
-        month = ((day_in_year - 1) // 30) + 1
-        day = ((day_in_year - 1) % 30) + 1
-        month = min(12, month)
-        day = min(28, day)  # safe for all months
-        week_dates.append(f"{year}-{month:02d}-{day:02d}")
+    # Generate week dates (weekly Monday starting from configurable base date).
+    # FIX B-Audit-1: use proper datetime arithmetic, not 30-day-month approximation.
+    # All dates valid ISO 8601, real calendar (handles leap years correctly).
+    start_date = date(2024, 1, 1)
+    # First Monday on/after start_date
+    days_to_monday = (7 - start_date.weekday()) % 7
+    start_monday = start_date + timedelta(days=days_to_monday)
+    # Optional offset (deterministic from rng)
+    start_week_offset = int(rng.integers(0, 4))
+    base_monday = start_monday + timedelta(weeks=start_week_offset)
+
+    week_dates = [
+        (base_monday + timedelta(weeks=w)).isoformat() for w in range(spec.n_weeks)
+    ]
 
     # Channel names
     channel_names = ["TV", "Digital", "OOH", "Radio", "Print", "Cinema", "Sponsorship", "OLV"]
     channels = channel_names[: spec.n_channels]
 
-    # Weekly records
+    # Weekly records (kpi_field_name varies by category type)
     weekly_data = []
     for w in range(spec.n_weeks):
         record = {
             "period_date": week_dates[w],
-            "sales_volume": float(sales_volume[w]),
+            kpi_field_name: float(kpi_values[w]),
         }
         for ch_idx, ch_name in enumerate(channels):
             record[f"spend_{ch_name.lower()}"] = float(spend[w, ch_idx])
         weekly_data.append(record)
 
-    canonical_columns = ["period_date", "sales_volume"] + [
+    canonical_columns = ["period_date", kpi_field_name] + [
         f"spend_{ch.lower()}" for ch in channels
     ]
 
@@ -268,6 +297,8 @@ def synthesize_project_data(spec: SyntheticProjectSpec) -> dict:
             "channels": channels,
             "n_weeks": spec.n_weeks,
             "rng_algorithm": "PCG64",
+            "kpi_type": kpi_type,
+            "kpi_field_name": kpi_field_name,
         },
         "response_params": response_params,
         "seasonality_52w": seasonality.tolist(),

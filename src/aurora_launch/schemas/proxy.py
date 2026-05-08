@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, model_validator
 
 
 class SimilarityDimensionScores(BaseModel):
@@ -59,23 +59,30 @@ class ProxyBrandMetadata(BaseModel):
     intake_workflow_version: str = "1.0"
     anonymization_applied: AnonymizationDetails
 
-    @field_validator("verdict")
-    @classmethod
-    def verdict_matches_score(cls, v: str, info) -> str:
-        score = info.data.get("similarity_score")
-        if score is None:
-            return v
+    @model_validator(mode="after")
+    def verdict_matches_score(self) -> "ProxyBrandMetadata":
+        """FIX H-Audit-2: cross-field validation via model_validator (mode=after)
+        — robust to field declaration order changes.
+
+        Verdict thresholds per SIMILARITY_FRAMEWORK.md §6:
+        - S ≥ 0.85 → High
+        - 0.65 ≤ S < 0.85 → Medium
+        - 0.50 ≤ S < 0.65 → Low
+        - S < 0.50 → Insufficient (BLOCKS forecast generation per CP-6)
+        """
+        s = self.similarity_score
         expected = (
             "High"
-            if score >= 0.85
+            if s >= 0.85
             else "Medium"
-            if score >= 0.65
+            if s >= 0.65
             else "Low"
-            if score >= 0.50
+            if s >= 0.50
             else "Insufficient"
         )
-        if v != expected:
+        if self.verdict != expected:
             raise ValueError(
-                f"verdict {v!r} inconsistent with score {score} (expected {expected!r})"
+                f"verdict {self.verdict!r} inconsistent with score {s} "
+                f"(expected {expected!r} per SIMILARITY_FRAMEWORK.md §6)"
             )
-        return v
+        return self

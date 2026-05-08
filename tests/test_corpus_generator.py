@@ -105,10 +105,11 @@ class TestSyntheticGeneration:
     ) -> None:
         output = generate_synthetic_project(baseline_spec, tmp_path)
 
-        # Tamper: modify one weekly data point
+        # Tamper: modify one weekly data point (use kpi_field_name, not hardcoded)
         with output.open() as f:
             bundle = json.load(f)
-        bundle["data"]["weekly_data"][0]["sales_volume"] = 9999999.0
+        kpi_field = bundle["data"]["meta"]["kpi_field_name"]
+        bundle["data"]["weekly_data"][0][kpi_field] = 9999999.0
 
         with output.open("w") as f:
             json.dump(bundle, f, indent=2, ensure_ascii=False)
@@ -116,6 +117,41 @@ class TestSyntheticGeneration:
         # Recompute should fail (manifest hash mismatch)
         with pytest.raises(ValueError, match="Manifest hash mismatch"):
             compute_bundle_hash(output)
+
+    def test_repro_token_tampering_detected(
+        self, tmp_path: Path, baseline_spec: SyntheticProjectSpec
+    ) -> None:
+        """FIX B-Audit-3 verified: reproducibility_token tampering detected
+        independently (not just trusted from bundle field)."""
+        output = generate_synthetic_project(baseline_spec, tmp_path)
+
+        with output.open() as f:
+            bundle = json.load(f)
+
+        # Tamper ONLY reproducibility_token field, leave manifest_sha256 valid
+        bundle["reproducibility_token"] = "f" * 64
+
+        with output.open("w") as f:
+            json.dump(bundle, f, indent=2, ensure_ascii=False)
+
+        with pytest.raises(ValueError, match="Reproducibility token mismatch"):
+            compute_bundle_hash(output)
+
+    def test_composite_signing_includes_data_artifacts_hash(
+        self, tmp_path: Path, baseline_spec: SyntheticProjectSpec
+    ) -> None:
+        """FIX B-Audit-2 verified: data_artifacts_hash present + repro_token
+        derives from manifest + artifacts + version (R8 closure)."""
+        output = generate_synthetic_project(baseline_spec, tmp_path)
+        with output.open() as f:
+            bundle = json.load(f)
+
+        assert "data_artifacts_hash" in bundle
+        assert len(bundle["data_artifacts_hash"]) == 64  # SHA-256 hex
+
+        # repro_token NOT equal to manifest_sha256 (independent inputs)
+        assert bundle["reproducibility_token"] != bundle["manifest_sha256"]
+        assert bundle["reproducibility_token"] != bundle["data_artifacts_hash"]
 
     @pytest.mark.parametrize(
         "category,variant",
@@ -153,19 +189,73 @@ class TestGeneratedDataValidity:
         records = bundle["data"]["weekly_data"]
         first = records[0]
         assert "period_date" in first
-        assert "sales_volume" in first
+        kpi_field = bundle["data"]["meta"]["kpi_field_name"]
+        assert kpi_field in first
         # Has at least one channel spend
         assert any(k.startswith("spend_") for k in first.keys())
 
-    def test_sales_volume_non_negative(
+    def test_kpi_value_non_negative(
         self, tmp_path: Path, baseline_spec: SyntheticProjectSpec
     ) -> None:
         output = generate_synthetic_project(baseline_spec, tmp_path)
         with output.open() as f:
             bundle = json.load(f)
 
+        kpi_field = bundle["data"]["meta"]["kpi_field_name"]
         for record in bundle["data"]["weekly_data"]:
-            assert record["sales_volume"] >= 0, "sales must be non-negative"
+            assert record[kpi_field] >= 0, f"{kpi_field} must be non-negative"
+
+    def test_awareness_kpi_within_logit_ceiling(self, tmp_path: Path) -> None:
+        """FIX B-Audit-5 verified: awareness category produces 0-100 % values."""
+        spec = SyntheticProjectSpec(
+            seed=42,
+            category_l3="awareness.brand_awareness_only",
+            variant="baseline",
+        )
+        output = generate_synthetic_project(spec, tmp_path)
+        with output.open() as f:
+            bundle = json.load(f)
+
+        assert bundle["data"]["meta"]["kpi_type"] == "awareness"
+        assert bundle["data"]["meta"]["kpi_field_name"] == "awareness_pct"
+        for record in bundle["data"]["weekly_data"]:
+            assert 0.0 <= record["awareness_pct"] <= 100.0
+
+    def test_dates_are_valid_iso8601(
+        self, tmp_path: Path, baseline_spec: SyntheticProjectSpec
+    ) -> None:
+        """FIX B-Audit-1 verified: dates use proper datetime arithmetic."""
+        from datetime import date
+
+        output = generate_synthetic_project(baseline_spec, tmp_path)
+        with output.open() as f:
+            bundle = json.load(f)
+
+        for record in bundle["data"]["weekly_data"]:
+            # Should parse cleanly as ISO date
+            d = date.fromisoformat(record["period_date"])
+            assert d.year >= 2024
+            # Day must respect actual month length (no Feb 30 bugs)
+            assert 1 <= d.day <= 31
+            assert 1 <= d.month <= 12
+
+    def test_dates_are_weekly_monday(
+        self, tmp_path: Path, baseline_spec: SyntheticProjectSpec
+    ) -> None:
+        """Dates should be on weekly cadence (7-day intervals, Monday)."""
+        from datetime import date
+
+        output = generate_synthetic_project(baseline_spec, tmp_path)
+        with output.open() as f:
+            bundle = json.load(f)
+
+        records = bundle["data"]["weekly_data"]
+        first_date = date.fromisoformat(records[0]["period_date"])
+        assert first_date.weekday() == 0  # Monday
+        for i in range(1, len(records)):
+            d = date.fromisoformat(records[i]["period_date"])
+            prev = date.fromisoformat(records[i - 1]["period_date"])
+            assert (d - prev).days == 7
 
     def test_response_params_per_channel(
         self, tmp_path: Path, baseline_spec: SyntheticProjectSpec
