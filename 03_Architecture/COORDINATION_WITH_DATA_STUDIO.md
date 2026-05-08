@@ -1,6 +1,8 @@
 # Coordination: Aurora Launch ↔ Aurora Data Studio
 
-**Status:** Draft v0.1 (2026-05-05) — Маша маленькая. Финальная версия в `aurora-meta/COORDINATION-LAUNCH-STUDIO.md` (доработка Маши небесной с sales/marketing/risks углами).
+> ⚠️ **Superseded by `aurora-meta/COORDINATION-LAUNCH-STUDIO.md` v0.2 (2026-05-08).** Этот файл retained для historical reference. Source-of-truth — aurora-meta. v0.2 включает D002 reflection (post-2026-05-06 PROXY_INTAKE_PROTOCOL), Decision Index (§0), Phase A timeline coordination (§9), Escalation paths (§10), и telemetry events scope-honest restructure (§4).
+
+**Status:** Draft v0.1 (2026-05-05) — Маша маленькая. **Superseded 2026-05-08.** Финальная версия в `aurora-meta/COORDINATION-LAUNCH-STUDIO.md` v0.2.
 
 **Цель документа:** зафиксировать границы ответственности, versioning, feature split (Этап 1 / Этап 2), telemetry, migration rules и consumption pattern между Aurora Launch и Aurora Data Studio в Phase A → Phase B.
 
