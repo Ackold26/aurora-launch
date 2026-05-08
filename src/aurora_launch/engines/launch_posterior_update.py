@@ -319,11 +319,15 @@ def compute_update_estimate(
         recipient_obs_value=recipient_obs_value,
     )
 
-    # CI tightening: Bayesian variance reduction approx
-    # σ_after / σ_before ≈ √(w_proxy_before / w_proxy_after) для recipient std
+    # CI tightening: Bayesian variance reduction approx.
+    # Derivation: with n_eff ∝ 1/w_proxy (more recipient data → w_proxy
+    # shrinks), σ ∝ 1/√n_eff ∝ √w_proxy. Therefore:
+    #     σ_after / σ_before ≈ √(w_proxy_after / w_proxy_before)
+    # When w_proxy_after < w_proxy_before (data accumulated), ratio < 1 →
+    # positive tightening_pct (CI shrinks). Audit (post-1D extended): docstring
+    # was previously inverted ("before/after"); code direction is correct.
     if new_weights.w_proxy > 0 and current_pooling.w_proxy > 0:
         std_ratio = math.sqrt(new_weights.w_proxy / current_pooling.w_proxy)
-        # Tightening = 1 - new/old (positive when std shrinks)
         tightening_pct = max(0.0, (1.0 - std_ratio) * 100.0)
     else:
         tightening_pct = 0.0
@@ -438,10 +442,15 @@ async def update_posterior_handler(ctx: Any, **kwargs: Any) -> dict[str, Any]:
             ),
             "bma_fallback_threshold": bma_fallback_threshold,
         },
-        "diagnostics": {
-            "gelman_rubin_max": 1.02,
-            "ess_min": 850,
-            "divergent_transitions_count": 0,
+        # Audit (post-1D extended): diagnostics here are PLACEHOLDERS for
+        # MCMC convergence metrics that will be wired in B5.2 (real PyMC fit
+        # integration). Not real numbers — labelled `_stub_` so consumers
+        # don't dashboard-display them as if measured.
+        "diagnostics_stub": {
+            "_stub_gelman_rubin_max": 1.02,
+            "_stub_ess_min": 850,
+            "_stub_divergent_transitions_count": 0,
+            "_note": "Placeholder values; real diagnostics wired in B5.2",
         },
     }
 

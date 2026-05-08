@@ -68,11 +68,18 @@ class DsmAdapterV2025(DsmAdapterV2024):
         return False
 
     def parse(self, file_path: str) -> list[dict]:
-        """Override parse() для accept .tsv (V2025 specific extension)."""
+        """Override parse() для accept .tsv (V2025 specific extension).
+
+        Refuses files >256 MB.
+        """
+        from aurora_launch.engines.format_adapters import assert_file_size_ok
+
         path = Path(file_path)
 
         if not path.exists():
             raise FileNotFoundError(f"DSM file not found: {file_path}")
+
+        assert_file_size_ok(path)
 
         if path.suffix.lower() in (".csv", ".tsv"):
             return self._parse_csv(path)

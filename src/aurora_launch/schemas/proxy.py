@@ -1,17 +1,28 @@
 """Proxy + similarity schemas (B1 §4.2.4).
 
 Per PHASE_B_REQUIREMENTS.md B1 schema section.
+
+Audit Block 1D-extended — finding "schemas without model_config":
+all schemas в этом модуле теперь используют общий `_FROZEN_CONFIG` (frozen +
+extra="forbid"). Previously they inherited Pydantic defaults (`extra="ignore"`),
+silently dropping unknown fields — inconsistent с rest of codebase и
+defence-in-depth concern для bundle ingestion.
 """
 
 from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+_FROZEN_CONFIG = ConfigDict(frozen=True, extra="forbid")
 
 
 class SimilarityDimensionScores(BaseModel):
     """6+2 dimension similarity scores (per SIMILARITY_FRAMEWORK §1)."""
+
+    model_config = _FROZEN_CONFIG
 
     category_l1_match: float = Field(ge=0.0, le=1.0)
     category_l2_match: float = Field(ge=0.0, le=1.0)
@@ -23,9 +34,26 @@ class SimilarityDimensionScores(BaseModel):
     lifecycle_match: float = Field(ge=0.0, le=1.0)
     weights_used: dict[str, float] = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def weights_sum_to_unity_if_present(self) -> "SimilarityDimensionScores":
+        """If `weights_used` is non-empty, weights must sum к ~1.0 (±0.05).
+
+        Empty dict OK (caller did not specify weights); non-empty must be a
+        valid weighting scheme.
+        """
+        if self.weights_used:
+            total = sum(self.weights_used.values())
+            if abs(total - 1.0) > 0.05:
+                raise ValueError(
+                    f"weights_used must sum to ~1.0 (±0.05), got {total:.4f}"
+                )
+        return self
+
 
 class AnonymizationDetails(BaseModel):
     """Per PROXY_INTAKE_PROTOCOL.md Шаг 3 — anonymization invariants."""
+
+    model_config = _FROZEN_CONFIG
 
     synchronized_random_factor: float = Field(gt=0)
     period_shift_months: int = Field(ge=-24, le=24)
@@ -35,6 +63,8 @@ class AnonymizationDetails(BaseModel):
 
 class ProxyEntry(BaseModel):
     """Single proxy brand entry (B2 §4.4.4)."""
+
+    model_config = _FROZEN_CONFIG
 
     proxy_brand_name: str = Field(min_length=1, max_length=200)
     proxy_brand_code: str = Field(pattern=r"^[A-Z][A-Z0-9_-]{2,32}$")
@@ -50,6 +80,8 @@ class ProxyEntry(BaseModel):
 
 class ProxyBrandMetadata(BaseModel):
     """Aurora Launch–specific proxy metadata (B1 ManifestV3Launch field)."""
+
+    model_config = _FROZEN_CONFIG
 
     proxy_code: str = Field(pattern=r"^[A-Z][A-Z0-9_-]{2,32}$")
     similarity_dimensions: SimilarityDimensionScores

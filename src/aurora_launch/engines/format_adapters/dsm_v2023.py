@@ -71,7 +71,14 @@ class DsmAdapterV2023(DsmAdapterV2024):
         return False
 
     def _parse_csv(self, path: Path) -> list[dict]:
-        """V2023 uses comma separator + DD.MM.YYYY date format."""
+        """V2023 uses comma separator + DD.MM.YYYY date format.
+
+        Refuses files >256 MB (`MAX_INPUT_FILE_BYTES`).
+        """
+        from aurora_launch.engines.format_adapters import assert_file_size_ok
+
+        assert_file_size_ok(path)
+
         records: list[dict] = []
         with path.open("r", encoding="utf-8-sig") as f:
             header_line = f.readline().strip()

@@ -231,7 +231,20 @@ def compute_aggregate_score(
 
 
 def determine_verdict(score: float) -> Literal["High", "Medium", "Low", "Insufficient"]:
-    """Map aggregate score к verdict label."""
+    """Map aggregate score к verdict label.
+
+    Audit (post-1D extended): rejects non-finite scores upfront. Previously a
+    NaN would silently route to "Insufficient" because every `>=` comparison
+    is False on NaN — masking upstream computation bugs as "low similarity".
+    """
+    import math as _math
+
+    if not _math.isfinite(score):
+        raise ValueError(
+            f"determine_verdict: similarity score must be finite, got {score!r} "
+            f"(NaN/Inf indicates upstream computation error — investigate "
+            f"compute_aggregate_score inputs)."
+        )
     if score >= VERDICT_THRESHOLDS["High"]:
         return "High"
     if score >= VERDICT_THRESHOLDS["Medium"]:

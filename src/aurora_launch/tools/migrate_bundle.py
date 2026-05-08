@@ -86,7 +86,7 @@ def _plan(source: Path) -> MigrationPlan:
     return MigrationPlan(source=source, target=target, backup=backup, will_skip=False)
 
 
-def _migrate_one(plan: MigrationPlan, *, dry_run: bool) -> bool:
+def _migrate_one(plan: MigrationPlan, *, dry_run: bool, force: bool = False) -> bool:
     """Execute migration for a single bundle. Returns True on success.
 
     Steps (rollback-safe):
@@ -98,12 +98,28 @@ def _migrate_one(plan: MigrationPlan, *, dry_run: bool) -> bool:
     6. Atomic rename: temp ZIP → target
     7. (If target != source) optionally remove source after successful rename
 
+    Audit (post-1D extended): refuses to overwrite an existing distinct
+    `target` без `--force`. Previously a re-run would silently clobber
+    a prior migration's output (`os.replace` is unconditional).
+
     On any failure, temp file deleted, source untouched.
     """
+    # Pre-flight overwrite check — only meaningful when target != source
+    # (when target == source we are converting in place, замещение ожидается).
+    if plan.target != plan.source and plan.target.exists() and not force:
+        click.echo(
+            f"  ✗ REFUSED: target already exists: {plan.target.name}. "
+            f"Re-run with --force to overwrite.",
+            err=True,
+        )
+        return False
+
     if dry_run:
         click.echo(f"  [DRY-RUN] would migrate: {plan.source}")
         click.echo(f"           → target: {plan.target}")
         click.echo(f"           → backup: {plan.backup}")
+        if plan.target.exists() and plan.target != plan.source:
+            click.echo(f"           ⚠ target exists; --force {'set' if force else 'NOT set'}")
         return True
 
     try:
@@ -199,14 +215,23 @@ def _migrate_one(plan: MigrationPlan, *, dry_run: bool) -> bool:
     help="Batch mode — scan directory for *.aurora.json files.",
 )
 @click.option("--dry-run", is_flag=True, help="Print plan without writing.")
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Overwrite existing target file. Без флага migration refuses to "
+    "clobber a target that already exists (e.g., from a previous migration).",
+)
 @click.version_option(version=__version__)
-def main(source: Path | None, input_dir: Path | None, dry_run: bool) -> None:
+def main(source: Path | None, input_dir: Path | None, dry_run: bool, force: bool) -> None:
     """Migrate Aurora Launch bundles from `.aurora.json` (legacy) to `.aurora` ZIP.
 
     Pass either a single SOURCE file path, or use --input-dir for batch mode.
 
     Always creates a `.migrate-bak` backup of the source before migration.
     Validates by reading back the new ZIP and verifying composite hash.
+
+    Refuses to overwrite an existing target unless --force is set (post-1D
+    audit fix — protects against silent data loss on accidental re-runs).
     """
     if not source and not input_dir:
         click.echo("ERROR: provide SOURCE path or --input-dir", err=True)
@@ -243,7 +268,7 @@ def main(source: Path | None, input_dir: Path | None, dry_run: bool) -> None:
             click.echo(f"  - skip: {plan.source.name} ({plan.skip_reason})")
             skipped += 1
             continue
-        if _migrate_one(plan, dry_run=dry_run):
+        if _migrate_one(plan, dry_run=dry_run, force=force):
             successes += 1
         else:
             failures += 1

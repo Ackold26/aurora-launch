@@ -63,11 +63,19 @@ class MediascopeAdExAdapterV1:
         return False
 
     def parse(self, file_path: str) -> list[dict]:
-        """Parse Mediascope AdEx V1 file into canonical records."""
+        """Parse Mediascope AdEx V1 file into canonical records.
+
+        Refuses files >256 MB (`MAX_INPUT_FILE_BYTES`) — see
+        format_adapters/__init__.py.
+        """
+        from aurora_launch.engines.format_adapters import assert_file_size_ok
+
         path = Path(file_path)
 
         if not path.exists():
             raise FileNotFoundError(f"Mediascope AdEx file not found: {file_path}")
+
+        assert_file_size_ok(path)
 
         if path.suffix.lower() != ".csv":
             raise NotImplementedError(

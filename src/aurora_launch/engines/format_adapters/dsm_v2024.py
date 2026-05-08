@@ -47,10 +47,21 @@ class DsmAdapterV2024:
         - File extension matches glob
         - First few bytes contain semicolon separator + ISO date pattern
           (full-content sniffing minimal here, real impl scans header row)
+
+        Audit (post-1D extended) — version-collision fix: explicitly reject
+        files whose name carries a different DSM year marker (2023, 2025).
+        Previously V2024 detect would fire on `data.dsm.2023.xlsx` because
+        registry runs V2024 first (registered last) и it matched on the
+        substring `.dsm` + `.xlsx` без ever inspecting the year.
         """
         path = Path(file_path)
-        suffixes = path.suffixes  # e.g., [".dsm", ".xlsx"]
         name_lower = path.name.lower()
+
+        # Reject files explicitly tagged as another DSM year — V2023 / V2025
+        # adapters own those (registered earlier). Без этого V2024 wins ties.
+        for foreign_year_marker in ("2023", "2025"):
+            if foreign_year_marker in name_lower and "dsm" in name_lower:
+                return False
 
         if path.suffix.lower() in (".xlsx", ".xls") and ".dsm" in name_lower:
             return True
@@ -62,8 +73,15 @@ class DsmAdapterV2024:
             try:
                 with path.open("r", encoding="utf-8-sig") as f:
                     header = f.readline()
-                # V2024 signature: semicolon separator + Russian column names
-                if ";" in header and ("Бренд" in header or "Дата" in header):
+                # V2024 signature: semicolon separator + Russian column names.
+                # V2023 also has Russian names but uses comma separator —
+                # require ; explicitly to avoid V2023 collision.
+                has_semicolon = ";" in header
+                has_v2024_field = "Бренд" in header or "Дата" in header
+                # V2023's column is "Дата_продажи" — distinct token. Avoid
+                # matching it inside V2024's Дата check.
+                has_v2023_marker = "Дата_продажи" in header
+                if has_semicolon and has_v2024_field and not has_v2023_marker:
                     return True
             except (OSError, UnicodeDecodeError):
                 pass
@@ -73,16 +91,24 @@ class DsmAdapterV2024:
     def parse(self, file_path: str) -> list[dict]:
         """Parse DSM V2024 file into list of canonical records.
 
-        Returns list of dicts with canonical field names (from
-        canonical_record_mapping).
+        Returns list of dicts с canonical field names (from
+        canonical_record_mapping). Strings only — caller must coerce types
+        via downstream Pydantic schema.
 
         Note: skeleton implementation. Full DSM XLSX parsing requires
         openpyxl + multi-sheet handling (production would expand).
+
+        Audit (post-1D): refuses files >256 MB (`MAX_INPUT_FILE_BYTES`) to
+        prevent memory exhaustion от oversized или malicious input.
         """
+        from aurora_launch.engines.format_adapters import assert_file_size_ok
+
         path = Path(file_path)
 
         if not path.exists():
             raise FileNotFoundError(f"DSM file not found: {file_path}")
+
+        assert_file_size_ok(path)
 
         records: list[dict] = []
 

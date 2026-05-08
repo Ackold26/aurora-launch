@@ -73,12 +73,16 @@ class MediascopeTvIndexAdapterV1:
         """Parse TV Index file into canonical records.
 
         V0.1: single-audience parsing (2-row header). Multi-audience blocks
-        extraction → Phase B+.
+        extraction → Phase B+. Refuses files >256 MB.
         """
+        from aurora_launch.engines.format_adapters import assert_file_size_ok
+
         path = Path(file_path)
 
         if not path.exists():
             raise FileNotFoundError(f"TV Index file not found: {file_path}")
+
+        assert_file_size_ok(path)
 
         if path.suffix.lower() != ".csv":
             raise NotImplementedError(
