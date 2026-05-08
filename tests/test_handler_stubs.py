@@ -106,16 +106,16 @@ class TestLaunchPosteriorUpdate:
     """B5 sprint stubs."""
 
     def test_detect_drift(self) -> None:
-        from aurora_launch.engines.launch_posterior_update import detect_drift
-        result = asyncio.run(detect_drift(ctx=None))
+        from aurora_launch.engines.launch_posterior_update import detect_drift_handler
+        result = asyncio.run(detect_drift_handler(ctx=None))
         assert result["step_type"] == "detect_drift"
         assert result["severity"] in ("normal", "mild", "moderate", "severe", "unknown")
         assert "coverage_observed" in result
 
     def test_detect_drift_min_weeks_8(self) -> None:
         """Audit M-fix — min 8 weeks для drift detection."""
-        from aurora_launch.engines.launch_posterior_update import detect_drift
-        result = asyncio.run(detect_drift(ctx=None, min_weeks=8))
+        from aurora_launch.engines.launch_posterior_update import detect_drift_handler
+        result = asyncio.run(detect_drift_handler(ctx=None, min_weeks=8))
         assert result["min_weeks_used"] >= 8
 
     def test_update_posterior(self) -> None:
@@ -147,8 +147,8 @@ class TestAllHandlersReferencedByWorkflows:
         "aurora_launch.engines.launch_validate.validate_transfer",
         "aurora_launch.engines.methodology_cert.build_certificate",
         "aurora_launch.engines.launch_posterior_update.entry_point",
-        "aurora_launch.engines.launch_posterior_update.detect_drift",
-        "aurora_launch.engines.launch_posterior_update.update_posterior",
+        "aurora_launch.engines.launch_posterior_update.detect_drift_handler",
+        "aurora_launch.engines.launch_posterior_update.update_posterior_handler",
     ]
 
     @pytest.mark.parametrize("dotted_path", HANDLER_PATHS)
