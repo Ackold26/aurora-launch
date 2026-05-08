@@ -20,10 +20,11 @@ class TestSimilarityCalculator:
         assert callable(compute)
 
     def test_returns_verdict_shape(self) -> None:
+        """B2 real impl now (Phase B sprint shipped). stub=False."""
         from aurora_launch.engines.similarity_calculator import compute
         result = asyncio.run(compute(ctx=None, multi_proxy_mode=False))
         assert result["step_type"] == "proxy_select"
-        assert result["stub"] is True
+        assert result["stub"] is False  # real implementation
         assert "similarity_score" in result
         assert "verdict" in result
         assert result["verdict"] in ("High", "Medium", "Low", "Insufficient")
