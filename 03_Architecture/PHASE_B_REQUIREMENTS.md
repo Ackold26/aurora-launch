@@ -540,10 +540,21 @@ Customer не видит B1 directly, но experiences результат:
 
 #### 4.2.4 Pydantic Schemas (B1)
 
+**Schema design (post-implementation H-Audit-6 fix):** Composition over inheritance.
+Phase A C6 `BundleManifest` is `FrozenModel` (`extra="forbid"`) — Aurora Launch
+fields cannot be added via subclass without breaking platform constraints.
+Instead, Aurora Launch ships standalone Pydantic models что хранятся в bundle
+структуре alongside platform `BundleManifest` (per spec §2 handoff matrix).
+
 ```python
-# Extended ManifestV3 для Aurora Launch
-class ManifestV3Launch(ManifestV3):  # ManifestV3 import from aurora_schema_registry (Phase A C6)
-    # Aurora Launch–specific fields (additive)
+# Aurora Launch composition pattern — standalone models that live alongside
+# Phase A C6 BundleManifest in bundle directory structure.
+
+class AuroraLaunchBundleMetadata(BaseModel):
+    """Aggregates Aurora Launch–specific metadata. Stored alongside manifest.json
+    в bundle при serialization; composed back at load time."""
+
+    # Aurora Launch–specific fields
     proxy_brand_metadata: Optional[ProxyBrandMetadata] = None
     transfer_provenance: Optional[TransferProvenance] = None
     recipient_anchors: Optional[RecipientAnchors] = None

@@ -1,5 +1,6 @@
 """Aurora Launch Pydantic v2 schemas — SSoT для data contracts."""
 
+from aurora_launch.schemas.bundle import AuroraLaunchBundleMetadata
 from aurora_launch.schemas.proxy import (
     AnonymizationDetails,
     ProxyBrandMetadata,
@@ -13,6 +14,7 @@ from aurora_launch.schemas.synthetic_corpus import (
 
 __all__ = [
     "AnonymizationDetails",
+    "AuroraLaunchBundleMetadata",
     "FormatAdapterContract",
     "ProxyBrandMetadata",
     "ProxyEntry",

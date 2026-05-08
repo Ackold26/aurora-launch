@@ -29,34 +29,65 @@ def _make_rng(seed: int) -> np.random.Generator:
     return np.random.Generator(np.random.PCG64(seed))
 
 
+# FIX H-Audit-3: full handling of all 14 declared categories.
+# Per ADAPTATION_RULES.md §1.4 + memory `project_econometrica_target_architecture_v3`
+# domain knowledge о category MMM characteristics.
+_CATEGORY_RESPONSE_PARAMS_TABLE: dict[str, dict[str, tuple[float, float]]] = {
+    # FMCG impulse — short adstock, low saturation, fast turnover
+    "FMCG_food.snacks_savoury":   {"adstock": (0.25, 0.40), "hill_gamma": (1.0, 2.5), "hill_k": (0.3, 1.0)},
+    "FMCG_food.snacks_sweet":     {"adstock": (0.25, 0.40), "hill_gamma": (1.0, 2.5), "hill_k": (0.3, 1.0)},
+    "FMCG_food.dairy_yogurt":     {"adstock": (0.30, 0.50), "hill_gamma": (1.2, 2.8), "hill_k": (0.4, 1.2)},
+    "FMCG_beverage.beverage_carbonated": {"adstock": (0.20, 0.35), "hill_gamma": (1.0, 2.3), "hill_k": (0.3, 1.0)},
+    "FMCG_beverage.beverage_juice":      {"adstock": (0.25, 0.40), "hill_gamma": (1.2, 2.5), "hill_k": (0.4, 1.1)},
+    "FMCG_beverage.beverage_energy":     {"adstock": (0.25, 0.45), "hill_gamma": (1.5, 3.0), "hill_k": (0.5, 1.5)},
+    # OTC pharma — moderate adstock, regulated media → cleaner curves
+    "OTC_pharma.OTC_cold_flu":    {"adstock": (0.45, 0.65), "hill_gamma": (1.5, 2.8), "hill_k": (0.5, 1.5)},
+    "OTC_pharma.OTC_pain":        {"adstock": (0.45, 0.65), "hill_gamma": (1.5, 2.8), "hill_k": (0.5, 1.5)},
+    # Cosmetics premium — moderate adstock, brand/awareness driven
+    "Cosmetics.skincare_premium": {"adstock": (0.35, 0.55), "hill_gamma": (1.5, 3.0), "hill_k": (0.5, 1.7)},
+    "Cosmetics.haircare_premium": {"adstock": (0.35, 0.55), "hill_gamma": (1.5, 3.0), "hill_k": (0.5, 1.7)},
+    # Telecom — long adstock (subscription decision cycle), high saturation thresholds
+    "Telecom.telecom_b2c_mobile": {"adstock": (0.55, 0.75), "hill_gamma": (1.8, 3.5), "hill_k": (0.8, 2.2)},
+    # Banking retail — similar to telecom (long consideration), regulated
+    "Banking.banking_retail":     {"adstock": (0.55, 0.75), "hill_gamma": (1.8, 3.5), "hill_k": (0.8, 2.2)},
+    # Awareness-only (synthetic awareness trajectory category)
+    "awareness.brand_awareness_only": {"adstock": (0.40, 0.60), "hill_gamma": (1.2, 2.5), "hill_k": (0.4, 1.5)},
+    # Cross-category edge case (mismatched proxy/recipient — for testing edge logic)
+    "cross_category.cross_l1_edge": {"adstock": (0.20, 0.80), "hill_gamma": (1.0, 4.0), "hill_k": (0.2, 2.5)},
+}
+
+
 def _category_response_params(category_l3: str, n_channels: int, rng: np.random.Generator) -> dict:
-    """Category-specific MMM response curve parameters.
+    """Category-specific MMM response curve parameters per ADAPTATION_RULES §1.4.
 
-    Per ADAPTATION_RULES.md §1.4 — adstock decay & Hill saturation per category type.
+    FIX H-Audit-3: explicit table coverage для all 14 declared categories.
+    Each category has tuple (low, high) for adstock/hill_gamma/hill_k —
+    sampled per-channel within bounds (TV vs digital variation).
+    Cross-category edge case uses widest bounds (deliberate volatility for
+    testing transfer methodology robustness).
     """
-    # Adstock decay λ_c — short-cycle FMCG ~0.3, long-cycle pharma ~0.6
-    if category_l3.startswith("FMCG_food.snacks") or category_l3.startswith("FMCG_beverage"):
-        adstock_base = 0.30
-    elif category_l3.startswith("OTC_pharma"):
-        adstock_base = 0.55
-    elif category_l3.startswith("Cosmetics.skincare"):
-        adstock_base = 0.45
-    elif category_l3.startswith("Telecom") or category_l3.startswith("Banking"):
-        adstock_base = 0.60
-    else:
-        adstock_base = 0.40
+    params = _CATEGORY_RESPONSE_PARAMS_TABLE.get(category_l3)
+    if params is None:
+        # Fallback default (categories beyond declared 14 — edge of Literal type)
+        params = {"adstock": (0.30, 0.50), "hill_gamma": (1.0, 3.0), "hill_k": (0.3, 1.5)}
 
-    # Per-channel variation (TV vs digital)
-    adstock_decay = adstock_base + rng.uniform(-0.10, 0.10, size=n_channels)
-    adstock_decay = np.clip(adstock_decay, 0.05, 0.85)
+    adstock_lo, adstock_hi = params["adstock"]
+    gamma_lo, gamma_hi = params["hill_gamma"]
+    k_lo, k_hi = params["hill_k"]
 
-    # Hill γ_c (saturation shape) — typical 1.0-3.0
-    hill_gamma = rng.uniform(1.0, 3.0, size=n_channels)
+    # Per-channel sampling within category bounds (TV typically slower decay
+    # than digital; first half channels biased to upper bound)
+    adstock_decay = rng.uniform(adstock_lo, adstock_hi, size=n_channels)
+    # Add small per-channel variation (TV vs digital pattern)
+    if n_channels >= 2:
+        adstock_decay[0] = min(adstock_hi, adstock_decay[0] + 0.05)  # TV slower
+        adstock_decay[1] = max(adstock_lo, adstock_decay[1] - 0.05)  # digital faster
 
-    # Hill k_c (half-saturation, normalized to spend_max)
-    hill_k_normalized = rng.uniform(0.3, 1.5, size=n_channels)
+    hill_gamma = rng.uniform(gamma_lo, gamma_hi, size=n_channels)
+    hill_k_normalized = rng.uniform(k_lo, k_hi, size=n_channels)
 
-    # β coefficients (channel impact magnitude)
+    # β coefficients — magnitude varies inversely with brand_size в spec, but
+    # baseline ~0.05-0.25 reasonable
     beta = rng.uniform(0.05, 0.25, size=n_channels)
 
     return {
@@ -64,6 +95,7 @@ def _category_response_params(category_l3: str, n_channels: int, rng: np.random.
         "hill_gamma": hill_gamma.tolist(),
         "hill_k_normalized": hill_k_normalized.tolist(),
         "beta": beta.tolist(),
+        "category_table_used": category_l3 in _CATEGORY_RESPONSE_PARAMS_TABLE,
     }
 
 
@@ -82,15 +114,36 @@ def _seasonality_pattern(category_l3: str, variant: str, rng: np.random.Generato
     else:
         amplitude = base_amplitude
 
-    # FMCG impulse — summer peak; Pharma — winter (cold/flu) peak; cosmetics — Q4 (gifting)
-    if category_l3.startswith("FMCG_beverage") or "snacks" in category_l3:
-        peak_week = 26  # mid-summer
-    elif category_l3.startswith("OTC_pharma.OTC_cold_flu"):
-        peak_week = 4  # late January
+    # FIX H-Audit-3: explicit seasonality phase per category (was: random fallback).
+    # Rationale per category type:
+    # - FMCG impulse (snacks/beverages) — summer peak (week 26)
+    # - OTC pharma cold/flu — winter peak (late January, week 4)
+    # - OTC pharma pain — flat (year-round, no strong seasonality)
+    # - Cosmetics premium — Q4 gifting peak (week 50)
+    # - Telecom/Banking — Q1 budget renewals + Q4 promotional peaks (use Q1=week 6)
+    # - Awareness — flat with mild Q4 lift (gifting/holiday context)
+    # - Cross-category edge — deliberately random (tests transfer to volatile target)
+    if "snacks" in category_l3 or category_l3.startswith("FMCG_beverage"):
+        peak_week = 26
+    elif category_l3 == "OTC_pharma.OTC_cold_flu":
+        peak_week = 4
+    elif category_l3 == "OTC_pharma.OTC_pain":
+        peak_week = 26  # near-flat, mild summer peak (outdoor activities → injuries)
+        amplitude *= 0.5  # de-amplified
     elif category_l3.startswith("Cosmetics"):
-        peak_week = 50  # December
+        peak_week = 50
+    elif category_l3.startswith("Telecom") or category_l3.startswith("Banking"):
+        peak_week = 6  # Q1 corporate budget cycle
+        amplitude *= 0.7  # less seasonal than FMCG
+    elif category_l3.startswith("awareness"):
+        peak_week = 50
+        amplitude *= 0.3  # awareness barely seasonal
+    elif category_l3.startswith("cross_category"):
+        peak_week = int(rng.integers(0, 52))  # explicit edge — random
+    elif category_l3.startswith("FMCG_food.dairy"):
+        peak_week = 13  # spring/Easter
     else:
-        peak_week = rng.integers(0, 52)
+        peak_week = int(rng.integers(0, 52))
 
     # Sinusoidal with category-specific phase
     phase = 2 * np.pi * (weeks - peak_week) / 52

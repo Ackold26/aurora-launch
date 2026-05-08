@@ -177,6 +177,39 @@ class TestSyntheticGeneration:
             bundle = json.load(f)
         assert "manifest_sha256" in bundle
 
+    @pytest.mark.parametrize(
+        "category",
+        [
+            "FMCG_food.snacks_savoury", "FMCG_food.snacks_sweet", "FMCG_food.dairy_yogurt",
+            "FMCG_beverage.beverage_carbonated", "FMCG_beverage.beverage_juice",
+            "FMCG_beverage.beverage_energy",
+            "OTC_pharma.OTC_cold_flu", "OTC_pharma.OTC_pain",
+            "Cosmetics.skincare_premium", "Cosmetics.haircare_premium",
+            "Telecom.telecom_b2c_mobile",
+            "Banking.banking_retail",
+            "awareness.brand_awareness_only",
+            "cross_category.cross_l1_edge",
+        ],
+    )
+    def test_all_14_categories_use_explicit_response_table(
+        self, tmp_path: Path, category: str
+    ) -> None:
+        """FIX H-Audit-3 verified: all 14 declared categories have explicit
+        response curve params (not falling into default branch)."""
+        spec = SyntheticProjectSpec(
+            seed=42,
+            category_l3=category,  # type: ignore[arg-type]
+            variant="baseline",
+        )
+        output = generate_synthetic_project(spec, tmp_path)
+        with output.open() as f:
+            bundle = json.load(f)
+
+        # All 14 categories should have category_table_used=True
+        assert bundle["data"]["response_params"]["category_table_used"] is True, (
+            f"Category {category} fell into default branch — H-Audit-3 not closed"
+        )
+
 
 class TestGeneratedDataValidity:
     def test_weekly_data_has_required_fields(

@@ -6,8 +6,13 @@ from pathlib import Path
 
 import pytest
 
+from aurora_launch.engines.format_adapters.dsm_v2023 import DsmAdapterV2023
 from aurora_launch.engines.format_adapters.dsm_v2024 import DsmAdapterV2024
+from aurora_launch.engines.format_adapters.dsm_v2025 import DsmAdapterV2025
 from aurora_launch.engines.format_adapters.mediascope_adex import MediascopeAdExAdapterV1
+from aurora_launch.engines.format_adapters.mediascope_tv_index import (
+    MediascopeTvIndexAdapterV1,
+)
 from aurora_launch.engines.format_adapters.registry import (
     AdapterRegistry,
     build_default_registry,
@@ -37,8 +42,12 @@ class TestAdapterRegistry:
     def test_default_registry_has_builtins(self) -> None:
         reg = build_default_registry()
         ids = {a.adapter_id for a in reg.list_adapters()}
+        # All 5 built-in adapters registered (B0.5 nice-to-haves complete)
+        assert "dsm_v2023" in ids
         assert "dsm_v2024" in ids
+        assert "dsm_v2025" in ids
         assert "mediascope_adex_v1" in ids
+        assert "mediascope_tv_index_v1" in ids
 
     def test_get_by_id(self) -> None:
         reg = build_default_registry()
@@ -124,6 +133,94 @@ class TestMediascopeAdExAdapterV1:
         assert len(records) == 1
         assert records[0]["channel_name"] == "TV"
         assert records[0]["spend_thousand_rub"] == "500"
+
+
+class TestDsmAdapterV2023:
+    def test_metadata(self) -> None:
+        adapter = DsmAdapterV2023()
+        meta = adapter.get_metadata()
+        assert meta.adapter_id == "dsm_v2023"
+        # V2023 column name differs from V2024
+        assert "Дата_продажи" in meta.canonical_record_mapping
+
+    def test_detect_csv(self) -> None:
+        adapter = DsmAdapterV2023()
+        assert adapter.detect("/path/data_dsm_2023_q1.csv") is True
+        assert adapter.detect("/path/data_dsm_2024_q1.csv") is False
+
+    def test_parse_csv_normalizes_date_format(self, tmp_path: Path) -> None:
+        adapter = DsmAdapterV2023()
+        csv_path = tmp_path / "data_dsm_2023.csv"
+        csv_path.write_text(
+            "Бренд,Дата_продажи,Продажи_упаковки\nКагоцел,15.03.2023,100\n",
+            encoding="utf-8-sig",
+        )
+        records = adapter.parse(str(csv_path))
+        assert len(records) == 1
+        # DD.MM.YYYY → YYYY-MM-DD
+        assert records[0]["period_date"] == "2023-03-15"
+
+
+class TestDsmAdapterV2025:
+    def test_metadata(self) -> None:
+        adapter = DsmAdapterV2025()
+        meta = adapter.get_metadata()
+        assert meta.adapter_id == "dsm_v2025"
+        # V2025 forward-compat fields
+        assert "SKU" in meta.canonical_record_mapping
+        assert "Регион" in meta.canonical_record_mapping
+        assert "Дата_время" in meta.canonical_record_mapping
+
+    def test_detect_tsv(self, tmp_path: Path) -> None:
+        adapter = DsmAdapterV2025()
+        # Filename detection
+        assert adapter.detect("/path/data_dsm_2025_q1.tsv") is True
+        # Header sniff с tab separator
+        tsv = tmp_path / "anonymous.csv"
+        tsv.write_text("Бренд\tДата_время\tSKU\nABC\t2025-01-01T00:00:00Z\tSKU-1\n", encoding="utf-8-sig")
+        assert adapter.detect(str(tsv)) is True
+
+    def test_parse_tsv(self, tmp_path: Path) -> None:
+        adapter = DsmAdapterV2025()
+        tsv_path = tmp_path / "data_dsm_2025.tsv"
+        tsv_path.write_text(
+            "Бренд\tSKU\tДата_время\tПродажи_упаковки\nABC\tSKU-1\t2025-01-01T00:00:00Z\t100\n",
+            encoding="utf-8-sig",
+        )
+        records = adapter.parse(str(tsv_path))
+        assert len(records) == 1
+        assert records[0]["sku"] == "SKU-1"
+
+
+class TestMediascopeTvIndexAdapterV1:
+    def test_metadata(self) -> None:
+        adapter = MediascopeTvIndexAdapterV1()
+        meta = adapter.get_metadata()
+        assert meta.adapter_id == "mediascope_tv_index_v1"
+        # Both Канал и Channek (legacy typo) mapped
+        assert meta.canonical_record_mapping["Канал"] == "channel_name"
+        assert meta.canonical_record_mapping["Channek"] == "channel_name"
+
+    def test_detect_palomars_filename(self) -> None:
+        adapter = MediascopeTvIndexAdapterV1()
+        assert adapter.detect("/path/PaloMars_2024_q1.csv") is True
+
+    def test_detect_tv_panel_filename(self) -> None:
+        adapter = MediascopeTvIndexAdapterV1()
+        assert adapter.detect("/path/tv_panel_data.csv") is True
+
+    def test_parse_single_row_header(self, tmp_path: Path) -> None:
+        adapter = MediascopeTvIndexAdapterV1()
+        csv_path = tmp_path / "tv_index_q1.csv"
+        csv_path.write_text(
+            "Канал,Период,TVR,GRP\nПервый,2024-01,2.5,15.3\n",
+            encoding="utf-8-sig",
+        )
+        records = adapter.parse(str(csv_path))
+        assert len(records) == 1
+        assert records[0]["channel_name"] == "Первый"
+        assert records[0]["tvr"] == "2.5"
+        assert records[0]["grp"] == "15.3"
 
 
 class TestEndToEndDetection:

@@ -62,11 +62,26 @@ def build_default_registry() -> AdapterRegistry:
     """Constructs registry with all built-in adapters registered.
 
     Used by application startup. Returns fresh registry instance.
+
+    Order matters: more-specific adapters registered LAST so они take priority
+    в `detect()` (which iterates reversed). DSM V2024 most common — registered
+    last to win ties. V2023 / V2025 specific year-string detection avoids
+    collisions.
     """
+    from aurora_launch.engines.format_adapters.dsm_v2023 import DsmAdapterV2023
     from aurora_launch.engines.format_adapters.dsm_v2024 import DsmAdapterV2024
+    from aurora_launch.engines.format_adapters.dsm_v2025 import DsmAdapterV2025
     from aurora_launch.engines.format_adapters.mediascope_adex import MediascopeAdExAdapterV1
+    from aurora_launch.engines.format_adapters.mediascope_tv_index import (
+        MediascopeTvIndexAdapterV1,
+    )
 
     registry = AdapterRegistry()
+    # DSM family — V2023 first (legacy), V2025 (forward-compat), V2024 last (most common)
+    registry.register(DsmAdapterV2023())
+    registry.register(DsmAdapterV2025())
     registry.register(DsmAdapterV2024())
+    # Mediascope family — AdEx + TV Index
     registry.register(MediascopeAdExAdapterV1())
+    registry.register(MediascopeTvIndexAdapterV1())
     return registry
