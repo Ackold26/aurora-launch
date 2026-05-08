@@ -31,13 +31,14 @@ class TestSimilarityCalculator:
 
 
 class TestEngineSelector:
-    """B3 sprint stub."""
+    """B3 sprint — real implementation. Test workflow handler entry point."""
 
-    def test_select_engine_returns_decision(self) -> None:
-        from aurora_launch.engines.engine_selector import select_engine
-        result = asyncio.run(select_engine(ctx=None))
+    def test_select_engine_handler_returns_decision(self) -> None:
+        from aurora_launch.engines.engine_selector import select_engine_handler
+        result = asyncio.run(select_engine_handler(ctx=None))
         assert result["step_type"] == "engine_select"
         assert result["selected_engine"] in ("single", "multi", "single_with_pooling", "blocked")
+        assert result["stub"] is False  # B3 ships real implementation
 
 
 class TestLaunchAdapt:
@@ -140,7 +141,7 @@ class TestAllHandlersReferencedByWorkflows:
 
     HANDLER_PATHS = [
         "aurora_launch.engines.similarity_calculator.compute",
-        "aurora_launch.engines.engine_selector.select_engine",
+        "aurora_launch.engines.engine_selector.select_engine_handler",  # B3 real
         "aurora_launch.engines.launch_adapt.apply_recipient_magnitudes",
         "aurora_launch.engines.launch_adapt.extract_proxy_priors",
         "aurora_launch.engines.launch_validate.validate_transfer",
