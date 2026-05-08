@@ -1,0 +1,49 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capabilities для main window — minimum required для Aurora Launch UX",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:window:default",
+    "core:webview:default",
+    "core:app:default",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        { "path": "$APPDATA/aurora-launch/**" },
+        { "path": "$APPCACHE/aurora-launch/**" },
+        { "path": "$APPLOG/aurora-launch/**" },
+        { "path": "$HOME/.aurora/**" },
+        { "path": "$HOME/Documents/Aurora Launch/**" }
+      ]
+    },
+    "fs:default",
+    "fs:allow-read-text-file",
+    "fs:allow-read-file",
+    "fs:allow-write-text-file",
+    "fs:allow-write-file",
+    "fs:allow-mkdir",
+    "fs:allow-exists",
+    "fs:allow-stat",
+    "dialog:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "dialog:allow-message",
+    "shell:allow-open",
+    "notification:default",
+    "notification:allow-notify",
+    "process:default",
+    "process:allow-restart",
+    "os:default",
+    "os:allow-platform",
+    "os:allow-version",
+    "os:allow-arch",
+    "os:allow-locale",
+    "updater:default",
+    "updater:allow-check",
+    "updater:allow-download",
+    "updater:allow-install"
+  ]
+}

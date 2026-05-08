@@ -49,18 +49,27 @@ Budgets имеют **2 tiers** (cold first run / warm subsequent) + premium hard
 
 ### 1.3 UI Responsiveness
 
+**Updated 2026-05-09 (Block 2 pre-execution audit, decisions D2/D3):**
+- Cold start tightened к ≤2s per ROADMAP success criteria (was ≤3s).
+- WASM rows removed — Block 2C decided native Rust IPC, no WASM в desktop scope.
+- Wizard step explicit budget (was implicit through "Cabinet navigation").
+
 | Operation | Budget | Threshold |
 |---|---|---|
-| **Initial app launch** | ≤ 3s | First Contentful Paint |
+| **Cold start (initial app launch)** | ≤ 2s | First Contentful Paint, splash visible immediately |
+| **Wizard step navigation** | ≤ 200ms | Click → next step rendered |
 | **Cabinet navigation** | ≤ 200ms | Click to render |
 | **Form field validation (debounced)** | ≤ 300ms | Debounce + validate |
-| **Similarity score recompute (WASM, cold)** | ≤ 150ms | First WASM call (init overhead) |
-| **Similarity score recompute (WASM, warm)** | ≤ 30ms | Subsequent calls (real-time radar) |
-| **Forecast cone render** | ≤ 500ms | After data ready |
-| **Modal open/close** | ≤ 200ms | Animation + content |
-| **Save project** | ≤ 500ms | Including disk write |
-| **Open existing project** | ≤ 1s | Including unpickle |
-| **WASM bundle size** | ≤ 200KB gzipped | Lazy-loaded on proxy step |
+| **Similarity score recompute (native Rust IPC, cold)** | ≤ 100ms | First IPC call (process warmup) |
+| **Similarity score recompute (native Rust IPC, warm)** | ≤ 30ms | Subsequent calls (real-time radar fill) |
+| **Forecast cone render** | ≤ 500ms | After data ready, Chart.js tree-shaken |
+| **Custom SVG radar render** | ≤ 100ms | 8 dimensions, 60fps на change |
+| **Modal open/close** | ≤ 200ms | Spring motion + content |
+| **Save project** | ≤ 500ms | Including ZIP write + atomic rename |
+| **Open existing project (small, ≤10MB)** | ≤ 200ms | Per ADR-002 (manifest + lazy load) |
+| **Open existing project (large, ≤200MB)** | ≤ 500ms | Per ADR-002 + Block 1C streaming reader |
+| **Theme switch (light↔dark)** | ≤ 150ms | CSS custom properties only, no rerender |
+| **i18n locale switch** | ≤ 300ms | Full re-render с new locale strings |
 
 ### 1.4 Reports
 
@@ -98,11 +107,16 @@ Reuse from Econometrica v1.0.16:
 - NumPyro NUTS sampler (faster than PyMC default)
 - vswhere.exe + vcvars64.bat для Windows JAX speedups (Econometrica session 4)
 
-### 2.2 WASM для UI-side computation
+### 2.2 Native Rust IPC для UI-side computation
 
-Real-time operations в browser context:
-- Similarity calculator (audit B4) - Rust → WASM
-- Local validator stubs (Pydantic-to-Zod via JSON Schema)
+**Updated 2026-05-09 (Block 2 audit D3):** WASM removed from desktop scope per ROADMAP §2C. WASM verifier — отдельный проект для web, defer v0.1.1.
+
+Real-time operations через native Tauri IPC commands (Rust process, не WASM bridge):
+- `compute_similarity_dimensions(proxy_id, recipient_anchors) → SimilarityDimensionScores` — sub-30ms warm.
+- `verify_bundle_signature(path) → VerificationResult` — Block 2C entry.
+- `validate_anchors(anchors) → ValidationResult` — sync, fast.
+
+Pydantic schemas reused via `tools/export_typescript.py` — generated `frontend/src/types/aurora.d.ts`. Build pipeline runs export перед каждым `tauri dev` / `tauri build`.
 
 ### 2.3 Caching
 

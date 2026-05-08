@@ -1,0 +1,78 @@
+{
+  "$schema": "https://schema.tauri.app/config/2.0.0",
+  "productName": "Aurora Launch",
+  "version": "0.1.0",
+  "identifier": "pro.auroraai.launch",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../frontend/build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Aurora Launch",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1024,
+        "minHeight": 720,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "transparent": false,
+        "alwaysOnTop": false,
+        "center": true,
+        "theme": "Dark",
+        "titleBarStyle": "Visible",
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' tauri: ipc: http://ipc.localhost; img-src 'self' data: asset:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://updates.auroraai.pro https://feedback.auroraai.pro"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "dmg", "appimage", "deb"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "Productivity",
+    "shortDescription": "Premium Bayesian forecast workspace",
+    "longDescription": "Aurora Launch — premium-grade Bayesian forecast workspace для new brand launches с proxy transfer methodology. Local-first, methodology-certified, customer-controlled data.",
+    "publisher": "Aurora AI",
+    "copyright": "© 2026 Aurora AI. All rights reserved.",
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "installMode": "perMachine",
+        "languages": ["Russian", "English"]
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "entitlements": null
+    },
+    "linux": {
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"]
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://updates.auroraai.pro/launch/{{target}}/{{arch}}/{{current_version}}"
+      ],
+      "dialog": false,
+      "pubkey": "EMBED_AT_RELEASE_TIME"
+    }
+  }
+}

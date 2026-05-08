@@ -1,0 +1,77 @@
+[package]
+name = "aurora-launch"
+version = "0.1.0"
+description = "Aurora Launch — premium Bayesian forecast workspace для new brands"
+authors = ["Aurora AI"]
+license = "Proprietary"
+edition = "2021"
+rust-version = "1.75"
+
+[lib]
+name = "aurora_launch_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = [] }
+
+[dev-dependencies]
+tempfile = "3.10"
+
+[dependencies]
+tauri = { version = "2.0", features = ["macos-private-api"] }
+tauri-plugin-fs = "2.0"
+tauri-plugin-dialog = "2.0"
+tauri-plugin-shell = "2.0"
+tauri-plugin-notification = "2.0"
+tauri-plugin-process = "2.0"
+tauri-plugin-os = "2.0"
+tauri-plugin-updater = "2.0"
+
+# Cryptography (Block 2C)
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+blake3 = "1.5"
+sha2 = "0.10"
+base64 = "0.22"
+rand = "0.8"
+
+# Bundle inspection
+zip = { version = "2.1", default-features = false, features = ["deflate"] }
+
+# Local SQLite for telemetry/audit log buffer (Block 2F)
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Serialization / contracts
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+anyhow = "1"
+
+# Async runtime для IPC commands
+tokio = { version = "1", features = ["sync", "rt-multi-thread", "fs", "macros"] }
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Time / paths
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "5"
+
+# UUID / IDs
+uuid = { version = "1.10", features = ["v4", "v7", "serde"] }
+
+# Hex encoding для signatures
+hex = "0.4"
+
+[features]
+# This feature is used for production builds and dev/test where the bundle
+# embed marker is set via build.rs via env var AURORA_BUILD_PROFILE.
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

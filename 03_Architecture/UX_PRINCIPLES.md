@@ -79,24 +79,35 @@ Aurora Launch pricing 1.5-3M/год требует **premium feel с перво�
 
 ### 2.1 Aurora Hybrid Design System
 
-**Color tokens** (от Standards/tokens.json, per-app accent):
-- Background: Aurora Deep (#0A0F1F) - dark, premium
-- Surface: Aurora Deep Surface (#0E1428)
-- Text primary: #F5F5F5
-- Text secondary: #A8B2D1
-- Accent (per Aurora Launch): **Electric Blue** (#3B82F6) - "forward-looking / launch"
-- Tier-1 Gold accent: #FFD700 (для Tier badges, premium metrics)
-- Sacred Lime (action): #BFFF00 (для CTAs)
-- Error: #EF4444
-- Warning: #F59E0B
-- Success: #10B981
+**Updated 2026-05-09 (Block 2 audit D2):** конфликт между tokens.json (SSOT 2026-04-24) и UX_PRINCIPLES старой версии resolved в пользу tokens.json. Все hex-значения ниже синхронизированы с `06_Aurora_Design_system/01_Tokens/tokens.json`.
 
-**Typography:**
-- Headlines: Lora Serif (custom letterforms)
-- Body: Inter Variable
-- Code/data: JetBrains Mono
+**Color tokens** (read from `tokens.json` SSOT, ui.* palette для Tauri webview):
 
-**Spacing:** 8px grid system (4/8/16/24/32/48/64)
+| Role | Token path | Hex |
+|---|---|---|
+| Background main | `color.ui.bg.main` | `#0f1117` |
+| Background surface | `color.ui.bg.surface` | `#1a1d27` |
+| Border subtle | `color.ui.bg.border` | `#2a2d37` |
+| Text primary | `color.ui.text.primary` | `#EAEAF0` |
+| Text secondary | `color.ui.text.secondary` | `#A8A8B8` |
+| Text muted | `color.ui.text.muted` | `#7A7A90` |
+| Accent primary (Aurora Launch) | `color.ui.accent.primary` | `#2E5BFF` |
+| Accent secondary (sacred lime) | `color.ui.accent.secondary` | `#CCFF00` |
+| Error | `color.semantic.danger` | `#EF4444` |
+| Warning | `color.semantic.warning` | `#F59E0B` |
+| Success | `color.semantic.success` | `#10B981` |
+| Info | `color.semantic.info` | `#22D3EE` |
+
+Light theme — derived через CSS custom properties с `[data-theme="light"]` overrides; tokens.json остаётся SSOT для dark, light = computed inverses where appropriate.
+
+**Typography (UI stack per tokens.json):**
+- UI headlines: `Noto Serif` (SIL OFL 1.1, bundled с installer)
+- UI body: `Inter` (SIL OFL 1.1, bundled)
+- Code/data: `JetBrains Mono` (SIL OFL 1.1, bundled)
+
+**Spacing:** 4px base unit per tokens.json (`spacing.0`...`spacing.16`); CSS rem с `1rem = 16px`. Core scale: 4/8/12/16/24/32/48/64 px.
+
+**Sacred Lime invariant:** `#CCFF00` (== `color.brand.sig.lime`, also bridged в `color.ui.accent.secondary`) — используется только для primary CTA action sigil + 2pt action title underline. Никогда не для decoration / hover / borders.
 
 **Border radius:** 6px (small), 12px (medium), 20px (large/cards)
 

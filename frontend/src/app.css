@@ -1,0 +1,74 @@
+/* Aurora Launch — global styles.
+ *
+ * Token loading order:
+ *   1. tokens.css (generated from 06_Aurora_Design_system/01_Tokens/tokens.json)
+ *   2. base reset + typography
+ *   3. component-local styles in *.svelte files
+ */
+
+@import './lib/styles/tokens.css';
+@import './lib/styles/base.css';
+
+:root {
+  font-family: var(--font-sans);
+  color-scheme: dark light;
+  background: var(--bg-main);
+  color: var(--text-primary);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--bg-main);
+  color: var(--text-primary);
+}
+
+body {
+  font-size: 16px;
+  line-height: 1.5;
+  font-weight: 400;
+  overflow: hidden; /* Tauri webview doesn't scroll body — content scrolls inside layout */
+}
+
+#app-shell {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Visible focus ring (a11y) */
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Selection */
+::selection {
+  background: rgba(46, 91, 255, 0.35);
+  color: var(--text-primary);
+}
+
+/* Scrollbar (subtle, premium) */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 6px;
+  border: 3px solid var(--bg-main);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}

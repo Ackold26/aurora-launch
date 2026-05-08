@@ -1,0 +1,150 @@
+/* Aurora Launch — tokens.css
+   Generated from ../../06_Aurora_Design_system/01_Tokens/tokens.json
+   Run `npm run gen:tokens` to regenerate. Do NOT hand-edit. */
+
+:root {
+  /* colors */
+  --color-brand-deep-100: #0A1628;
+  --color-brand-deep-80: #1E3A5F;
+  --color-brand-deep-60: #547090;
+  --color-brand-deep-40: #99ADC2;
+  --color-brand-deep-20: #D6DFE8;
+  --color-brand-gold-primary: #C5A46D;
+  --color-brand-gold-muted: #8C7142;
+  --color-brand-bg-white: #FFFFFF;
+  --color-brand-bg-quiet: #F7F5EE;
+  --color-brand-rule: #C8CDD4;
+  --color-brand-text-primary: var(--color-brand-deep-100);
+  --color-brand-text-secondary: var(--color-brand-deep-60);
+  --color-brand-sig-lime: #CCFF00;
+
+  --color-ui-accent-primary: #2E5BFF;
+  --color-ui-accent-secondary: var(--color-brand-sig-lime);
+  --color-ui-bg-main: #0f1117;
+  --color-ui-bg-surface: #1a1d27;
+  --color-ui-bg-border: #2a2d37;
+  --color-ui-text-primary: #EAEAF0;
+  --color-ui-text-secondary: #A8A8B8;
+  --color-ui-text-muted: #7A7A90;
+
+  --color-semantic-success: #10B981;
+  --color-semantic-warning: #F59E0B;
+  --color-semantic-danger: #EF4444;
+  --color-semantic-info: #22D3EE;
+  --color-semantic-stop: #ED2124;
+  --color-semantic-caution: #F1C44D;
+  --color-semantic-go: #269924;
+
+  --color-data-ocean: #0A6F7A;
+  --color-data-jade: #3EB661;
+  --color-data-berry: #D3086F;
+  --color-data-tangerine: #FA823C;
+  --color-data-purple: #6633CC;
+  --color-data-aqua: #4CCACD;
+  --color-data-peach: #FF7E81;
+
+  /* typography */
+  --typography-fontFamily-uiSerif: 'Noto Serif', Georgia, serif;
+  --typography-fontFamily-uiSans: 'Inter', system-ui, -apple-system, sans-serif;
+  --typography-fontFamily-uiMono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  --typography-fontSize-ui-h1: 2rem;
+  --typography-fontSize-ui-h2: 1.5rem;
+  --typography-fontSize-ui-h3: 1.25rem;
+  --typography-fontSize-ui-body: 1rem;
+  --typography-fontSize-ui-sm: 0.875rem;
+  --typography-fontSize-ui-xs: 0.75rem;
+  --typography-fontWeight-light: 300;
+  --typography-fontWeight-regular: 400;
+  --typography-fontWeight-medium: 500;
+  --typography-fontWeight-bold: 700;
+  --typography-lineHeight-tight: 1.0;
+  --typography-lineHeight-snug: 1.15;
+  --typography-lineHeight-normal: 1.5;
+
+  /* spacing */
+  --spacing-0: 0;
+  --spacing-1: 0.25rem;
+  --spacing-2: 0.5rem;
+  --spacing-3: 0.75rem;
+  --spacing-4: 1rem;
+  --spacing-6: 1.5rem;
+  --spacing-8: 2rem;
+  --spacing-12: 3rem;
+  --spacing-16: 4rem;
+
+  /* sizing */
+  --sizing-ui-containerMax: 1280px;
+  --sizing-ui-sidebarWidth: 240px;
+
+  /* borders */
+  --border-radius-none: 0;
+  --border-radius-sm: 2px;
+  --border-radius-md: 4px;
+  --border-radius-lg: 8px;
+
+  /* Aurora Launch convenience aliases (UX_PRINCIPLES.md §2.1, audit D2) */
+  --bg-main: var(--color-ui-bg-main);
+  --bg-surface: var(--color-ui-bg-surface);
+  --border-subtle: var(--color-ui-bg-border);
+  --text-primary: var(--color-ui-text-primary);
+  --text-secondary: var(--color-ui-text-secondary);
+  --text-muted: var(--color-ui-text-muted);
+  --accent: var(--color-ui-accent-primary);
+  --accent-sigil: var(--color-ui-accent-secondary); /* sacred lime */
+  --color-success: var(--color-semantic-success);
+  --color-warning: var(--color-semantic-warning);
+  --color-danger: var(--color-semantic-danger);
+  --color-info: var(--color-semantic-info);
+  --font-sans: var(--typography-fontFamily-uiSans);
+  --font-serif: var(--typography-fontFamily-uiSerif);
+  --font-mono: var(--typography-fontFamily-uiMono);
+
+  /* Motion timings (Block 2D) */
+  --motion-fast: 150ms;
+  --motion-default: 200ms;
+  --motion-smooth: 320ms;
+  --easing-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --easing-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --easing-emphasized: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Elevation shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.18);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.32);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.48);
+  --shadow-glow: 0 0 24px rgba(46, 91, 255, 0.22);
+}
+
+/* Light theme overrides (Block 2 D9) — tokens.json остаётся dark SSOT */
+[data-theme='light'] {
+  --bg-main: #FAFAFC;
+  --bg-surface: #FFFFFF;
+  --border-subtle: #E0E2E8;
+  --text-primary: #1A1D27;
+  --text-secondary: #4A4D57;
+  --text-muted: #7A7D87;
+  --shadow-sm: 0 1px 2px rgba(20, 30, 60, 0.08);
+  --shadow-md: 0 4px 12px rgba(20, 30, 60, 0.12);
+  --shadow-lg: 0 12px 32px rgba(20, 30, 60, 0.18);
+  --shadow-glow: 0 0 24px rgba(46, 91, 255, 0.18);
+}
+
+/* High contrast (a11y, ГОСТ Р 52872-2019) */
+[data-theme='high-contrast'] {
+  --bg-main: #000000;
+  --bg-surface: #0F0F0F;
+  --border-subtle: #FFFFFF;
+  --text-primary: #FFFFFF;
+  --text-secondary: #FFFF00;
+  --text-muted: #BBBBBB;
+  --accent: #00FFFF;
+  --accent-sigil: #FFFF00;
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-default: 0ms;
+    --motion-smooth: 0ms;
+  }
+}
