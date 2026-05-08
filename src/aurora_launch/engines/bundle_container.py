@@ -351,17 +351,54 @@ def _read_manifest_from_zip(path: Path) -> BundleManifest:
 class BundleZipReader:
     """Reader для `.aurora` bundles. Auto-detects ZIP vs legacy JSON.
 
-    Eager load (Block 1A): reads all entries into memory. Block 1C will
-    add streaming/lazy reader for large bundles (200MB+).
+    Default `read()` is eager (Block 1A) — full bundle into RAM. For 50MB+
+    bundles call `read_lazy()` (Block 1C) to defer per-entry reads behind
+    a size-bounded LRU cache; the lazy bundle holds the ZipFile + advisory
+    lock for its lifetime and must be closed (или used as context manager).
     """
 
     schema_registry: LaunchSchemaRegistry | None = None
     lock_timeout: float = 5.0
     verify_integrity: bool = True
+    strict_integrity: bool = True
+    cache_max_bytes: int | None = None  # None → bundle_streaming.DEFAULT_CACHE_BYTES
 
     def __post_init__(self) -> None:
         if self.schema_registry is None:
             self.schema_registry = build_default_launch_registry()
+
+    def read_lazy(self, path: Path):
+        """Open the bundle in streaming mode; returns a `LazyLoadedBundle`.
+
+        Block 1C entrypoint. Reads `manifest.json` upfront, defers payload
+        entries to first access (cached в size-bounded LRU). Caller MUST
+        close the returned bundle (или use `with`).
+
+        Falls back to `read()` (eager) for legacy `.aurora.json` bundles —
+        single-file blobs где lazy не имеет смысла. The returned object in
+        that case is a plain `LoadedBundle`, not LazyLoadedBundle.
+        """
+        # Imported here to avoid a circular import (bundle_streaming imports
+        # from bundle_container).
+        from aurora_launch.engines.bundle_streaming import (
+            DEFAULT_CACHE_BYTES,
+            open_lazy,
+        )
+
+        path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(f"Bundle not found: {path}")
+        fmt = detect_format(path)
+        if fmt == "json":
+            return self.read(path)
+        cap = self.cache_max_bytes if self.cache_max_bytes is not None else DEFAULT_CACHE_BYTES
+        return open_lazy(
+            path,
+            cache_max_bytes=cap,
+            lock_timeout=self.lock_timeout,
+            verify_integrity=self.verify_integrity,
+            strict_integrity=self.strict_integrity,
+        )
 
     def read(self, path: Path) -> LoadedBundle:
         """Open and load a bundle. Cross-format dispatch.
