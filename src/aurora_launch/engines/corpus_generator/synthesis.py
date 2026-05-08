@@ -76,12 +76,9 @@ def _category_response_params(category_l3: str, n_channels: int, rng: np.random.
     k_lo, k_hi = params["hill_k"]
 
     # Per-channel sampling within category bounds (TV typically slower decay
-    # than digital; first half channels biased to upper bound)
+    # than digital). FIX M-A2-1: variation applied via channel name lookup,
+    # not positional indexing — robust к channel ordering changes.
     adstock_decay = rng.uniform(adstock_lo, adstock_hi, size=n_channels)
-    # Add small per-channel variation (TV vs digital pattern)
-    if n_channels >= 2:
-        adstock_decay[0] = min(adstock_hi, adstock_decay[0] + 0.05)  # TV slower
-        adstock_decay[1] = max(adstock_lo, adstock_decay[1] - 0.05)  # digital faster
 
     hill_gamma = rng.uniform(gamma_lo, gamma_hi, size=n_channels)
     hill_k_normalized = rng.uniform(k_lo, k_hi, size=n_channels)
@@ -245,11 +242,25 @@ def synthesize_project_data(spec: SyntheticProjectSpec) -> dict:
         spec.n_weeks, spec.n_channels, spec.media_maturity, spec.variant, rng
     )
 
+    # Define canonical channel names (list will be adjusted to spec.n_channels later)
+    canonical_channel_names = ["TV", "Digital", "OOH", "Radio", "Print", "Cinema", "Sponsorship", "OLV"]
+    channels_for_response = canonical_channel_names[: spec.n_channels]
+
     # Compute response per channel: adstock → Hill → β-scaled
     adstock_decays = np.array(response_params["adstock_decay"])
     gammas = np.array(response_params["hill_gamma"])
     k_norms = np.array(response_params["hill_k_normalized"])
     betas = np.array(response_params["beta"])
+
+    # FIX M-A2-1: TV/Digital adstock variation by NAME match (was: positional index).
+    # TV typically slower decay (longer carryover), digital faster.
+    adstock_lo_table = _CATEGORY_RESPONSE_PARAMS_TABLE.get(spec.category_l3, {}).get("adstock", (0.30, 0.50))
+    adstock_lo, adstock_hi = adstock_lo_table
+    for idx, ch_name in enumerate(channels_for_response):
+        if ch_name == "TV":
+            adstock_decays[idx] = min(adstock_hi, adstock_decays[idx] + 0.05)
+        elif ch_name == "Digital":
+            adstock_decays[idx] = max(adstock_lo, adstock_decays[idx] - 0.05)
 
     channel_response = np.zeros_like(spend)
     for ch in range(spec.n_channels):

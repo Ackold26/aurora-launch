@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from aurora_launch.schemas.proxy import ProxyBrandMetadata
 
@@ -39,11 +39,18 @@ class AuroraLaunchBundleMetadata(BaseModel):
     legacy bundles where field may be absent. Strict version check happens
     via aurora-launch-reproduce CLI which has explicit version skew warning.
 
-    Note (M-A2-4): uses BaseModel (not FrozenModel from C6 platform). Reason:
-    AuroraLaunchBundleMetadata is application-domain schema, not platform
-    schema. Mutability acceptable in workflow runtime context. If consistency
-    becomes priority — migrate в M-A2-4 cleanup.
+    M-A2-4 fix: model_config matches Phase A C6 FrozenModel pattern (frozen,
+    extra=forbid, validate_assignment). Bundle metadata = persisted artifact,
+    immutability post-construction prevents accidental mutation в runtime.
+    `extra=forbid` catches typos в field names при Phase B+ extensions.
     """
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        validate_assignment=True,
+        str_strip_whitespace=True,
+    )
 
     schema_version: str = "3.0"
     aurora_launch_version: Optional[str] = None  # H-A2-5: Optional для legacy bundle reads
