@@ -34,10 +34,19 @@ class AuroraLaunchBundleMetadata(BaseModel):
     Future Phase B+ extensions (TransferProvenance / RecipientAnchors /
     ForecastHorizons / MethodologyCertificateRef) added here as they ship
     в B3-B5 sprints.
+
+    H-A2-5 fix: `aurora_launch_version` is Optional с default — allows reading
+    legacy bundles where field may be absent. Strict version check happens
+    via aurora-launch-reproduce CLI which has explicit version skew warning.
+
+    Note (M-A2-4): uses BaseModel (not FrozenModel from C6 platform). Reason:
+    AuroraLaunchBundleMetadata is application-domain schema, not platform
+    schema. Mutability acceptable in workflow runtime context. If consistency
+    becomes priority — migrate в M-A2-4 cleanup.
     """
 
     schema_version: str = "3.0"
-    aurora_launch_version: str
+    aurora_launch_version: Optional[str] = None  # H-A2-5: Optional для legacy bundle reads
 
     # B1 — primary fields (B0.5 ships ProxyBrandMetadata; others Phase B+ sprints)
     proxy_brand_metadata: Optional[ProxyBrandMetadata] = None

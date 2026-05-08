@@ -11,11 +11,14 @@ Otherwise structurally similar; subclasses V2024 adapter for canonical mapping
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from pathlib import Path
 
 from aurora_launch.engines.format_adapters.dsm_v2024 import DsmAdapterV2024
 from aurora_launch.schemas.synthetic_corpus import FormatAdapterContract
+
+_log = logging.getLogger(__name__)
 
 
 class DsmAdapterV2023(DsmAdapterV2024):
@@ -90,9 +93,18 @@ class DsmAdapterV2023(DsmAdapterV2024):
         return records
 
     def _normalize_date(self, raw_date: str) -> str:
-        """DD.MM.YYYY → YYYY-MM-DD."""
+        """DD.MM.YYYY → YYYY-MM-DD.
+
+        H-A2-6 fix: log warning if format unexpected (was: silent passthrough).
+        Customer / dev gets visibility on data quality issues при ingestion.
+        """
         try:
             dt = datetime.strptime(raw_date, "%d.%m.%Y")
             return dt.date().isoformat()
         except ValueError:
-            return raw_date  # leave as-is if format unexpected
+            _log.warning(
+                "DSM V2023 date format unexpected: %r — expected DD.MM.YYYY. "
+                "Passing through unchanged; downstream parsers may fail.",
+                raw_date,
+            )
+            return raw_date

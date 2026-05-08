@@ -68,14 +68,16 @@ class TestAuroraLaunchWorkflowYaml:
 
     def test_aurora_launch_first_class_step_types_used(self, workflow_yaml: dict) -> None:
         """H-Audit-4 Option A verified: Aurora Launch–specific operations now
-        use first-class step types instead of generic `custom`."""
+        use first-class step types instead of generic `custom`. Main workflow
+        uses 4 of 5 (posterior_update lives в separate on-demand workflow per
+        B-A2-2 fix)."""
         used_types = {s["step_type"] for s in workflow_yaml["steps"]}
-        # All 5 Aurora Launch first-class types must appear in workflow
+        # 4 of 5 Aurora Launch first-class types appear in main workflow
         assert "proxy_select" in used_types
         assert "transfer_validate" in used_types
-        assert "posterior_update" in used_types
         assert "engine_select" in used_types
         assert "cert_sign" in used_types
+        # posterior_update — separate workflow (B-A2-2 fix)
 
     def test_workflow_loads_via_pydantic(self, workflow_yaml: dict) -> None:
         """Verify workflow YAML actually loads через Workflow Pydantic model
@@ -135,32 +137,69 @@ class TestAuroraLaunchWorkflowYaml:
         select_step = next(s for s in workflow_yaml["steps"] if s["step_id"] == "select_engine")
         assert select_step["step_type"] == "engine_select"
 
-    def test_posterior_update_first_class(self, workflow_yaml: dict) -> None:
-        """B5 — posterior update on-demand. Now first-class type posterior_update."""
-        update_step = next(
-            s for s in workflow_yaml["steps"]
-            if s["step_id"] == "posterior_update_endpoint"
+    def test_posterior_update_in_separate_workflow(self) -> None:
+        """B-A2-2 fix verified: posterior_update was removed from main workflow
+        (was `posterior_update_endpoint` с is_on_demand=true config flag — wrong
+        because Workflow engine executes DAG eagerly). Now separate workflow file
+        `aurora_launch_posterior_update.v1.yaml` for on-demand re-fits."""
+        update_workflow_path = (
+            PLATFORM_CORE_PATH
+            / "aurora_workflow"
+            / "src"
+            / "aurora_workflow"
+            / "reference_workflows"
+            / "aurora_launch_posterior_update.v1.yaml"
         )
-        assert update_step["step_type"] == "posterior_update"
-        # is_on_demand moved into config (H-Audit-5 — non-standard top-level field removed)
-        assert update_step["config"].get("is_on_demand") is True
+        if not update_workflow_path.exists():
+            pytest.skip(f"posterior_update workflow not found at {update_workflow_path}")
+        with update_workflow_path.open() as f:
+            update_wf = yaml.safe_load(f)
+        assert update_wf["workflow_id"] == "aurora_launch_posterior_update"
+        # Has dedicated posterior_update step
+        update_step = next(
+            s for s in update_wf["steps"]
+            if s["step_type"] == "posterior_update"
+        )
         # Auto-trigger criteria (audit M6 fix — all-AND)
         assert update_step["config"]["auto_trigger_min_new_weeks"] >= 4
         assert update_step["config"]["auto_trigger_min_ci_tightening_pct"] >= 10
 
+    def test_main_workflow_no_posterior_update_step(self, workflow_yaml: dict) -> None:
+        """B-A2-2 fix verified: main pipeline does NOT contain posterior_update
+        step (it's in separate on-demand workflow)."""
+        for step in workflow_yaml["steps"]:
+            assert step["step_type"] != "posterior_update", (
+                f"Main workflow contains posterior_update step {step['step_id']!r} — "
+                f"posterior_update должен быть в separate workflow per B-A2-2 fix"
+            )
+
+    def test_apply_recipient_magnitudes_depends_on_select_engine(
+        self, workflow_yaml: dict
+    ) -> None:
+        """H-A2-7 fix verified: magnitude calibration formula varies by engine
+        choice (single vs multi-proxy aggregate) — DAG must reflect dependency."""
+        magnitudes_step = next(
+            s for s in workflow_yaml["steps"]
+            if s["step_id"] == "apply_recipient_magnitudes"
+        )
+        assert "select_engine" in magnitudes_step["depends_on"], (
+            "apply_recipient_magnitudes должен depend on select_engine"
+        )
+
     def test_telemetry_events_in_step_config(self, workflow_yaml: dict) -> None:
         """B1.5 Customer Success Lite hooks. Now distributed into per-step
         config (telemetry_event field) instead of non-standard top-level
-        block (H-Audit-5 fix)."""
+        block (H-Audit-5 fix). Main workflow milestones — posterior_updated
+        в separate on-demand workflow."""
         events_emitted = set()
         for step in workflow_yaml["steps"]:
             event_name = step.get("config", {}).get("telemetry_event")
             if event_name:
                 events_emitted.add(event_name)
-        # Must include key milestones
+        # Main pipeline milestones
         assert "proxy_selected" in events_emitted
         assert "cert_signed" in events_emitted
-        assert "posterior_updated" in events_emitted
+        # posterior_updated — separate workflow (B-A2-2 fix)
 
     def test_performance_budgets_in_step_config(self, workflow_yaml: dict) -> None:
         """Per PHASE_B_REQUIREMENTS §3 — perf budgets per-step. Now in step
