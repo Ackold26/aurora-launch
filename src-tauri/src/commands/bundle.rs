@@ -17,7 +17,54 @@ use crate::errors::{AuroraError, AuroraResult};
 use crate::state::{AppState, BundleHandleSummary, OpenBundleHandle};
 
 const MAX_BUNDLE_BYTES: u64 = 2 * 1024 * 1024 * 1024; // 2 GB sanity cap (mirrors Block 1C)
+const MAX_MANIFEST_BYTES: u64 = 16 * 1024 * 1024; // 16 MB — Block 3 HIGH-5 fix (was unbounded)
+const MAX_ENTRY_BYTES: u64 = 2 * 1024 * 1024 * 1024; // 2 GB — match Python MAX_ENTRY_SIZE
 const MANIFEST_FILENAME: &str = "manifest.json";
+
+#[cfg(test)]
+mod block_3_tests {
+    use super::*;
+
+    #[test]
+    fn entry_name_safe_rejects_zip_slip() {
+        assert!(!entry_name_safe("/etc/passwd"));
+        assert!(!entry_name_safe("\\windows\\system32"));
+        assert!(!entry_name_safe("../../etc/passwd"));
+        assert!(!entry_name_safe("a/../../b"));
+        assert!(!entry_name_safe("C:\\evil"));
+        assert!(!entry_name_safe("data\0null"));
+    }
+
+    #[test]
+    fn entry_name_safe_accepts_normal_paths() {
+        assert!(entry_name_safe("data.json"));
+        assert!(entry_name_safe("models/proxy.pickle"));
+        assert!(entry_name_safe("nested/deeply/file.bin"));
+    }
+}
+
+/// Block 3 HIGH-1 fix: zip-slip defense (mirrors Python eager + lazy readers).
+/// ZIP entry names must NOT contain absolute paths, parent traversal, drive
+/// letters, or null bytes. Defense-in-depth even though Rust IPC reads bytes
+/// (not extracts to disk) — frontend may later persist bytes к user-chosen
+/// path using entry name; trust boundary is at parse time.
+fn entry_name_safe(name: &str) -> bool {
+    if name.starts_with('/') || name.starts_with('\\') {
+        return false;
+    }
+    if name.contains('\0') {
+        return false;
+    }
+    if name.contains(':') {
+        return false; // Windows drive letter / alternate data stream
+    }
+    for component in name.split(|c| c == '/' || c == '\\') {
+        if component == ".." {
+            return false;
+        }
+    }
+    true
+}
 
 #[tauri::command]
 pub async fn open_bundle(
@@ -53,17 +100,61 @@ pub async fn open_bundle(
         });
     }
 
-    // Read manifest first
+    // Block 3 HIGH-1 fix: zip-slip name validation upfront (mirrors Python).
+    for name in &names {
+        if !entry_name_safe(name) {
+            return Err(AuroraError::BundleFormat {
+                reason: format!("Suspicious ZIP entry name (zip-slip risk): {name:?}"),
+            });
+        }
+    }
+
+    // Read manifest first (Block 3 HIGH-5 fix: cap manifest size).
     let manifest_json: serde_json::Value = {
         let mut manifest_file = archive.by_name(MANIFEST_FILENAME).map_err(|_| {
             AuroraError::BundleFormat {
                 reason: format!("missing {MANIFEST_FILENAME}"),
             }
         })?;
-        let mut buf = Vec::new();
+        let manifest_size = manifest_file.size();
+        if manifest_size > MAX_MANIFEST_BYTES {
+            return Err(AuroraError::BundleFormat {
+                reason: format!(
+                    "manifest.json too large: {manifest_size} bytes > cap {MAX_MANIFEST_BYTES}"
+                ),
+            });
+        }
+        let mut buf = Vec::with_capacity(manifest_size as usize);
         manifest_file.read_to_end(&mut buf)?;
         serde_json::from_slice(&buf)?
     };
+
+    // Block 3 HIGH-2 fix: structural integrity — reject extra files в ZIP not
+    // declared в manifest (mirrors Python lazy reader Block 1C). Otherwise
+    // malicious bundle с trojan payload bypasses Rust path silently.
+    if let Some(files_obj) = manifest_json.get("files").and_then(|v| v.as_object()) {
+        let manifest_names: std::collections::HashSet<&String> = files_obj.keys().collect();
+        let zip_payload_names: std::collections::HashSet<&String> = names
+            .iter()
+            .filter(|n| n.as_str() != MANIFEST_FILENAME)
+            .collect();
+        let extras: Vec<&&String> = zip_payload_names.difference(&manifest_names).collect();
+        if !extras.is_empty() {
+            return Err(AuroraError::BundleFormat {
+                reason: format!(
+                    "ZIP contains undeclared entries (manifest mismatch): {extras:?}"
+                ),
+            });
+        }
+        let missing: Vec<&&String> = manifest_names.difference(&zip_payload_names).collect();
+        if !missing.is_empty() {
+            return Err(AuroraError::BundleIntegrity {
+                reason: format!(
+                    "manifest declares files missing from ZIP: {missing:?}"
+                ),
+            });
+        }
+    }
 
     let revision = manifest_json
         .get("revision")
@@ -177,6 +268,14 @@ pub async fn read_bundle_entry(
         .ok_or(AuroraError::BundleFormat {
             reason: format!("manifest missing size_bytes for {entry}"),
         })?;
+
+    // Block 3 HIGH-5 fix: cap entry size before allocation (defense-in-depth).
+    if expected_size > MAX_ENTRY_BYTES {
+        return Err(AuroraError::FileTooLarge {
+            size: expected_size,
+            cap: MAX_ENTRY_BYTES,
+        });
+    }
 
     let file = std::fs::File::open(&path)?;
     let mut archive = zip::ZipArchive::new(file).map_err(|e| AuroraError::BundleFormat {

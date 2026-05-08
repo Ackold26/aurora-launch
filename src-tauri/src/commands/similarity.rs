@@ -73,9 +73,41 @@ pub struct AggregateScoreInput {
     pub weights: std::collections::BTreeMap<String, f64>,
 }
 
+/// Block 3 HIGH-9 fix: validate weights mirror Python
+/// `SimilarityDimensionScores.weights_sum_to_unity_if_present` validator.
+/// If weights non-empty, sum must be ~1.0 ±0.05 — otherwise frontend submits
+/// invalid data, Rust accepts, Python rejects later (silent UX failure).
+fn validate_weights(weights: &std::collections::BTreeMap<String, f64>) -> Result<(), AuroraError> {
+    if weights.is_empty() {
+        return Ok(());
+    }
+    // Reject NaN/Inf weights upfront
+    for (k, v) in weights {
+        if !v.is_finite() {
+            return Err(AuroraError::Other(format!(
+                "weight {k} not finite: {v}"
+            )));
+        }
+        if *v < 0.0 {
+            return Err(AuroraError::Other(format!(
+                "weight {k} negative: {v}"
+            )));
+        }
+    }
+    let total: f64 = weights.values().sum();
+    if (total - 1.0).abs() > 0.05 {
+        return Err(AuroraError::Other(format!(
+            "weights_used must sum to ~1.0 (±0.05), got {total:.4}"
+        )));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn aggregate_score(input: AggregateScoreInput) -> AuroraResult<f64> {
     // Mirrors Python similarity_calculator.compute_aggregate_score
+    validate_weights(&input.weights)?;
+
     let total_weight: f64 = input.weights.values().sum();
     if total_weight <= 0.0 {
         return Ok(0.0);
@@ -92,4 +124,49 @@ pub async fn aggregate_score(input: AggregateScoreInput) -> AuroraResult<f64> {
     ];
     let weighted_sum: f64 = contributions.iter().map(|(_, v)| v).sum();
     Ok(weighted_sum / total_weight)
+}
+
+#[cfg(test)]
+mod block_3_tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    fn weights(pairs: &[(&str, f64)]) -> BTreeMap<String, f64> {
+        pairs.iter().map(|(k, v)| (k.to_string(), *v)).collect()
+    }
+
+    #[test]
+    fn validate_weights_empty_passes() {
+        assert!(validate_weights(&BTreeMap::new()).is_ok());
+    }
+
+    #[test]
+    fn validate_weights_sum_one_passes() {
+        let w = weights(&[("a", 0.5), ("b", 0.3), ("c", 0.2)]);
+        assert!(validate_weights(&w).is_ok());
+    }
+
+    #[test]
+    fn validate_weights_within_tolerance_passes() {
+        let w = weights(&[("a", 0.5), ("b", 0.45)]); // sum 0.95
+        assert!(validate_weights(&w).is_ok());
+    }
+
+    #[test]
+    fn validate_weights_off_rejects() {
+        let w = weights(&[("a", 0.3), ("b", 0.3)]); // sum 0.6
+        assert!(validate_weights(&w).is_err());
+    }
+
+    #[test]
+    fn validate_weights_nan_rejects() {
+        let w = weights(&[("a", f64::NAN), ("b", 0.5)]);
+        assert!(validate_weights(&w).is_err());
+    }
+
+    #[test]
+    fn validate_weights_negative_rejects() {
+        let w = weights(&[("a", -0.1), ("b", 1.1)]); // sum 1.0 but negative
+        assert!(validate_weights(&w).is_err());
+    }
 }

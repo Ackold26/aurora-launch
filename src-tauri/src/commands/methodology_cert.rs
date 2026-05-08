@@ -15,9 +15,71 @@ use std::path::PathBuf;
 
 use ed25519_dalek::{Signature, Verifier, VerifyingKey, SigningKey, Signer};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 
 use crate::errors::{AuroraError, AuroraResult};
+
+/// Compute composite bundle hash matching Python
+/// `BundleManifest.composite_bundle_hash()` byte-for-byte (Block 3 BLOCKER-1 fix).
+///
+/// Algorithm (mirrors `bundle_manifest.py:106-134`):
+/// 1. `manifest_h = SHA256(manifest_canonical_bytes_hex)` — hex string
+/// 2. `file_hashes = sorted(per-file sha256 hex strings)` — ascii concat
+/// 3. `files_hash = SHA256(files_concat).hex()`
+/// 4. parts = [manifest_h, files_hash, aurora_app_version] each prepended
+///    with 4-byte big-endian length
+/// 5. result = SHA256(buf).hex()
+///
+/// Inputs:
+/// - `manifest_buf`: raw canonical bytes of manifest.json (JCS RFC 8785 from
+///   Python writer)
+/// - `manifest_value`: parsed manifest для extracting per-file hashes +
+///   aurora_app_version
+fn composite_bundle_hash_mirror(
+    manifest_buf: &[u8],
+    manifest_value: &serde_json::Value,
+) -> Result<String, AuroraError> {
+    let manifest_h = hex::encode(Sha256::digest(manifest_buf));
+
+    let files = manifest_value
+        .get("files")
+        .and_then(|v| v.as_object())
+        .ok_or_else(|| AuroraError::BundleFormat {
+            reason: "manifest.files missing or not object".into(),
+        })?;
+
+    let mut file_hashes: Vec<String> = files
+        .values()
+        .filter_map(|entry| {
+            entry.get("sha256").and_then(|v| v.as_str()).map(String::from)
+        })
+        .collect();
+    file_hashes.sort();
+    let files_concat: String = file_hashes.concat();
+    let files_hash = hex::encode(Sha256::digest(files_concat.as_bytes()));
+
+    let aurora_app_version = manifest_value
+        .get("aurora_app_version")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| AuroraError::BundleFormat {
+            reason: "manifest.aurora_app_version missing".into(),
+        })?;
+
+    // Length-prefix encoding: 4-byte BE length || bytes для each part
+    let mut buf: Vec<u8> = Vec::new();
+    for part in &[
+        manifest_h.as_bytes(),
+        files_hash.as_bytes(),
+        aurora_app_version.as_bytes(),
+    ] {
+        let len = part.len() as u32;
+        buf.extend_from_slice(&len.to_be_bytes());
+        buf.extend_from_slice(part);
+    }
+
+    Ok(hex::encode(Sha256::digest(&buf)))
+}
 
 const AURORA_CLOUD_PUBLIC_KEY_PEM: &str =
     "-----BEGIN PUBLIC KEY-----\nEMBED_AT_RELEASE_TIME\n-----END PUBLIC KEY-----\n";
@@ -43,6 +105,7 @@ pub struct VerifyBundleInput {
 
 #[tauri::command]
 pub async fn verify_bundle_signature(
+    app: AppHandle,
     input: VerifyBundleInput,
 ) -> AuroraResult<VerificationResult> {
     let path = PathBuf::from(&input.bundle_path);
@@ -133,15 +196,16 @@ pub async fn verify_bundle_signature(
         });
     }
 
-    // Compose payload: manifest_canonical_bytes || sorted_per_file_hashes ||
-    // aurora_app_version (mirrors Python composite_bundle_hash). For Block 2
-    // we hash manifest_buf directly + aurora_app_version. Strict byte-for-byte
-    // match с Python computation requires JCS canonicalisation — we use
-    // `serde_jcs` stub via re-hashing manifest_buf as-is for now (Block 4 wires
-    // proper JCS). This means signature verification works для bundles produced
-    // by current Python writer (which canonicalises before write).
-    let composite_hash = blake3::hash(&manifest_buf);
-    let composite_hex = composite_hash.to_hex().to_string();
+    // Block 3 BLOCKER-1 fix: composite hash mirrors Python
+    // `BundleManifest.composite_bundle_hash()` byte-for-byte. Previously Rust
+    // used BLAKE3 на manifest_buf only — divergent from Python's SHA256(
+    // manifest_h || files_hash || aurora_app_version, length-prefix-encoded).
+    // Cross-app verification was broken: Python-signed bundles always failed
+    // Rust verify. Now they match.
+    let composite_hex = composite_bundle_hash_mirror(&manifest_buf, &manifest)?;
+    let composite_bytes = hex::decode(&composite_hex).map_err(|e| AuroraError::Other(format!(
+        "composite hex decode: {e}"
+    )))?;
 
     // Signature valid? Need verifying key. For sample provenance, key is
     // bundled with installer; for cloud_kms, embed Aurora's public key
@@ -153,8 +217,9 @@ pub async fn verify_bundle_signature(
             extract_pubkey_from_pem(AURORA_CLOUD_PUBLIC_KEY_PEM)
         }
         "local_dev" if input.trust_local_dev => {
-            // Read local dev key from app data
-            read_local_dev_pubkey()
+            // Read local dev key from app data (uses AppHandle для path
+            // consistency with generate_local_dev_signature — Block 3 HIGH-3 fix)
+            read_local_dev_pubkey(&app)
         }
         "sample" => {
             // Bundled sample key — read from bundle itself
@@ -201,11 +266,16 @@ pub async fn verify_bundle_signature(
         }
     };
 
-    let sig_array: [u8; 64] = sig_buf.as_slice().try_into().unwrap();
+    // Block 3 HIGH-6 fix: replace try_into().unwrap() с graceful Result handling.
+    let sig_array: [u8; 64] = sig_buf.as_slice().try_into().map_err(|_| {
+        AuroraError::BundleFormat {
+            reason: format!("signature.bin size mismatch: {} bytes (expected 64)", sig_buf.len()),
+        }
+    })?;
     let signature = Signature::from_bytes(&sig_array);
 
     let valid = verifying_key
-        .verify(composite_hash.as_bytes(), &signature)
+        .verify(&composite_bytes, &signature)
         .is_ok();
 
     let trust_badge = match (valid, provenance.as_str()) {
@@ -272,7 +342,10 @@ pub async fn generate_local_dev_signature(
         if bytes.len() != 32 {
             return Err(AuroraError::Other("invalid local dev key file size".into()));
         }
-        let arr: [u8; 32] = bytes.as_slice().try_into().unwrap();
+        // Block 3 HIGH-6 fix: graceful Result instead of unwrap()
+        let arr: [u8; 32] = bytes.as_slice().try_into().map_err(|_| {
+            AuroraError::Other("local dev key bytes not 32".into())
+        })?;
         SigningKey::from_bytes(&arr)
     } else {
         let mut csprng = OsRng;
@@ -286,12 +359,26 @@ pub async fn generate_local_dev_signature(
             perms.set_mode(0o600);
             std::fs::set_permissions(&keypair_path, perms)?;
         }
+        // Block 3 HIGH-4 fix: Windows ACLs not restricted by default (NTFS
+        // ACL API requires winapi crate). On Windows, AppData is per-user
+        // (mitigates same-user threats); for shared-machine threats we log
+        // an explicit warning. Future hardening: invoke icacls subprocess
+        // или windows-acl crate to deny inheritance + grant only current user.
+        #[cfg(windows)]
+        {
+            log::warn!(
+                "local_dev_signing_key.bin written с default ACLs ({}). \
+                 Per-user AppData scope mitigates most threats; shared-machine \
+                 hardening requires NTFS ACL restriction (Block 4 followup).",
+                keypair_path.display()
+            );
+        }
         key
     };
 
-    // Compute composite hash of bundle
-    let bytes = std::fs::read(&bundle_path)?;
-    let file = std::io::Cursor::new(&bytes);
+    // Block 3 BLOCKER-1 fix: compute composite hash mirroring Python's
+    // BundleManifest.composite_bundle_hash() (was BLAKE3-of-manifest only).
+    let file = std::fs::File::open(&bundle_path)?;
     let mut archive = zip::ZipArchive::new(file).map_err(|e| AuroraError::BundleFormat {
         reason: format!("zip open: {e}"),
     })?;
@@ -305,28 +392,73 @@ pub async fn generate_local_dev_signature(
     mf.read_to_end(&mut manifest_buf)?;
     drop(mf);
 
-    let composite = blake3::hash(&manifest_buf);
-    let signature = signing_key.sign(composite.as_bytes());
+    let manifest: serde_json::Value = serde_json::from_slice(&manifest_buf)?;
+    let composite_hex = composite_bundle_hash_mirror(&manifest_buf, &manifest)?;
+    let composite_bytes = hex::decode(&composite_hex).map_err(|e| {
+        AuroraError::Other(format!("composite hex decode: {e}"))
+    })?;
+    let signature = signing_key.sign(&composite_bytes);
 
     Ok(LocalDevSignatureResult {
         public_key_hex: hex::encode(signing_key.verifying_key().to_bytes()),
         signature_hex: hex::encode(signature.to_bytes()),
-        composite_hash_hex: composite.to_hex().to_string(),
+        composite_hash_hex: composite_hex,
     })
 }
 
+/// Block 3 BLOCKER-2 fix: real Ed25519 PEM SPKI extraction.
+///
+/// Decodes PKCS#8 SubjectPublicKeyInfo PEM с OID 1.3.101.112 (Ed25519 per
+/// RFC 8410). Returns None if PEM is the placeholder `EMBED_AT_RELEASE_TIME`
+/// or если structure invalid. Caller treats None as "production verifying
+/// key not configured" — UI shows warning trust badge.
+///
+/// Standard Ed25519 SPKI DER layout (44 bytes total):
+///   30 2a                                — SEQUENCE, length 42
+///   30 05                                — SEQUENCE (AlgorithmIdentifier), length 5
+///   06 03 2b 65 70                       — OID 1.3.101.112 (Ed25519)
+///   03 21 00 <32-byte raw key>           — BIT STRING, 33 bytes (1 unused bits + 32 key bytes)
 fn extract_pubkey_from_pem(pem: &str) -> Option<[u8; 32]> {
-    // Block 2 stub: real PEM parsing for Ed25519 OID (1.3.101.112) wires в F1
-    // when production cert is generated. Returns None если placeholder still
-    // present.
+    use base64::{engine::general_purpose::STANDARD, Engine};
+
     if pem.contains("EMBED_AT_RELEASE_TIME") {
+        // Production verifying key not yet baked в release; cloud_kms cannot
+        // be verified. Block 1D B1 + Block 3 BLOCKER-2 acknowledge this
+        // explicitly — release CI MUST replace placeholder before signing.
         return None;
     }
-    None // TODO Block 4: implement DER + OID 1.3.101.112 unwrap
+
+    // Strip PEM armor, base64-decode body
+    let body: String = pem
+        .lines()
+        .filter(|line| !line.starts_with("-----") && !line.is_empty())
+        .collect();
+    let der = STANDARD.decode(body.as_bytes()).ok()?;
+
+    // Expect 44 bytes for canonical Ed25519 SPKI; some encoders produce extra
+    // length bytes — match by OID prefix instead.
+    const OID_PREFIX: &[u8] = &[0x06, 0x03, 0x2b, 0x65, 0x70]; // 1.3.101.112
+    let oid_pos = der.windows(OID_PREFIX.len()).position(|w| w == OID_PREFIX)?;
+    // After OID (5 bytes) we expect BIT STRING tag 0x03, length 0x21 (33),
+    // unused-bits byte 0x00, then 32 bytes раw key.
+    let after_oid = &der[oid_pos + OID_PREFIX.len()..];
+    if after_oid.len() < 35 {
+        return None;
+    }
+    if after_oid[0] != 0x03 || after_oid[1] != 0x21 || after_oid[2] != 0x00 {
+        return None;
+    }
+    let key_bytes: [u8; 32] = after_oid[3..35].try_into().ok()?;
+    Some(key_bytes)
 }
 
-fn read_local_dev_pubkey() -> Option<[u8; 32]> {
-    let app_data = dirs::data_local_dir()?.join("aurora-launch");
+/// Block 3 HIGH-3 fix: read local dev pubkey using same path resolution
+/// as `generate_local_dev_signature` (`AppHandle.path().app_data_dir()`).
+/// Previously used `dirs::data_local_dir()` which differs from Tauri's
+/// app_data_dir on Windows (roaming vs local AppData) — silently broken
+/// verify path.
+fn read_local_dev_pubkey(app: &AppHandle) -> Option<[u8; 32]> {
+    let app_data = app.path().app_data_dir().ok()?;
     let key_path = app_data.join("local_dev_signing_key.bin");
     let bytes = std::fs::read(&key_path).ok()?;
     if bytes.len() != 32 {

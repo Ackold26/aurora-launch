@@ -16,6 +16,7 @@
   import { ipc } from '$ipc/client';
   import type { SimilarityDimensionScores } from '$types/aurora-schemas';
   import { pushToast } from '$lib/stores/toast';
+  import { determineVerdict } from '$lib/utils/verdict';
 
   const STEPS = [
     'import',
@@ -40,16 +41,10 @@
   );
   let certSigned = $state(false);
 
+  // Block 3 HIGH-10 fix: import from $lib/utils/verdict (SSOT).
+  // Was inlined hardcoded literals — drift risk if Python thresholds change.
   const verdict = $derived(
-    similarityScore === null
-      ? null
-      : similarityScore >= 0.85
-        ? 'High'
-        : similarityScore >= 0.65
-          ? 'Medium'
-          : similarityScore >= 0.5
-            ? 'Low'
-            : 'Insufficient'
+    similarityScore === null ? null : determineVerdict(similarityScore)
   );
 
   const radarData = $derived(
@@ -168,9 +163,18 @@
 
 <section class="wizard">
   <header class="wizard-header">
+    <!-- Block 3 HIGH-8 fix: aria-current="step" announces active step to
+         screen readers per WCAG 4.1.2. The stepper is a progress indicator
+         (sequential), not navigation — keyboard users advance via Next/Back
+         buttons. -->
     <ol class="stepper" aria-label="Wizard steps">
       {#each STEPS as s, i}
-        <li class:active={i === step} class:done={i < step}>
+        <li
+          class:active={i === step}
+          class:done={i < step}
+          aria-current={i === step ? 'step' : undefined}
+          aria-label={`Step ${i + 1} of ${STEPS.length}: ${$_(`wizard.step.${s}`)}${i < step ? ' (completed)' : i === step ? ' (current)' : ''}`}
+        >
           <span class="dot" aria-hidden="true">{i + 1}</span>
           <span class="label">{$_(`wizard.step.${s}`)}</span>
         </li>
@@ -280,7 +284,10 @@
         {#snippet children()}{$_('wizard.next')}{/snippet}
       </Button>
     {:else}
-      <Button variant="sigil" onclick={() => pushToast({ level: 'success', title: $_('wizard.finish') })}>
+      <!-- Block 3 HIGH-7 fix: Sacred Lime invariant — ONE per screen.
+           On step 7 (cert) the body has variant="sigil" "Sign certificate";
+           finish button must be variant="primary" to avoid 2 sigil buttons. -->
+      <Button variant="primary" onclick={() => pushToast({ level: 'success', title: $_('wizard.finish') })}>
         {#snippet children()}{$_('wizard.finish')}{/snippet}
       </Button>
     {/if}

@@ -1,17 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-// Mirrors Python similarity_calculator.determine_verdict logic for UI computation.
-function determineVerdict(score: number): 'High' | 'Medium' | 'Low' | 'Insufficient' {
-  if (!Number.isFinite(score)) {
-    throw new Error(`score must be finite, got ${score}`);
-  }
-  if (score >= 0.85) return 'High';
-  if (score >= 0.65) return 'Medium';
-  if (score >= 0.5) return 'Low';
-  return 'Insufficient';
-}
+import { determineVerdict, VERDICT_THRESHOLDS } from '../../src/lib/utils/verdict';
 
-describe('determineVerdict (frontend mirror)', () => {
+describe('determineVerdict (frontend mirror, Block 3 HIGH-10 SSOT)', () => {
+  it('thresholds match Python similarity_calculator constants', () => {
+    expect(VERDICT_THRESHOLDS.High).toBe(0.85);
+    expect(VERDICT_THRESHOLDS.Medium).toBe(0.65);
+    expect(VERDICT_THRESHOLDS.Low).toBe(0.5);
+  });
+
   it('boundaries match SIMILARITY_FRAMEWORK §6', () => {
     expect(determineVerdict(0.85)).toBe('High');
     expect(determineVerdict(0.65)).toBe('Medium');
