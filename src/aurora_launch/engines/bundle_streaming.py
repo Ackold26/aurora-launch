@@ -60,6 +60,12 @@ _log = logging.getLogger(__name__)
 
 DEFAULT_CACHE_BYTES = 512 * 1024 * 1024  # 512 MB per ROADMAP v1.3 §1C
 
+# Audit Block 1D — finding B2: zip-bomb defense. Refuse to read any single
+# entry whose declared uncompressed size exceeds this cap. 2 GB is far above
+# any legitimate Aurora Launch payload (largest realistic: similarity matrix
+# + parquet pages, max ~500 MB combined per bundle).
+MAX_ENTRY_SIZE = 2 * 1024 * 1024 * 1024  # 2 GB
+
 
 # ----------------------------------------------------------------------------
 # Size-bounded LRU cache
@@ -113,14 +119,24 @@ class ByteSizeLRU:
 
         If the key already exists it is replaced (its size released).
         If `max_bytes == 0`, the entry is silently dropped.
+
+        Audit Block 1D — finding H1: a single oversized entry (size >
+        max_bytes) is refused entirely и existing entries are preserved.
+        Previously eviction would empty the cache then store the oversized
+        entry anyway, leaving total size > cap.
         """
         if self._max_bytes == 0:
             return
+
+        size = len(value)
+        if size > self._max_bytes:
+            # Single entry exceeds cap — refuse to cache. Caller still gets
+            # the bytes from the read path; we just don't double-buffer here.
+            return
+
         if key in self._data:
             self._size -= len(self._data[key])
             del self._data[key]
-
-        size = len(value)
 
         # Evict LRU until value fits (or cache becomes empty)
         while self._data and self._size + size > self._max_bytes:
@@ -232,15 +248,45 @@ class LazyLoadedBundle(LoadedBundle):
             return cached
 
         assert self._zf is not None, "ZipFile handle missing on lazy bundle"
+
+        # Audit Block 1D — finding B2: zip-bomb defense. ZIP central directory
+        # publishes uncompressed size; cross-check that это (a) matches manifest
+        # and (b) doesn't exceed sane cap before allocating bytes.
+        expected_entry = self.manifest.files[name]
         try:
-            data = self._zf.read(name)
+            zinfo = self._zf.getinfo(name)
         except KeyError as exc:
-            # File present in manifest но missing from ZIP — bundle integrity
-            # broken. Convert to BundleIntegrityError so callers can handle
-            # uniformly с manifest-level checks.
             raise BundleIntegrityError(
                 f"Bundle entry declared in manifest missing from ZIP: {name}"
             ) from exc
+
+        if zinfo.file_size != expected_entry.size_bytes:
+            raise BundleIntegrityError(
+                f"ZIP entry size mismatch для {name}: zip claims "
+                f"{zinfo.file_size} bytes, manifest claims "
+                f"{expected_entry.size_bytes} bytes (zip-bomb / tampering signal)"
+            )
+        if zinfo.file_size > MAX_ENTRY_SIZE:
+            raise BundleFormatError(
+                f"Bundle entry {name} too large: {zinfo.file_size} > "
+                f"{MAX_ENTRY_SIZE} bytes (refused for safety)"
+            )
+
+        try:
+            data = self._zf.read(name)
+        except KeyError as exc:
+            raise BundleIntegrityError(
+                f"Bundle entry declared in manifest missing from ZIP: {name}"
+            ) from exc
+
+        # Defense-in-depth: even с central directory check above, real
+        # decompressed size could differ если archive crafted maliciously.
+        if len(data) != expected_entry.size_bytes:
+            raise BundleIntegrityError(
+                f"Decompressed size mismatch для {name}: actual "
+                f"{len(data)} bytes, manifest claims "
+                f"{expected_entry.size_bytes} bytes"
+            )
 
         # Verify per-entry hash on first access (strict mode raises; warn logs)
         if (
@@ -301,6 +347,34 @@ class LazyLoadedBundle(LoadedBundle):
                 f"verify_all failed для {self.source_path}: {len(issues)} issues: {issues[:3]}"
             )
         return issues
+
+    def materialise_eager(self) -> LoadedBundle:
+        """Read every entry into memory and return a plain `LoadedBundle`.
+
+        Block 1D B3 fix: callers that need the writer rebase path
+        (`BundleZipWriter.from_loaded`) must explicitly materialise so the
+        memory cost is visible. The returned object is independent of the
+        lazy bundle и does not hold the lock / ZipFile.
+
+        Existing cache entries are reused; missing ones read directly from
+        the ZIP without polluting the cache.
+        """
+        if self._closed:
+            raise ValueError("Cannot materialise closed bundle")
+        assert self._zf is not None
+        eager_files: dict[str, bytes] = {}
+        for name in self.manifest.files.keys():
+            cached = self._cache.get(name)
+            if cached is not None:
+                eager_files[name] = cached
+            else:
+                eager_files[name] = self._read_entry(name)
+        return LoadedBundle(
+            manifest=self.manifest,
+            files=eager_files,
+            source_format=self.source_format,
+            source_path=self.source_path,
+        )
 
     @property
     def cache_total_size(self) -> int:
@@ -401,6 +475,16 @@ def open_lazy(
         names = zf.namelist()
         if MANIFEST_FILENAME not in names:
             raise BundleFormatError(f"ZIP bundle {path} missing {MANIFEST_FILENAME}")
+
+        # Audit Block 1D — finding B4: reject duplicate entry names upfront.
+        # ZIP spec permits duplicates; zipfile.ZipFile.read()/getinfo() return
+        # the LAST entry, so a tampered manifest paired с a "real" manifest
+        # would be silently chosen.
+        if len(names) != len(set(names)):
+            duplicates = [n for n in set(names) if names.count(n) > 1]
+            raise BundleFormatError(
+                f"Duplicate ZIP entries в {path}: {duplicates[:5]} — refusing"
+            )
 
         # Zip-slip defense — must run upfront because lazy reads later assume
         # entry names are safe (defense-in-depth).

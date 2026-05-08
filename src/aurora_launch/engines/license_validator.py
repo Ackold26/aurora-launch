@@ -27,8 +27,14 @@ Production deploy (in Tauri build, Block 2): Aurora Launch installer ships
 with `aurora_common` as a bundled dependency. Path-dep resolves at install
 time; license cache lives in `~/.aurora/aurora-launch/license-cache.json`.
 
-Dev fallback: set ``AURORA_LAUNCH_LICENSE_BYPASS=1`` to grant all features
-(only honored if `dev` build flag set in env — never in production builds).
+Dev fallback: set ``AURORA_LAUNCH_LICENSE_BYPASS=1`` AND
+``AURORA_BUILD_PROFILE=dev`` simultaneously to grant all features. Both
+must be set; production builds set ``AURORA_BUILD_PROFILE=production`` at
+package time so the bypass cannot be turned on by simply setting one env var.
+
+Audit Block 1D — finding B1 fixed: previously the bypass honoured only
+``AURORA_LAUNCH_LICENSE_BYPASS=1`` regardless of build profile, allowing
+end-user license circumvention в production билдах через одну env var.
 """
 
 from __future__ import annotations
@@ -270,9 +276,27 @@ class LaunchLicenseValidator:
 
     @classmethod
     def from_env(cls) -> LaunchLicenseValidator:
-        """Construct from environment variables."""
+        """Construct from environment variables.
+
+        Bypass is honoured ONLY если both:
+          - ``AURORA_LAUNCH_LICENSE_BYPASS`` ∈ {"1","true","yes"}
+          - ``AURORA_BUILD_PROFILE`` == "dev"
+        Production builds set ``AURORA_BUILD_PROFILE=production`` at package
+        time. If a user attempts to set the bypass env var in production,
+        a warning is logged and bypass is ignored (fail-closed).
+        """
         bypass_raw = os.environ.get("AURORA_LAUNCH_LICENSE_BYPASS", "")
-        bypass = bypass_raw.strip() in ("1", "true", "yes")
+        build_profile = os.environ.get("AURORA_BUILD_PROFILE", "production").strip().lower()
+        bypass_requested = bypass_raw.strip().lower() in ("1", "true", "yes")
+        bypass = bypass_requested and build_profile == "dev"
+        if bypass_requested and not bypass:
+            _log.warning(
+                "license_bypass_refused: AURORA_LAUNCH_LICENSE_BYPASS=%r set но "
+                "AURORA_BUILD_PROFILE=%r (≠ 'dev') — bypass ignored, license "
+                "validation enforced.",
+                bypass_raw,
+                build_profile,
+            )
 
         cache_path_raw = os.environ.get("AURORA_LICENSE_CACHE_PATH")
         cache_path = (

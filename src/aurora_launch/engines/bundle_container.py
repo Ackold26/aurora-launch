@@ -190,7 +190,27 @@ class BundleZipWriter:
 
         Subsequent add_file() calls override entries with same name. write()
         will bump revision and re-hash. project_id preserved from manifest.
+
+        Audit Block 1D — finding B3: refuses `LazyLoadedBundle` to prevent
+        silent full materialisation через the Mapping ABC's default
+        `items()` (which would invoke `__getitem__` per entry, thrashing
+        the LRU cache when bundle size exceeds cap and reading some
+        entries twice). Caller must explicitly materialise via
+        `LazyLoadedBundle.materialise_eager()` so the cost is visible.
         """
+        # Local import to avoid circular dep (bundle_streaming imports here).
+        from aurora_launch.engines.bundle_streaming import LazyLoadedBundle
+
+        if isinstance(loaded, LazyLoadedBundle):
+            raise TypeError(
+                "BundleZipWriter.from_loaded does not accept LazyLoadedBundle "
+                "directly — it would silently materialise all entries и could "
+                "re-read some из ZIP if cache cap < bundle size. Either: "
+                "(a) call `loaded.materialise_eager()` to get a plain "
+                "LoadedBundle (explicit materialisation cost), or "
+                "(b) re-open via `BundleZipReader().read(path)` (eager mode)."
+            )
+
         writer = cls(
             aurora_app_version=loaded.manifest.aurora_app_version,
             min_app_version=loaded.manifest.min_app_version,
@@ -438,6 +458,16 @@ class BundleZipReader:
             names = zf.namelist()
             if MANIFEST_FILENAME not in names:
                 raise BundleFormatError(f"ZIP bundle {path} missing {MANIFEST_FILENAME}")
+
+            # Audit Block 1D — finding B4: reject duplicate entry names. ZIP
+            # spec permits duplicates and zipfile.ZipFile.read() returns the
+            # last entry, so an attacker could ship a tampered manifest plus
+            # a "real" manifest и bypass set-based integrity checks.
+            if len(names) != len(set(names)):
+                duplicates = [n for n in set(names) if names.count(n) > 1]
+                raise BundleFormatError(
+                    f"Duplicate ZIP entries в {path}: {duplicates[:5]} — refusing"
+                )
 
             for name in names:
                 # Defense-in-depth against zip-slip (ADR-002 §"Edge cases").

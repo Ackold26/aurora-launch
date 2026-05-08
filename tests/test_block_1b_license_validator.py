@@ -135,7 +135,9 @@ class TestBypassMode:
             assert status.has_feature(feature), f"bypass should grant {feature}"
 
     def test_validator_with_bypass_env_var(self, monkeypatch):
+        # Audit Block 1D B1 fix: bypass requires BOTH env vars (build profile gate).
         monkeypatch.setenv("AURORA_LAUNCH_LICENSE_BYPASS", "1")
+        monkeypatch.setenv("AURORA_BUILD_PROFILE", "dev")
         v = LaunchLicenseValidator.from_env()
         status = v.current_status()
         assert status.state == LicenseState.ACTIVE
@@ -144,16 +146,20 @@ class TestBypassMode:
 
     def test_validator_bypass_disabled_by_default(self, monkeypatch):
         monkeypatch.delenv("AURORA_LAUNCH_LICENSE_BYPASS", raising=False)
+        monkeypatch.delenv("AURORA_BUILD_PROFILE", raising=False)
         v = LaunchLicenseValidator.from_env()
         assert v.bypass is False
 
     def test_bypass_accepts_truthy_strings(self, monkeypatch):
+        # Audit Block 1D B1 fix: build profile must also be 'dev'.
+        monkeypatch.setenv("AURORA_BUILD_PROFILE", "dev")
         for truthy in ("1", "true", "yes"):
             monkeypatch.setenv("AURORA_LAUNCH_LICENSE_BYPASS", truthy)
             v = LaunchLicenseValidator.from_env()
             assert v.bypass is True, f"'{truthy}' should enable bypass"
 
     def test_bypass_rejects_falsy_strings(self, monkeypatch):
+        monkeypatch.setenv("AURORA_BUILD_PROFILE", "dev")  # gate is dev, but raw flag falsy
         for falsy in ("0", "false", "no", "", "FAKE"):
             monkeypatch.setenv("AURORA_LAUNCH_LICENSE_BYPASS", falsy)
             v = LaunchLicenseValidator.from_env()
@@ -237,7 +243,9 @@ class TestFromEnv:
 
 class TestValidatorConvenience:
     def test_has_feature_via_validator(self, monkeypatch):
+        # Audit Block 1D B1 fix: bypass requires BOTH env vars.
         monkeypatch.setenv("AURORA_LAUNCH_LICENSE_BYPASS", "1")
+        monkeypatch.setenv("AURORA_BUILD_PROFILE", "dev")
         v = LaunchLicenseValidator.from_env()
         assert v.has_feature(FEATURE_LAUNCH_PROXY_SINGLE)
         assert v.has_feature(FEATURE_LAUNCH_PROXY_MULTI)

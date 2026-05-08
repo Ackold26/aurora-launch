@@ -139,11 +139,16 @@ class BundleManifest(BaseModel):
         Frozen-pattern: BundleManifest is immutable; this is the canonical
         way to advance state. Optional field_updates merged in (e.g., updated
         files map after writing new entries).
+
+        Audit Block 1D — finding H2: timestamp resolution upgraded to
+        microseconds (`%f`). Previously second precision allowed two bumps
+        within the same second to share a `last_modified` value, breaking
+        the invariant "revision bump → timestamp advances".
         """
         data = self.model_dump()
         data.update(field_updates)
         data["revision"] = self.revision + 1
-        data["last_modified"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        data["last_modified"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
         return BundleManifest.model_validate(data)
 
 
@@ -158,7 +163,7 @@ def make_initial_manifest(
     """Construct a fresh manifest for a new bundle. Used by BundleZipWriter
     on initial create; subsequent saves use `with_revision_bump()`.
     """
-    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     return BundleManifest(
         aurora_app_version=aurora_app_version,
         min_app_version=min_app_version,

@@ -595,16 +595,7 @@ class TestConcurrency:
         path = tmp_path / "lock.aurora"
         _write_bundle(path, {"x.bin": b"x"})
 
-        with open_lazy(path) as bundle:  # holds shared lock
-            # Concurrent writer must fail-fast (exclusive lock contended)
-            writer = BundleZipWriter.from_loaded(
-                # Use eager read для отдельной writer base — but eager read
-                # в той же сессии заблокирован. Поэтому собираем writer
-                # вручную с manifest.
-                # Вместо этого простой test: try to acquire exclusive lock
-                # external to writer — should fail.
-                bundle  # type: ignore[arg-type]
-            )  # noqa: F841 — only constructed to satisfy API; unused
+        with open_lazy(path):  # holds shared lock for its lifetime
             with pytest.raises(BundleLockError):
                 with bundle_lock(path, mode="exclusive", timeout=0.1):
                     pass
@@ -630,27 +621,16 @@ class TestConcurrency:
 
 
 class TestWriterFromLazyLoaded:
-    def test_lazy_then_rebase_writer_round_trip(self, tmp_path: Path):
+    def test_lazy_materialise_then_rebase_writer_round_trip(self, tmp_path: Path):
         path = tmp_path / "rb.aurora"
         _write_bundle(path, {"a.bin": b"A", "b.bin": b"B"})
 
-        # Open lazy, snapshot manifest revision, close (release lock)
+        # B3 fix: materialise_eager() is the explicit conversion path.
         with open_lazy(path) as bundle:
             base_revision = bundle.manifest.revision
-            # Force load entries чтобы writer.from_loaded имел контент
-            _ = bundle.files["a.bin"]
-            _ = bundle.files["b.bin"]
-            # Materialise into eager LoadedBundle copy для writer rebase —
-            # API contract: writer.from_loaded работает с LoadedBundle
-            from aurora_launch.engines.bundle_container import LoadedBundle as _LB
+            eager = bundle.materialise_eager()
 
-            eager = _LB(
-                manifest=bundle.manifest,
-                files={n: bundle.files[n] for n in bundle.files.keys()},
-                source_format=bundle.source_format,
-                source_path=bundle.source_path,
-            )
-
+        # eager is independent of bundle (lock released), works с from_loaded
         writer = BundleZipWriter.from_loaded(eager)
         writer.add_file("c.bin", b"C")
         new_manifest = writer.write(path, expected_revision=base_revision)
@@ -660,3 +640,257 @@ class TestWriterFromLazyLoaded:
             assert bundle2.files["a.bin"] == b"A"
             assert bundle2.files["c.bin"] == b"C"
             assert bundle2.manifest.revision == base_revision + 1
+
+    def test_from_loaded_refuses_lazy_bundle(self, tmp_path: Path):
+        """Audit Block 1D B3: passing LazyLoadedBundle directly raises TypeError."""
+        path = tmp_path / "refuse.aurora"
+        _write_bundle(path, {"a.bin": b"A"})
+
+        with open_lazy(path) as bundle:
+            with pytest.raises(TypeError, match="LazyLoadedBundle"):
+                BundleZipWriter.from_loaded(bundle)
+
+    def test_materialise_eager_independent_of_lazy(self, tmp_path: Path):
+        """Materialised copy survives lazy bundle close (no lock retention)."""
+        path = tmp_path / "mat.aurora"
+        _write_bundle(path, {"a.bin": b"A" * 50})
+
+        with open_lazy(path) as bundle:
+            eager = bundle.materialise_eager()
+        # bundle closed; eager still usable
+        assert eager.files["a.bin"] == b"A" * 50
+        assert eager.manifest.revision == 0
+        # eager does NOT hold the lock — exclusive lock acquireable
+        with bundle_lock(path, mode="exclusive", timeout=1.0):
+            pass
+
+    def test_materialise_eager_after_close_raises(self, tmp_path: Path):
+        path = tmp_path / "macl.aurora"
+        _write_bundle(path, {"a.bin": b"A"})
+        bundle = open_lazy(path)
+        bundle.close()
+        with pytest.raises(ValueError, match="closed"):
+            bundle.materialise_eager()
+
+
+# ----------------------------------------------------------------------------
+# Audit Block 1D fixes — new tests
+# ----------------------------------------------------------------------------
+
+
+class TestAuditB2ZipBomb:
+    def test_zip_bomb_size_mismatch_rejected(self, tmp_path: Path):
+        """B2: ZIP entry size larger than manifest claims → BundleIntegrityError.
+
+        Build a bundle, then maliciously replace one entry с a larger payload
+        without updating manifest's `size_bytes`.
+        """
+        path = tmp_path / "bomb.aurora"
+        _write_bundle(path, {"x.bin": b"small"})
+
+        # Replace x.bin с larger payload; keep manifest unchanged
+        buf = io.BytesIO(path.read_bytes())
+        with zipfile.ZipFile(buf, "r") as zf:
+            names = zf.namelist()
+            entries = {n: zf.read(n) for n in names}
+        entries["x.bin"] = b"X" * 10_000  # was 5 bytes
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w", zipfile.ZIP_STORED) as zf:
+            for n in names:
+                zf.writestr(n, entries[n])
+        path.write_bytes(out.getvalue())
+
+        with open_lazy(path) as bundle:
+            with pytest.raises(BundleIntegrityError, match="size mismatch|size_bytes"):
+                _ = bundle.files["x.bin"]
+
+    def test_zip_bomb_oversized_entry_capped(self, tmp_path: Path, monkeypatch):
+        """B2: entry larger than MAX_ENTRY_SIZE raises BundleFormatError.
+
+        We monkey-patch the cap to a tiny value so we can test без allocating
+        gigabytes.
+        """
+        from aurora_launch.engines import bundle_streaming as bs
+
+        monkeypatch.setattr(bs, "MAX_ENTRY_SIZE", 100)
+
+        path = tmp_path / "big.aurora"
+        _write_bundle(path, {"x.bin": b"X" * 500})  # 500 > 100 cap
+
+        with open_lazy(path) as bundle:
+            with pytest.raises(BundleFormatError, match="too large"):
+                _ = bundle.files["x.bin"]
+
+
+class TestAuditB4DuplicateEntries:
+    def test_duplicate_entries_rejected_lazy(self, tmp_path: Path):
+        """B4: open_lazy refuses ZIP с duplicate entry names."""
+        from aurora_launch.engines.bundle_manifest import (
+            compute_file_entry,
+            make_initial_manifest,
+        )
+
+        path = tmp_path / "dup.aurora"
+        manifest = make_initial_manifest(
+            aurora_app_version="0.1.0",
+            min_app_version="0.1.0",
+            project_id="dup-test",
+        )
+        manifest = manifest.model_copy(
+            update={"files": {"x.bin": compute_file_entry(b"clean")}}
+        )
+        with zipfile.ZipFile(path, "w", zipfile.ZIP_STORED) as zf:
+            zf.writestr("manifest.json", manifest.to_canonical_bytes())
+            zf.writestr("x.bin", b"clean")
+            zf.writestr("x.bin", b"TAMPERED")  # duplicate!
+
+        with pytest.raises(BundleFormatError, match="[Dd]uplicate"):
+            open_lazy(path)
+
+    def test_duplicate_entries_rejected_eager(self, tmp_path: Path):
+        """B4 (eager path): BundleZipReader.read() also refuses duplicates."""
+        from aurora_launch.engines.bundle_manifest import (
+            compute_file_entry,
+            make_initial_manifest,
+        )
+
+        path = tmp_path / "dup2.aurora"
+        manifest = make_initial_manifest(
+            aurora_app_version="0.1.0",
+            min_app_version="0.1.0",
+            project_id="dup-test-2",
+        )
+        manifest = manifest.model_copy(
+            update={"files": {"x.bin": compute_file_entry(b"clean")}}
+        )
+        with zipfile.ZipFile(path, "w", zipfile.ZIP_STORED) as zf:
+            zf.writestr("manifest.json", manifest.to_canonical_bytes())
+            zf.writestr("x.bin", b"clean")
+            zf.writestr("x.bin", b"TAMPERED")
+
+        reader = BundleZipReader()
+        with pytest.raises(BundleFormatError, match="[Dd]uplicate"):
+            reader.read(path)
+
+
+class TestAuditH1OversizedLRURefused:
+    def test_put_oversized_value_does_not_evict_existing(self):
+        """H1: a value larger than cap is refused, existing entries preserved."""
+        cache = ByteSizeLRU(max_bytes=10)
+        cache.put("a", b"12345")
+        cache.put("b", b"6789")
+        # Oversized — refused
+        cache.put("BIG", b"X" * 100)
+        assert cache.get("BIG") is None
+        # Existing entries intact
+        assert cache.get("a") == b"12345"
+        assert cache.get("b") == b"6789"
+        assert cache.total_size == 9
+        assert len(cache) == 2
+
+    def test_put_exact_fit_succeeds(self):
+        """Boundary: value size == cap is accepted."""
+        cache = ByteSizeLRU(max_bytes=10)
+        cache.put("a", b"X" * 10)
+        assert cache.get("a") == b"X" * 10
+        assert cache.total_size == 10
+
+
+class TestAuditH2TimestampResolution:
+    def test_revision_bump_subsecond_distinct_with_short_wait(self):
+        """H2: two bumps separated by 1ms produce different timestamps.
+
+        Microsecond precision allows collision на back-to-back calls because
+        Windows wall clock resolution can be coarser than 1µs. Real ordering
+        guarantee is `revision`. We test that even a tiny gap (1ms — well
+        above Windows clock resolution) yields distinct `last_modified`.
+        """
+        import time as _time
+
+        from aurora_launch.engines.bundle_manifest import make_initial_manifest
+
+        m0 = make_initial_manifest(
+            aurora_app_version="0.1.0",
+            min_app_version="0.1.0",
+            project_id="ts-test",
+        )
+        _time.sleep(0.001)
+        m1 = m0.with_revision_bump()
+        _time.sleep(0.001)
+        m2 = m1.with_revision_bump()
+        assert m1.last_modified != m0.last_modified
+        assert m2.last_modified != m1.last_modified
+        assert m2.revision == 2
+
+    def test_revision_strictly_monotonic_regardless_of_clock(self):
+        """The strong ordering guarantee is revision counter, not timestamp."""
+        from aurora_launch.engines.bundle_manifest import make_initial_manifest
+
+        m0 = make_initial_manifest(
+            aurora_app_version="0.1.0",
+            min_app_version="0.1.0",
+            project_id="ts-mono",
+        )
+        m1 = m0.with_revision_bump()
+        m2 = m1.with_revision_bump()
+        m3 = m2.with_revision_bump()
+        assert [m0.revision, m1.revision, m2.revision, m3.revision] == [0, 1, 2, 3]
+
+    def test_initial_manifest_uses_microsecond_format(self):
+        from aurora_launch.engines.bundle_manifest import make_initial_manifest
+
+        m = make_initial_manifest(
+            aurora_app_version="0.1.0",
+            min_app_version="0.1.0",
+            project_id="ts-fmt",
+        )
+        # %f produces 6-digit microseconds — string contains '.' before 'Z'
+        assert "." in m.last_modified and m.last_modified.endswith("Z")
+
+
+class TestAuditB1LicenseBypassGate:
+    def test_bypass_requires_dev_build_profile(self, monkeypatch):
+        """B1: bypass env var alone не activates bypass — build profile gate."""
+        from aurora_launch.engines.license_validator import (
+            LaunchLicenseValidator,
+            LicenseState,
+        )
+
+        monkeypatch.setenv("AURORA_LAUNCH_LICENSE_BYPASS", "1")
+        monkeypatch.delenv("AURORA_BUILD_PROFILE", raising=False)
+        v = LaunchLicenseValidator.from_env()
+        assert v.bypass is False
+        # Status must NOT be ACTIVE с dev_bypass tier
+        status = v.current_status()
+        assert status.tier != "dev_bypass"
+
+    def test_bypass_explicit_production_refused(self, monkeypatch, caplog):
+        from aurora_launch.engines.license_validator import LaunchLicenseValidator
+
+        monkeypatch.setenv("AURORA_LAUNCH_LICENSE_BYPASS", "1")
+        monkeypatch.setenv("AURORA_BUILD_PROFILE", "production")
+        v = LaunchLicenseValidator.from_env()
+        assert v.bypass is False
+
+    def test_bypass_dev_profile_honoured(self, monkeypatch):
+        from aurora_launch.engines.license_validator import (
+            LaunchLicenseValidator,
+            LicenseState,
+        )
+
+        monkeypatch.setenv("AURORA_LAUNCH_LICENSE_BYPASS", "1")
+        monkeypatch.setenv("AURORA_BUILD_PROFILE", "dev")
+        v = LaunchLicenseValidator.from_env()
+        assert v.bypass is True
+        status = v.current_status()
+        assert status.state == LicenseState.ACTIVE
+        assert status.tier == "dev_bypass"
+
+    def test_no_bypass_env_no_change(self, monkeypatch):
+        """Default (no env) — bypass off, behaviour unchanged."""
+        from aurora_launch.engines.license_validator import LaunchLicenseValidator
+
+        monkeypatch.delenv("AURORA_LAUNCH_LICENSE_BYPASS", raising=False)
+        monkeypatch.delenv("AURORA_BUILD_PROFILE", raising=False)
+        v = LaunchLicenseValidator.from_env()
+        assert v.bypass is False
