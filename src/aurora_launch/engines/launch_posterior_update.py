@@ -359,15 +359,25 @@ def compute_update_estimate(
 
 
 async def detect_drift_handler(ctx: Any, **kwargs: Any) -> dict[str, Any]:
-    """Workflow handler — drift detection."""
+    """Workflow handler — drift detection.
+
+    INV-15 closure: thread forecast_ci_lower / forecast_ci_upper from kwargs
+    к detect_drift() так что spec-authoritative empirical CI coverage path
+    (POSTERIOR_UPDATE_DESIGN §4.1) reachable из workflow invocation. Без этого
+    handler structurally always fell into ±20% relative-diff fallback.
+    """
     proxy_baseline = kwargs.get("proxy_baseline_forecast", [100.0] * 12)
     recipient_actual = kwargs.get("recipient_actual", [105.0] * 12)
+    forecast_ci_lower = kwargs.get("forecast_ci_lower")
+    forecast_ci_upper = kwargs.get("forecast_ci_upper")
     coverage_threshold = kwargs.get("coverage_threshold", 0.85)
     min_weeks = kwargs.get("min_weeks", MIN_WEEKS_FOR_DRIFT_CHECK)
 
     drift = detect_drift(
         proxy_baseline_forecast=proxy_baseline,
         recipient_actual=recipient_actual,
+        forecast_ci_lower=forecast_ci_lower,
+        forecast_ci_upper=forecast_ci_upper,
         coverage_threshold=coverage_threshold,
         min_weeks=min_weeks,
     )
@@ -381,6 +391,7 @@ async def detect_drift_handler(ctx: Any, **kwargs: Any) -> dict[str, Any]:
         "is_unknown_due_to_few_weeks": drift.is_unknown_due_to_few_weeks,
         "coverage_threshold_used": coverage_threshold,
         "min_weeks_used": min_weeks,
+        "ci_bounds_used": forecast_ci_lower is not None and forecast_ci_upper is not None,
     }
 
 

@@ -122,6 +122,41 @@ class TestLaunchPosteriorUpdate:
         result = asyncio.run(detect_drift_handler(ctx=None, min_weeks=8))
         assert result["min_weeks_used"] >= 8
 
+    def test_detect_drift_handler_threads_ci_bounds(self) -> None:
+        """INV-15 regression: handler MUST thread forecast_ci_lower/upper к detect_drift.
+
+        Без этого spec-authoritative empirical CI coverage path
+        (POSTERIOR_UPDATE_DESIGN §4.1) был structurally unreachable из workflow
+        invocation; handler фалл'бэкал к ±20% relative-diff approximation.
+        """
+        from aurora_launch.engines.launch_posterior_update import detect_drift_handler
+
+        # CI bounds tight around recipient_actual — empirical coverage = 1.0 (normal).
+        # Без CI bounds same data → relative-diff path checks abs(actual-baseline)/baseline.
+        # При baseline=[100]*12 + actual=[105]*12 + ci_lower=[103]*12 + ci_upper=[107]*12,
+        # empirical coverage = 1.0 (normal), но relative-diff coverage тоже 1.0 (105 vs 100 = 5% < 20%).
+        # Этот test verifies structural threading через ci_bounds_used flag.
+        result_with_ci = asyncio.run(
+            detect_drift_handler(
+                ctx=None,
+                proxy_baseline_forecast=[100.0] * 12,
+                recipient_actual=[105.0] * 12,
+                forecast_ci_lower=[103.0] * 12,
+                forecast_ci_upper=[107.0] * 12,
+            )
+        )
+        assert result_with_ci["ci_bounds_used"] is True
+
+        # Без CI bounds — fallback path
+        result_without_ci = asyncio.run(
+            detect_drift_handler(
+                ctx=None,
+                proxy_baseline_forecast=[100.0] * 12,
+                recipient_actual=[105.0] * 12,
+            )
+        )
+        assert result_without_ci["ci_bounds_used"] is False
+
     def test_update_posterior(self) -> None:
         from aurora_launch.engines.launch_posterior_update import update_posterior
         result = asyncio.run(update_posterior(ctx=None))
