@@ -392,5 +392,6 @@ class LaunchLicenseValidator:
                 public_verify_key_pem=self.public_verify_key_pem,
                 local_cache_path=self.cache_path,
                 machine_id=self.machine_id,
+                app_id=self.app_id,  # SH-1: required для verify_aud=True
             )
         return self._sdk
