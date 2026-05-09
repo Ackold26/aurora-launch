@@ -1,6 +1,10 @@
 # PyInstaller cross-platform sidecar build (Block 4 deferred B4-LOW-1).
-# Triggered on push к main, on tags, and manually via workflow_dispatch.
+# Triggered on push к main, on tags, и manually via workflow_dispatch.
 # Produces aurora-sidecar binary suffixed с Tauri target triple.
+#
+# Mini-audit fixes:
+# - HIGH-1: permissions explicitly contents:read (no token write needed)
+# - HIGH-4: install runtime deps only (NO [dev]) into PyInstaller env
 
 name: Sidecar build (PyInstaller)
 
@@ -22,6 +26,8 @@ jobs:
   build:
     name: ${{ matrix.target }}-${{ matrix.arch }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -56,39 +62,49 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: pip
 
-      - name: Install runtime + build deps
+      - name: Install runtime deps + tests + pyinstaller (separated envs)
+        # HIGH-4 fix: split test env (с dev extras) from build env (runtime
+        # only). Dev env runs pytest; build env stays lean for binary size.
         run: |
           python -m pip install --upgrade pip
+          # Test env (with dev extras for pytest etc.)
           pip install -e ".[dev]"
-          pip install pyinstaller
 
       - name: Run sidecar tests (INV-08 actual pytest)
         run: python -m pytest tests/test_sidecar_auth.py tests/test_sidecar_protocol_server.py -v
 
-      - name: Build sidecar binary
+      - name: Reinstall runtime-only for build (drop dev tooling)
+        # HIGH-4 fix: PyInstaller bundles whatever is import-reachable. Strip
+        # dev tools (pytest/hypothesis/ruff/mypy) before bundling.
         run: |
-          pyinstaller packaging/aurora-sidecar.spec --distpath dist --clean
+          pip uninstall -y pytest pytest-cov hypothesis ruff mypy || true
+          pip install pyinstaller
+
+      - name: Build sidecar binary
+        run: pyinstaller packaging/aurora-sidecar.spec --distpath dist --clean
 
       - name: Smoke test built binary (INV-02 runtime smoke)
         shell: bash
         env:
           AURORA_SIDECAR_AUTH_TOKEN: '${{ secrets.SIDECAR_SMOKE_TOKEN }}'
         run: |
-          # Generate a smoke token if secret missing (CI без secret access)
-          if [ -z "$AURORA_SIDECAR_AUTH_TOKEN" ]; then
+          set -euo pipefail
+          # Generate a smoke token if secret missing (CI без secret access).
+          if [ -z "${AURORA_SIDECAR_AUTH_TOKEN:-}" ]; then
             AURORA_SIDECAR_AUTH_TOKEN="$(python -c 'import secrets; print(secrets.token_hex(32))')"
             export AURORA_SIDECAR_AUTH_TOKEN
           fi
-          # Compose ping request, pipe to binary, verify response
           if [ "${{ matrix.os }}" = "windows-2022" ]; then
             BINARY="dist/${{ matrix.binary_name }}"
           else
             BINARY="./dist/${{ matrix.binary_name }}"
           fi
           REQUEST="{\"id\":1,\"method\":\"ping\",\"params\":{},\"auth\":\"$AURORA_SIDECAR_AUTH_TOKEN\"}"
-          RESPONSE=$(printf '%s\n' "$REQUEST" | "$BINARY" 2>&1 | grep -m1 '"pong"' || true)
+          # printf | binary; capture stdout, look for "pong":true в response.
+          RESPONSE=$(printf '%s\n' "$REQUEST" | "$BINARY" 2>err.log | grep -m1 '"pong"' || true)
           if [ -z "$RESPONSE" ]; then
-            echo "Sidecar smoke test FAILED — no pong response"
+            echo "Sidecar smoke test FAILED — no pong response. stderr:"
+            cat err.log
             exit 1
           fi
           echo "Sidecar smoke OK: $RESPONSE"

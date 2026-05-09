@@ -51,6 +51,13 @@ a = Analysis(
         "aurora_launch.schemas.adaptation",
         "aurora_launch.schemas.proxy",
         "aurora_launch.schemas.bundle",
+        # Mini-audit M2-PYINSTALLER-1 fix: previously missing — used by
+        # format_adapters/registry::FormatAdapterContract type imports.
+        "aurora_launch.schemas.synthetic_corpus",
+        # Schema modules used downstream by launch_forecast / launch_validate
+        # (not currently sidecar-direct, but transitive). Eager-include для
+        # PyInstaller robustness.
+        "aurora_launch.schemas.forecast",
         "aurora_launch.sidecar.auth",
         "aurora_launch.sidecar.events",
         "aurora_launch.sidecar.methods",
@@ -58,6 +65,10 @@ a = Analysis(
         "aurora_launch.sidecar.server",
         "rfc8785",
         "pydantic",
+        # Mini-audit M2-PYINSTALLER-1: pydantic v2 has compiled Rust submodule
+        # `pydantic_core` which PyInstaller's bundled hook may не detect on
+        # all platforms. Force include для cross-platform reliability.
+        "pydantic_core",
         "numpy",
     ],
     hookspath=[],
@@ -68,6 +79,26 @@ a = Analysis(
         # not used by core sidecar; Phi-3.5 download path will load lazily.
         "torch",
         "tensorflow",
+        # Mini-audit M2-PYINSTALLER-2 / HIGH-4: dev tooling MUST NOT bundle
+        # into production sidecar binary. CI release pipeline now does
+        # `pip uninstall pytest hypothesis ruff mypy` before pyinstaller
+        # invocation, but excludes here are belt-and-suspenders в случае
+        # ad-hoc local builds use `pip install -e ".[dev]"`.
+        "pytest",
+        "_pytest",
+        "pytest_cov",
+        "hypothesis",
+        "ruff",
+        "mypy",
+        "mypy_extensions",
+        "pyinstaller",
+        # Build/test tools rarely needed at runtime
+        "pip",
+        "setuptools",
+        "wheel",
+        # IDE / debugger imports if dev пуско установил
+        "ipykernel",
+        "jupyter",
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,

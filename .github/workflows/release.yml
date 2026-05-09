@@ -3,8 +3,16 @@
 # Triggered by tag push (v0.1.0-rc2, v0.1.0, etc.). Produces signed installers
 # + updater manifest + publishes к Vercel endpoint.
 #
-# Block 0 baseline (validate / test) preserved; Block 4 sidecar build + F1
-# Tauri build + updater publish appended.
+# Mini-audit findings applied:
+# - HIGH-1: permissions scoped per-job (default contents:read, write only
+#   для publish job). Build jobs run untrusted code от tagged commit с
+#   minimum token scope.
+# - HIGH-2: community third-party actions SHA-pinned (dtolnay/rust-toolchain,
+#   softprops/action-gh-release, astral-sh/setup-uv). First-party actions/*
+#   keep major-tag pins (lower hijack risk + auto patch).
+# - HIGH-3: explicit Vercel redeploy после env update — without redeploy
+#   Edge Functions serve cached old manifest until cold-start cycling
+#   (5-10 минут unpredictable).
 #
 # Required GitHub Secrets:
 # - AURORA_UPDATER_PUBKEY (64-char Ed25519 hex public key) — Block 3 BLOCKER-3
@@ -24,8 +32,9 @@ on:
         description: 'Version to release (e.g., 0.1.0-rc2)'
         required: true
 
+# HIGH-1 fix: default к contents:read; only publish job overrides к write.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -35,6 +44,8 @@ jobs:
   validate:
     name: Validate release tag
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       version: ${{ steps.extract.outputs.version }}
       is_prerelease: ${{ steps.extract.outputs.is_prerelease }}
@@ -66,6 +77,8 @@ jobs:
     name: Full test suite (${{ matrix.os }} / py${{ matrix.python-version }})
     needs: validate
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -84,6 +97,8 @@ jobs:
     name: Build sidecar — ${{ matrix.target }}
     needs: [validate, test-release]
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -102,7 +117,12 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-      - run: pip install -e ".[dev]" pyinstaller
+      # HIGH-4 fix mirror: install only runtime deps (NO [dev]) into PyInstaller
+      # build env to keep production binary lean.
+      - run: |
+          pip install --upgrade pip
+          pip install -e .
+          pip install pyinstaller
       - run: pyinstaller packaging/aurora-sidecar.spec --distpath dist --clean
       - name: Rename binary
         shell: bash
@@ -122,6 +142,8 @@ jobs:
     name: Build app — ${{ matrix.target }}
     needs: [validate, build-sidecar]
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -141,7 +163,10 @@ jobs:
         with:
           name: aurora-sidecar-${{ matrix.target }}
           path: src-tauri/binaries/
-      - uses: dtolnay/rust-toolchain@stable
+      # HIGH-2 fix: SHA-pin community-maintained Rust toolchain action.
+      # `dtolnay/rust-toolchain@stable` last verified SHA below; rotate
+      # quarterly via dependabot or manual review.
+      - uses: dtolnay/rust-toolchain@21dc36fb71dd22e3317045c0c31a3f4249868b17 # stable @ 2024-09-01
         with:
           targets: ${{ matrix.target }}
       - uses: actions/setup-node@v4
@@ -180,6 +205,9 @@ jobs:
     name: Publish — Vercel + GitHub Release
     needs: [validate, build-app]
     runs-on: ubuntu-22.04
+    # HIGH-1 fix: write permission ONLY here (для GitHub Release create).
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -223,27 +251,142 @@ jobs:
               json.dump(manifest, f, indent=2)
           PY
 
-      - name: Push updater manifest к Vercel KV
+      # HIGH-5/HIGH-6 fix: env-var update through individual curl calls
+      # с explicit failure check. Previously bash `for KV в "K:V"` splitting
+      # на ":" was brittle vs JSON values. Now each var passed via Python
+      # JSON-encoded payload и failures fail the step.
+      - name: Push updater manifest к Vercel project env vars
+        if: ${{ env.VERCEL_TOKEN != '' }}
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
-          [ -z "$VERCEL_TOKEN" ] && { echo "VERCEL_TOKEN unset, skipping Vercel publish"; exit 0; }
-          PLATFORMS=$(jq -c .platforms updater-manifest.json)
-          for KV in "AURORA_LATEST_VERSION:$VERSION" \
-                    "AURORA_LATEST_PUB_DATE:$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-                    "AURORA_LATEST_PLATFORMS_JSON:$PLATFORMS"; do
-            KEY=${KV%%:*}
-            VAL=${KV#*:}
-            curl -fsS -X POST "https://api.vercel.com/v10/projects/$VERCEL_PROJECT_ID/env" \
-              -H "Authorization: Bearer $VERCEL_TOKEN" \
-              -H "Content-Type: application/json" \
-              -d "{\"key\":\"$KEY\",\"value\":\"$VAL\",\"target\":[\"production\"],\"type\":\"plain\"}" || true
-          done
+          set -euo pipefail
+          PUB_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          python3 - <<PY
+          import json, os, urllib.request, urllib.error
 
+          token = os.environ['VERCEL_TOKEN']
+          project = os.environ['VERCEL_PROJECT_ID']
+          version = os.environ['VERSION']
+          pub_date = os.environ.get('PUB_DATE', '')
+          with open('updater-manifest.json') as f:
+              manifest = json.load(f)
+          platforms_json = json.dumps(manifest['platforms'])
+
+          updates = {
+              'AURORA_LATEST_VERSION': version,
+              'AURORA_LATEST_PUB_DATE': pub_date,
+              'AURORA_LATEST_PLATFORMS_JSON': platforms_json,
+          }
+          for key, value in updates.items():
+              data = json.dumps({
+                  'key': key,
+                  'value': value,
+                  'target': ['production'],
+                  'type': 'plain',
+              }).encode()
+              req = urllib.request.Request(
+                  f'https://api.vercel.com/v10/projects/{project}/env',
+                  data=data,
+                  headers={
+                      'Authorization': f'Bearer {token}',
+                      'Content-Type': 'application/json',
+                  },
+                  method='POST',
+              )
+              try:
+                  urllib.request.urlopen(req, timeout=30).read()
+                  print(f'  set {key}')
+              except urllib.error.HTTPError as e:
+                  body = e.read().decode('utf-8', errors='replace')
+                  if e.code == 400 and 'already exists' in body.lower():
+                      # Update existing — PATCH /v10/projects/{id}/env/{envId}
+                      list_req = urllib.request.Request(
+                          f'https://api.vercel.com/v9/projects/{project}/env',
+                          headers={'Authorization': f'Bearer {token}'},
+                      )
+                      env_list = json.loads(urllib.request.urlopen(list_req).read())
+                      target_env = next(
+                          (e for e in env_list.get('envs', []) if e['key'] == key and 'production' in e.get('target', [])),
+                          None,
+                      )
+                      if target_env is None:
+                          raise SystemExit(f'cannot find existing env {key} to update')
+                      env_id = target_env['id']
+                      patch_req = urllib.request.Request(
+                          f'https://api.vercel.com/v9/projects/{project}/env/{env_id}',
+                          data=json.dumps({'value': value, 'target': ['production']}).encode(),
+                          headers={
+                              'Authorization': f'Bearer {token}',
+                              'Content-Type': 'application/json',
+                          },
+                          method='PATCH',
+                      )
+                      urllib.request.urlopen(patch_req, timeout=30).read()
+                      print(f'  updated {key}')
+                  else:
+                      raise SystemExit(f'env update failed для {key}: {e.code} {body[:200]}')
+          PY
+
+      # HIGH-3 fix: explicit Vercel redeploy после env update. Without this,
+      # Edge Functions continue serving cached env values for 5-10 минут
+      # (cold start cycling). Forced redeploy ensures atomic swap.
+      - name: Trigger Vercel production redeploy
+        if: ${{ env.VERCEL_TOKEN != '' }}
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          # Trigger latest production deployment promotion. Vercel Deploy Hooks
+          # API: POST /v6/deployments. Если project linked к git, redeploy
+          # latest commit на default branch.
+          python3 - <<PY
+          import json, os, urllib.request, urllib.error
+
+          token = os.environ['VERCEL_TOKEN']
+          project = os.environ['VERCEL_PROJECT_ID']
+          # First fetch latest production deployment
+          req = urllib.request.Request(
+              f'https://api.vercel.com/v6/deployments?projectId={project}&target=production&limit=1',
+              headers={'Authorization': f'Bearer {token}'},
+          )
+          deployments = json.loads(urllib.request.urlopen(req, timeout=30).read())
+          deps = deployments.get('deployments', [])
+          if not deps:
+              print('  no prior production deployment to redeploy from — skipping')
+          else:
+              deploy_id = deps[0]['uid']
+              # Promote/redeploy
+              redeploy_req = urllib.request.Request(
+                  f'https://api.vercel.com/v13/deployments?forceNew=1',
+                  data=json.dumps({
+                      'name': deps[0]['name'],
+                      'deploymentId': deploy_id,
+                      'target': 'production',
+                  }).encode(),
+                  headers={
+                      'Authorization': f'Bearer {token}',
+                      'Content-Type': 'application/json',
+                  },
+                  method='POST',
+              )
+              try:
+                  resp = urllib.request.urlopen(redeploy_req, timeout=30).read()
+                  print('  redeploy triggered:', json.loads(resp).get('id'))
+              except urllib.error.HTTPError as e:
+                  body = e.read().decode('utf-8', errors='replace')
+                  print(f'  redeploy attempt failed: {e.code} {body[:200]}')
+                  # Не fail step — env vars updated successfully; redeploy is
+                  # optional acceleration. Edge functions cycle within 10 минут.
+          PY
+
+      # HIGH-2 fix: SHA-pin community-maintained release action.
+      # softprops/action-gh-release@v2 last verified SHA below.
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
         with:
           name: Aurora Launch v${{ needs.validate.outputs.version }}
           prerelease: ${{ needs.validate.outputs.is_prerelease }}

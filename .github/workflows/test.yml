@@ -1,5 +1,9 @@
 # Aurora Launch — test pipeline (Python + Rust + Frontend + Cloud).
 # Runs on PR + push к main. Required green for merge.
+#
+# Mini-audit fixes:
+# - HIGH-1: explicit per-job permissions:read (test workflow needs nothing else)
+# - HIGH-2: SHA-pin community Rust toolchain action
 
 name: Tests
 
@@ -17,6 +21,8 @@ jobs:
   python:
     name: Python pytest
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -29,9 +35,12 @@ jobs:
   rust:
     name: Rust cargo test
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # HIGH-2 fix: SHA-pin community Rust toolchain action.
+      - uses: dtolnay/rust-toolchain@21dc36fb71dd22e3317045c0c31a3f4249868b17 # stable @ 2024-09-01
       - name: Install Tauri prerequisites
         run: |
           sudo apt-get update
@@ -50,6 +59,8 @@ jobs:
   frontend:
     name: Frontend (vitest + svelte-check)
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -69,6 +80,8 @@ jobs:
   cloud:
     name: Aurora Cloud (Edge Functions)
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

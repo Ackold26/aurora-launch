@@ -1,10 +1,16 @@
 name: CI
 
+# Mini-audit fix HIGH-1: explicit permissions:read at workflow level + per-job.
+# Block 0 baseline (lint + corpus reproducibility) preserved.
+
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
