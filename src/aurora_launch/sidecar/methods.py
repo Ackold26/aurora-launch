@@ -94,13 +94,18 @@ def _save_bundle(params: dict[str, Any]) -> dict[str, Any]:
         BundleZipWriter,
     )
 
-    source_path = Path(params["source_path"])
+    # POST_PILOT_BACKLOG B4-MED-4 close (2026-05-10): explicit nullable
+    # source_path. Rust IPC теперь sends null когда нет existing bundle;
+    # legacy empty-string sentinel still accepted (graceful migration).
+    source_path_raw = params.get("source_path")
+    has_source = bool(source_path_raw)  # None or "" → False, real path → True
+    source_path = Path(source_path_raw) if has_source else None
     target_path = Path(params["target_path"])
     expected_revision = params.get("expected_revision")
     extra_files = params.get("extra_files") or {}
     new_version = params.get("aurora_app_version")
 
-    if not source_path.exists():
+    if source_path is None or not source_path.exists():
         # Initial save — no source bundle, write fresh
         writer = BundleZipWriter(
             aurora_app_version=new_version or __version__,
@@ -254,15 +259,28 @@ def _start_forecast(params: dict[str, Any]) -> dict[str, Any]:
                     "elapsed_ms": int((time.monotonic() - started) * 1000),
                 },
             )
+        except SystemExit:
+            # POST_PILOT_BACKLOG B4-MED-2 close (2026-05-10):
+            # Server shutdown raises SystemExit в main thread; sampler runs
+            # в daemon thread that may continue past server's stdout close.
+            # Catching SystemExit prevents events.emit() write к закрытому pipe.
+            # Don't emit (stdout already closed); just exit cleanly via finally.
+            return
         except Exception as exc:  # noqa: BLE001 — broad to surface anything
-            events.emit(
-                "forecast_failed",
-                {
-                    "forecast_handle": handle,
-                    "error": str(exc),
-                    "kind": type(exc).__name__,
-                },
-            )
+            try:
+                events.emit(
+                    "forecast_failed",
+                    {
+                        "forecast_handle": handle,
+                        "error": str(exc),
+                        "kind": type(exc).__name__,
+                    },
+                )
+            except (OSError, ValueError):
+                # POST_PILOT_BACKLOG B4-MED-2 close (cont.):
+                # Pipe already closed (race against server shutdown). Swallow —
+                # forecast handle cleanup happens в finally regardless.
+                pass
         finally:
             _cancel_flags.pop(handle, None)
             _forecast_threads.pop(handle, None)

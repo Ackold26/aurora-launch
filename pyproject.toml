@@ -16,6 +16,11 @@ dependencies = [
     "rfc8785>=0.1.4",
     "click>=8.1.0",
     "rich>=13.9.0",
+    # POST_PILOT_BACKLOG openpyxl close (audit-mini-f1, 2026-05-10):
+    # DSM V2024 XLSX adapter requires openpyxl. Previously lazy import + graceful
+    # ImportError, but pilot DSM data on Materia Medica side = .xlsx (not .csv).
+    # Without this dep installation user gets ImportError на первом import.
+    "openpyxl>=3.1.5",
 ]
 
 [tool.uv]

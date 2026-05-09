@@ -393,8 +393,10 @@ pub async fn save_bundle(
     if let Some(p) = source_path {
         params["source_path"] = serde_json::Value::String(p.display().to_string());
     } else {
-        // Sentinel for "no existing bundle" — sidecar checks file existence
-        params["source_path"] = serde_json::Value::String(String::new());
+        // POST_PILOT_BACKLOG B4-MED-4 close (2026-05-10): explicit JSON null
+        // вместо empty-string sentinel. Path("") behavior на Windows fragile;
+        // null = unambiguous "no source bundle yet".
+        params["source_path"] = serde_json::Value::Null;
     }
     if let Some(rev) = expected_revision {
         params["expected_revision"] = serde_json::Value::Number(rev.into());
