@@ -100,8 +100,19 @@ jobs:
             BINARY="./dist/${{ matrix.binary_name }}"
           fi
           REQUEST="{\"id\":1,\"method\":\"ping\",\"params\":{},\"auth\":\"$AURORA_SIDECAR_AUTH_TOKEN\"}"
-          # printf | binary; capture stdout, look for "pong":true в response.
-          RESPONSE=$(printf '%s\n' "$REQUEST" | "$BINARY" 2>err.log | grep -m1 '"pong"' || true)
+          # POST_PILOT_BACKLOG M1-WORKFLOW-9 close (2026-05-10): replaced
+          # opaque `|| true` (which swallowed both grep no-match AND pipeline
+          # errors) с explicit return-code dispatch. grep rc=1 = no-match
+          # (handled below через -z check), rc>1 = real pipeline error.
+          set +e
+          RESPONSE=$(printf '%s\n' "$REQUEST" | "$BINARY" 2>err.log | grep -m1 '"pong"')
+          GREP_RC=$?
+          set -e
+          if [ "$GREP_RC" -gt 1 ]; then
+            echo "Sidecar smoke pipeline error (grep rc=$GREP_RC). stderr:"
+            cat err.log
+            exit 1
+          fi
           if [ -z "$RESPONSE" ]; then
             echo "Sidecar smoke test FAILED — no pong response. stderr:"
             cat err.log

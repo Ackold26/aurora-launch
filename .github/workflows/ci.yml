@@ -2,6 +2,12 @@ name: CI
 
 # Mini-audit fix HIGH-1: explicit permissions:read at workflow level + per-job.
 # Block 0 baseline (lint + corpus reproducibility) preserved.
+#
+# Scope split (POST_PILOT_BACKLOG M1-WORKFLOW-7 close 2026-05-10):
+#   - ci.yml (этот файл) owns ALL Python work: lint (ruff + mypy) +
+#     pytest matrix Python 3.11/3.12 × OS с coverage + BC corpus +
+#     reproducibility checks.
+#   - test.yml owns non-Python integrations: Rust + Frontend + Cloud.
 
 on:
   push:

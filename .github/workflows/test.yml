@@ -1,11 +1,21 @@
-# Aurora Launch — test pipeline (Python + Rust + Frontend + Cloud).
+# Aurora Launch — non-Python integration tests (Rust + Frontend + Cloud).
 # Runs on PR + push к main. Required green for merge.
 #
-# Mini-audit fixes:
-# - HIGH-1: explicit per-job permissions:read (test workflow needs nothing else)
+# Scope split (POST_PILOT_BACKLOG M1-WORKFLOW-7 close 2026-05-10):
+#   - ci.yml owns ALL Python work: lint (ruff + mypy) + pytest matrix
+#     (Python 3.11/3.12 × Ubuntu/Windows/macOS) с coverage + BC corpus +
+#     reproducibility checks.
+#   - test.yml (этот файл) owns NON-Python integrations: Rust cargo
+#     check/test, Frontend Vitest + svelte-check, Cloud Edge Functions
+#     (Deno/TypeScript).
+# Single Python pytest job ранее существовал в обоих → audit M1-WORKFLOW-7
+# flagged duplication. Удалён здесь, ci.yml authoritative.
+#
+# Mini-audit fixes (earlier):
+# - HIGH-1: explicit per-job permissions:read
 # - HIGH-2: SHA-pin community Rust toolchain action
 
-name: Tests
+name: Integrations
 
 on:
   push:
@@ -18,20 +28,6 @@ permissions:
   contents: read
 
 jobs:
-  python:
-    name: Python pytest
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: pip
-      - run: pip install -e ".[dev]"
-      - run: python -m pytest tests/ -v --tb=short
-
   rust:
     name: Rust cargo test
     runs-on: ubuntu-22.04

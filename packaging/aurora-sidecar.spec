@@ -108,6 +108,21 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+import sys as _sys
+
+# POST_PILOT_BACKLOG M2-PYINSTALLER-3 close (2026-05-10): persistent
+# runtime_tmpdir per-user vs default None (extracts к OS temp at every launch).
+# Default None → 1-2s cold start on Windows + repeated extraction churn.
+# Setting к user-specific path keeps extracted bundle warm между launches.
+# Path uses %LOCALAPPDATA% on Windows / ~/.cache on POSIX (XDG-compatible).
+_RUNTIME_TMPDIR_WIN = r"%LOCALAPPDATA%\Aurora Launch\sidecar-runtime"
+_RUNTIME_TMPDIR_POSIX = "~/.cache/aurora-launch/sidecar-runtime"
+_RUNTIME_TMPDIR = _RUNTIME_TMPDIR_WIN if _sys.platform == "win32" else _RUNTIME_TMPDIR_POSIX
+
+# POST_PILOT_BACKLOG M2-PYINSTALLER-5 close (2026-05-10): Windows .exe metadata
+# (Company / Description / Copyright). Cosmetic для pilot trust signals.
+_VERSION_FILE = str(ROOT / "packaging" / "version_info_win.txt") if _sys.platform == "win32" else None
+
 exe = EXE(
     pyz,
     a.scripts,
@@ -120,11 +135,12 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,  # UPX compression sometimes triggers AV — disable
-    runtime_tmpdir=None,
+    runtime_tmpdir=_RUNTIME_TMPDIR,
     console=True,  # IPC через stdin/stdout — must be console binary
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    version=_VERSION_FILE,
 )
