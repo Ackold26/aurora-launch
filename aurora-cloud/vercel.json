@@ -1,0 +1,35 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
+  "regions": ["fra1", "arn1"],
+  "functions": {
+    "api/sign.ts": { "runtime": "edge", "memory": 256, "maxDuration": 5 },
+    "api/telemetry.ts": { "runtime": "edge", "memory": 256, "maxDuration": 5 },
+    "api/feedback.ts": { "runtime": "edge", "memory": 256, "maxDuration": 10 },
+    "api/updater/[target]/[arch]/[current_version].ts": {
+      "runtime": "edge",
+      "memory": 128,
+      "maxDuration": 3
+    }
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=63072000; includeSubDomains; preload"
+        },
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
+    },
+    {
+      "source": "/api/updater/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=300" }
+      ]
+    }
+  ]
+}

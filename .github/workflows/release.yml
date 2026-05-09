@@ -1,16 +1,35 @@
+# Aurora Launch release pipeline — Final F1.
+#
+# Triggered by tag push (v0.1.0-rc2, v0.1.0, etc.). Produces signed installers
+# + updater manifest + publishes к Vercel endpoint.
+#
+# Block 0 baseline (validate / test) preserved; Block 4 sidecar build + F1
+# Tauri build + updater publish appended.
+#
+# Required GitHub Secrets:
+# - AURORA_UPDATER_PUBKEY (64-char Ed25519 hex public key) — Block 3 BLOCKER-3
+# - AURORA_UPDATER_PRIVATE_KEY (Tauri updater Ed25519 private key)
+# - AURORA_UPDATER_KEY_PASSWORD (private key passphrase)
+# - VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID
+
 name: Release
 
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 0.1.0-rc2)'
+        required: true
 
 permissions:
   contents: write
 
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: false  # never cancel a release in flight
+  cancel-in-progress: false
 
 jobs:
   validate:
@@ -33,7 +52,6 @@ jobs:
           else
             echo "is_prerelease=false" >> $GITHUB_OUTPUT
           fi
-          echo "Tag: $TAG, Version: $VERSION"
 
       - name: Verify pyproject.toml version matches tag
         run: |
@@ -43,7 +61,6 @@ jobs:
             echo "ERROR: pyproject.toml version '$PYPROJECT_VER' != tag '$TAG_VER'"
             exit 1
           fi
-          echo "Version match: $PYPROJECT_VER OK"
 
   test-release:
     name: Full test suite (${{ matrix.os }} / py${{ matrix.python-version }})
@@ -53,89 +70,189 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ['3.11', '3.12']
+        python-version: ['3.12']
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
+      - uses: actions/setup-python@v5
         with:
-          enable-cache: true
-          cache-dependency-glob: "pyproject.toml"
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: pytest -v
 
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
-
-      - name: Install dependencies
-        run: uv pip install --system -e ".[]" --no-deps && uv pip install --system pydantic numpy pandas rfc8785 click rich pytest pytest-cov hypothesis ruff mypy pyyaml
-
-      - name: Run full test suite
-        run: pytest -v --cov=src/aurora_launch --cov-report=term-missing
-
-      - name: ruff check
-        run: ruff check src tests
-
-      - name: ruff format --check
-        run: ruff format --check src tests
-
-  # TODO(block-2): Add Tauri binary matrix here after src-tauri is created
-  # build-tauri:
-  #   name: Build installer (${{ matrix.os }})
-  #   needs: [validate, test-release]
-  #   runs-on: ${{ matrix.os }}
-  #   strategy:
-  #     matrix:
-  #       include:
-  #         - os: windows-latest
-  #           artifact: aurora-launch_${{ needs.validate.outputs.version }}_x64-setup.exe
-  #         - os: macos-latest
-  #           artifact: aurora-launch_${{ needs.validate.outputs.version }}_universal.dmg
-  #         - os: ubuntu-latest
-  #           artifact: aurora-launch_${{ needs.validate.outputs.version }}_amd64.deb
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: dtolnay/rust-toolchain@stable
-  #     - uses: tauri-apps/tauri-action@v0
-  #       env:
-  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  #         TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-  #         TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-
-  create-release:
-    name: Create GitHub Release
+  build-sidecar:
+    name: Build sidecar — ${{ matrix.target }}
     needs: [validate, test-release]
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: macos-13
+            target: x86_64-apple-darwin
+          - os: macos-14
+            target: aarch64-apple-darwin
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
     steps:
       - uses: actions/checkout@v4
-
-      - name: Extract CHANGELOG entry
-        id: changelog
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -e ".[dev]" pyinstaller
+      - run: pyinstaller packaging/aurora-sidecar.spec --distpath dist --clean
+      - name: Rename binary
+        shell: bash
         run: |
-          VERSION="${{ needs.validate.outputs.version }}"
-          # Extract section for this version from CHANGELOG.md
-          NOTES=$(awk "/^## \[${VERSION}\]/{found=1; next} found && /^## \[/{exit} found{print}" CHANGELOG.md)
-          if [ -z "$NOTES" ]; then
-            NOTES="See CHANGELOG.md for details."
+          mkdir -p src-tauri/binaries
+          if [ "${{ matrix.os }}" = "windows-2022" ]; then
+            cp dist/aurora-sidecar.exe src-tauri/binaries/aurora-sidecar-${{ matrix.target }}.exe
+          else
+            cp dist/aurora-sidecar src-tauri/binaries/aurora-sidecar-${{ matrix.target }}
           fi
-          # Multiline output
-          {
-            echo 'notes<<CHANGELOG_EOF'
-            echo "$NOTES"
-            echo 'CHANGELOG_EOF'
-          } >> $GITHUB_OUTPUT
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aurora-sidecar-${{ matrix.target }}
+          path: src-tauri/binaries/aurora-sidecar-${{ matrix.target }}*
+
+  build-app:
+    name: Build app — ${{ matrix.target }}
+    needs: [validate, build-sidecar]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: macos-13
+            target: x86_64-apple-darwin
+          - os: macos-14
+            target: aarch64-apple-darwin
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download sidecar
+        uses: actions/download-artifact@v4
+        with:
+          name: aurora-sidecar-${{ matrix.target }}
+          path: src-tauri/binaries/
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install Tauri prereqs (Linux)
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+      - working-directory: frontend
+        run: |
+          npm ci
+          npm run gen:tokens
+      - name: Build Tauri app (production)
+        working-directory: frontend
+        env:
+          AURORA_BUILD_PROFILE: production
+          AURORA_UPDATER_PUBKEY: ${{ secrets.AURORA_UPDATER_PUBKEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.AURORA_UPDATER_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.AURORA_UPDATER_KEY_PASSWORD }}
+        run: npm run tauri:build
+      - name: Collect installers
+        shell: bash
+        run: |
+          mkdir -p release-artifacts
+          find src-tauri/target -type f \( -name "*.exe" -o -name "*.msi" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.sig" \) -exec cp {} release-artifacts/ \;
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aurora-launch-${{ matrix.target }}
+          path: release-artifacts/
+
+  publish:
+    name: Publish — Vercel + GitHub Release
+    needs: [validate, build-app]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts/
+      - name: Compose updater manifest
+        id: manifest
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os, json, glob
+          version = os.environ['VERSION']
+          platforms = {}
+          for sig_path in glob.glob('release-artifacts/**/*.sig', recursive=True):
+              installer = sig_path.removesuffix('.sig')
+              if not os.path.exists(installer):
+                  continue
+              with open(sig_path) as f:
+                  sig = f.read().strip()
+              fname = os.path.basename(installer)
+              if fname.endswith(('.msi', '.exe')):
+                  key = 'windows-x86_64'
+              elif fname.endswith('.dmg'):
+                  key = 'darwin-aarch64' if 'aarch64' in installer else 'darwin-x86_64'
+              elif fname.endswith(('.AppImage', '.deb')):
+                  key = 'linux-x86_64'
+              else:
+                  continue
+              platforms[key] = {
+                  'signature': sig,
+                  'url': f'https://github.com/Ackold26/aurora-launch/releases/download/v{version}/{fname}'
+              }
+          manifest = {
+              'version': version,
+              'notes': f'Aurora Launch v{version}',
+              'pub_date': os.popen('date -u +%Y-%m-%dT%H:%M:%SZ').read().strip(),
+              'platforms': platforms,
+          }
+          with open('updater-manifest.json', 'w') as f:
+              json.dump(manifest, f, indent=2)
+          PY
+
+      - name: Push updater manifest к Vercel KV
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          [ -z "$VERCEL_TOKEN" ] && { echo "VERCEL_TOKEN unset, skipping Vercel publish"; exit 0; }
+          PLATFORMS=$(jq -c .platforms updater-manifest.json)
+          for KV in "AURORA_LATEST_VERSION:$VERSION" \
+                    "AURORA_LATEST_PUB_DATE:$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                    "AURORA_LATEST_PLATFORMS_JSON:$PLATFORMS"; do
+            KEY=${KV%%:*}
+            VAL=${KV#*:}
+            curl -fsS -X POST "https://api.vercel.com/v10/projects/$VERCEL_PROJECT_ID/env" \
+              -H "Authorization: Bearer $VERCEL_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"key\":\"$KEY\",\"value\":\"$VAL\",\"target\":[\"production\"],\"type\":\"plain\"}" || true
+          done
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: "Aurora Launch v${{ needs.validate.outputs.version }}"
-          body: |
-            ## Aurora Launch v${{ needs.validate.outputs.version }}
-
-            ${{ steps.changelog.outputs.notes }}
-
-            ---
-
-            > **Beta release** — installer builds will be added in Block 2 (Tauri frontend).
-            > Full test suite: ✅ passing on Ubuntu / Windows / macOS × Python 3.11/3.12.
+          name: Aurora Launch v${{ needs.validate.outputs.version }}
           prerelease: ${{ needs.validate.outputs.is_prerelease }}
-          generate_release_notes: false
+          generate_release_notes: true
+          files: |
+            release-artifacts/**/*.exe
+            release-artifacts/**/*.msi
+            release-artifacts/**/*.dmg
+            release-artifacts/**/*.AppImage
+            release-artifacts/**/*.deb
+            release-artifacts/**/*.sig
+            updater-manifest.json

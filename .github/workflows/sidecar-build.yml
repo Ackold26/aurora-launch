@@ -1,0 +1,111 @@
+# PyInstaller cross-platform sidecar build (Block 4 deferred B4-LOW-1).
+# Triggered on push к main, on tags, and manually via workflow_dispatch.
+# Produces aurora-sidecar binary suffixed с Tauri target triple.
+
+name: Sidecar build (PyInstaller)
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - 'src/aurora_launch/sidecar/**'
+      - 'packaging/aurora-sidecar.spec'
+      - 'pyproject.toml'
+      - '.github/workflows/sidecar-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.target }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            python: '3.12'
+            arch: x86_64
+            binary_name: aurora-sidecar
+          - os: macos-13
+            target: x86_64-apple-darwin
+            python: '3.12'
+            arch: x86_64
+            binary_name: aurora-sidecar
+          - os: macos-14
+            target: aarch64-apple-darwin
+            python: '3.12'
+            arch: aarch64
+            binary_name: aurora-sidecar
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+            python: '3.12'
+            arch: x86_64
+            binary_name: aurora-sidecar.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: Install runtime + build deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install pyinstaller
+
+      - name: Run sidecar tests (INV-08 actual pytest)
+        run: python -m pytest tests/test_sidecar_auth.py tests/test_sidecar_protocol_server.py -v
+
+      - name: Build sidecar binary
+        run: |
+          pyinstaller packaging/aurora-sidecar.spec --distpath dist --clean
+
+      - name: Smoke test built binary (INV-02 runtime smoke)
+        shell: bash
+        env:
+          AURORA_SIDECAR_AUTH_TOKEN: '${{ secrets.SIDECAR_SMOKE_TOKEN }}'
+        run: |
+          # Generate a smoke token if secret missing (CI без secret access)
+          if [ -z "$AURORA_SIDECAR_AUTH_TOKEN" ]; then
+            AURORA_SIDECAR_AUTH_TOKEN="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+            export AURORA_SIDECAR_AUTH_TOKEN
+          fi
+          # Compose ping request, pipe to binary, verify response
+          if [ "${{ matrix.os }}" = "windows-2022" ]; then
+            BINARY="dist/${{ matrix.binary_name }}"
+          else
+            BINARY="./dist/${{ matrix.binary_name }}"
+          fi
+          REQUEST="{\"id\":1,\"method\":\"ping\",\"params\":{},\"auth\":\"$AURORA_SIDECAR_AUTH_TOKEN\"}"
+          RESPONSE=$(printf '%s\n' "$REQUEST" | "$BINARY" 2>&1 | grep -m1 '"pong"' || true)
+          if [ -z "$RESPONSE" ]; then
+            echo "Sidecar smoke test FAILED — no pong response"
+            exit 1
+          fi
+          echo "Sidecar smoke OK: $RESPONSE"
+
+      - name: Rename binary с Tauri target suffix
+        shell: bash
+        run: |
+          mkdir -p src-tauri/binaries
+          if [ "${{ matrix.os }}" = "windows-2022" ]; then
+            cp dist/${{ matrix.binary_name }} src-tauri/binaries/aurora-sidecar-${{ matrix.target }}.exe
+          else
+            cp dist/${{ matrix.binary_name }} src-tauri/binaries/aurora-sidecar-${{ matrix.target }}
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aurora-sidecar-${{ matrix.target }}
+          path: src-tauri/binaries/aurora-sidecar-${{ matrix.target }}*
+          retention-days: 30
