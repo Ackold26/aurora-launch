@@ -6,9 +6,12 @@
 <script lang="ts">
   import { _ } from 'svelte-i18n';
   import { activeBundle, manifestSummary } from '$lib/stores/bundle';
+  import { readEntryJson } from '$lib/stores/bundle';
   import Card from '$lib/components/Card.svelte';
   import Skeleton from '$lib/components/Skeleton.svelte';
   import TrustBadge from '$lib/components/TrustBadge.svelte';
+  import RadarChart from '$lib/components/RadarChart.svelte';
+  import ForecastCone from '$lib/components/ForecastCone.svelte';
   import { ipc } from '$ipc/client';
   import type { VerificationResult } from '$ipc/client';
 
@@ -19,6 +22,80 @@
   let visited = $state<Set<Tab>>(new Set(['metadata']));
   let verification = $state<VerificationResult | null>(null);
   let verifying = $state(false);
+
+  // Block 4 Phase 5: real data tabs (was Skeleton placeholders)
+  let similarityData = $state<{
+    dimensions: { label: string; value: number }[];
+    score: number;
+  } | null>(null);
+  let forecastData = $state<{
+    points: { weekIndex: number; point: number; ciLower: number; ciUpper: number }[];
+    horizonWeeks: number;
+  } | null>(null);
+  let loadingSimilarity = $state(false);
+  let loadingForecast = $state(false);
+
+  $effect(() => {
+    if (activeTab === 'similarity' && $activeBundle && !similarityData && !loadingSimilarity) {
+      loadSimilarity();
+    }
+    if (activeTab === 'forecast' && $activeBundle && !forecastData && !loadingForecast) {
+      loadForecast();
+    }
+  });
+
+  async function loadSimilarity() {
+    loadingSimilarity = true;
+    try {
+      const payload = await readEntryJson<{
+        dimensions: Record<string, number>;
+        aggregate_score: number;
+      }>('similarity.json');
+      if (payload) {
+        similarityData = {
+          dimensions: Object.entries(payload.dimensions || {}).map(([label, value]) => ({
+            label,
+            value
+          })),
+          score: payload.aggregate_score
+        };
+      }
+    } catch (e) {
+      console.error('similarity load failed', e);
+    } finally {
+      loadingSimilarity = false;
+    }
+  }
+
+  async function loadForecast() {
+    loadingForecast = true;
+    try {
+      const payload = await readEntryJson<{
+        weekly_points: Array<{
+          week_index: number;
+          point: number;
+          ci_lower: number;
+          ci_upper: number;
+        }>;
+        horizon_weeks: number;
+      }>('forecast.json');
+      if (payload) {
+        forecastData = {
+          points: payload.weekly_points.map((p) => ({
+            weekIndex: p.week_index,
+            point: p.point,
+            ciLower: p.ci_lower,
+            ciUpper: p.ci_upper
+          })),
+          horizonWeeks: payload.horizon_weeks
+        };
+      }
+    } catch (e) {
+      console.error('forecast load failed', e);
+    } finally {
+      loadingForecast = false;
+    }
+  }
 
   function selectTab(t: Tab) {
     activeTab = t;
@@ -35,9 +112,11 @@
     if (!$activeBundle) return;
     verifying = true;
     try {
-      const path = manifestPath($activeBundle.manifest);
+      // Block 4 Phase 5: BundleHandleSummary now exposes `path` field
+      // (was empty string stub до Block 4). verify_bundle_signature gets
+      // real path → real result.
       const result = await ipc.verifyBundleSignature({
-        bundle_path: path,
+        bundle_path: $activeBundle.path,
         trust_local_dev: true
       });
       verification = result;
@@ -46,13 +125,6 @@
     } finally {
       verifying = false;
     }
-  }
-
-  function manifestPath(_manifest: unknown): string {
-    // We don't actually have the path в this scope; in Block 4 the bundle
-    // store will keep `path` alongside the handle. For now: empty string,
-    // backend returns BundleNotFound → UI shows error gracefully.
-    return '';
   }
 </script>
 
@@ -109,8 +181,18 @@
         <div role="tabpanel" id="tab-similarity" hidden={activeTab !== 'similarity'}>
           <Card title={$_('inspector.tab.similarity')}>
             {#snippet children()}
-              <p>Similarity dimensions extracted from bundle… (Block 4 wires real read)</p>
-              <Skeleton width="100%" height="180px" rounded />
+              {#if loadingSimilarity}
+                <Skeleton width="100%" height="180px" rounded />
+              {:else if similarityData}
+                <RadarChart
+                  dimensions={similarityData.dimensions}
+                  size={320}
+                  title="Similarity (saved)"
+                />
+                <p class="score">Aggregate score: <strong>{(similarityData.score * 100).toFixed(0)}%</strong></p>
+              {:else}
+                <p class="muted">No similarity entry в bundle (workflow not yet computed).</p>
+              {/if}
             {/snippet}
           </Card>
         </div>
@@ -120,8 +202,19 @@
         <div role="tabpanel" id="tab-forecast" hidden={activeTab !== 'forecast'}>
           <Card title={$_('inspector.tab.forecast')}>
             {#snippet children()}
-              <p>Forecast cone visualisation (Chart.js tree-shaken, Block 4 wires data).</p>
-              <Skeleton width="100%" height="240px" rounded />
+              {#if loadingForecast}
+                <Skeleton width="100%" height="240px" rounded />
+              {:else if forecastData}
+                <ForecastCone
+                  points={forecastData.points}
+                  horizonWeeks={forecastData.horizonWeeks}
+                  width={620}
+                  height={300}
+                  title="Forecast cone (saved)"
+                />
+              {:else}
+                <p class="muted">No forecast entry в bundle (workflow not yet completed).</p>
+              {/if}
             {/snippet}
           </Card>
         </div>
@@ -224,5 +317,20 @@
   .mono {
     font-family: var(--font-mono);
     font-size: 0.9em;
+  }
+
+  .muted {
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
+  .score {
+    color: var(--text-secondary);
+    margin-top: var(--spacing-3);
+  }
+
+  .score strong {
+    color: var(--accent);
+    font-family: var(--font-mono);
   }
 </style>

@@ -17,7 +17,8 @@ describe('bundle store', () => {
       source_format: 'zip',
       size_bytes: 1234,
       revision: 0,
-      manifest: { project_id: 'p', revision: 0, files: {} }
+      manifest: { project_id: 'p', revision: 0, files: {} },
+      path: '/tmp/foo.aurora'
     }));
     const handle = await openBundleAt('/tmp/foo.aurora');
     expect(handle.handle_id).toBe('h1');
@@ -30,7 +31,8 @@ describe('bundle store', () => {
       source_format: 'zip',
       size_bytes: 1234,
       revision: 0,
-      manifest: {} as never
+      manifest: {} as never,
+      path: '/tmp/foo.aurora'
     });
     const mock = (globalThis as { __auroraIpcMock: ReturnType<typeof vi.fn> }).__auroraIpcMock;
     mock.mockImplementationOnce(async () => undefined);
@@ -51,7 +53,8 @@ describe('bundle store', () => {
       source_format: 'zip',
       size_bytes: 100,
       revision: 0,
-      manifest: {} as never
+      manifest: {} as never,
+      path: '/tmp/foo.aurora'
     });
     const mock = (globalThis as { __auroraIpcMock: ReturnType<typeof vi.fn> }).__auroraIpcMock;
     const json = JSON.stringify({ k: 1 });

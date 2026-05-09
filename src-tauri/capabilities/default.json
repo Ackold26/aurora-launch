@@ -32,6 +32,16 @@
     "dialog:allow-save",
     "dialog:allow-message",
     "shell:allow-open",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "binaries/aurora-sidecar",
+          "sidecar": true,
+          "args": []
+        }
+      ]
+    },
     "notification:default",
     "notification:allow-notify",
     "process:default",

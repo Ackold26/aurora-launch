@@ -168,6 +168,7 @@ pub async fn open_bundle(
         size_bytes: metadata.len(),
         revision,
         manifest: manifest_json.clone(),
+        path: path.display().to_string(),
     };
 
     let handle = OpenBundleHandle {
@@ -365,14 +366,45 @@ pub async fn get_manifest(
 
 #[tauri::command]
 pub async fn save_bundle(
-    _state: State<'_, AppState>,
-    _handle_id: String,
-    _target_path: String,
+    state: State<'_, AppState>,
+    sidecar: State<'_, std::sync::Arc<crate::sidecar::SidecarManager>>,
+    handle_id: String,
+    target_path: String,
+    extra_files_base64: Option<std::collections::HashMap<String, String>>,
+    expected_revision: Option<i64>,
 ) -> AuroraResult<serde_json::Value> {
-    // Phase B: full save flow goes через Python backend (BundleZipWriter).
-    // Block 2A wires это via Tauri sidecar → Python subprocess (deferred Block 4
-    // when real adapter integration lands). Block 2 stub:
-    Err(AuroraError::Other(
-        "save_bundle: deferred Block 4 (Python BundleZipWriter sidecar integration)".into(),
-    ))
+    // Block 4 Phase 2: route save_bundle через Python sidecar JSON-RPC.
+    // Sidecar wraps BundleZipWriter с atomic write + rolling backup +
+    // optimistic concurrency check (revision counter).
+    let source_path = {
+        let bundles = state
+            .bundles
+            .lock()
+            .map_err(|_| AuroraError::Other("bundle map poisoned".into()))?;
+        match bundles.get(&handle_id) {
+            Some(handle) => Some(handle.path.clone()),
+            None => None, // Initial save (no source bundle yet) — sidecar handles fresh-create branch
+        }
+    };
+
+    let mut params = serde_json::json!({
+        "target_path": target_path,
+    });
+    if let Some(p) = source_path {
+        params["source_path"] = serde_json::Value::String(p.display().to_string());
+    } else {
+        // Sentinel for "no existing bundle" — sidecar checks file existence
+        params["source_path"] = serde_json::Value::String(String::new());
+    }
+    if let Some(rev) = expected_revision {
+        params["expected_revision"] = serde_json::Value::Number(rev.into());
+    }
+    if let Some(extras) = extra_files_base64 {
+        params["extra_files"] = serde_json::to_value(extras)
+            .map_err(|e| AuroraError::Other(format!("extras serialise: {e}")))?;
+    }
+
+    sidecar
+        .invoke::<serde_json::Value>("save_bundle", params)
+        .await
 }

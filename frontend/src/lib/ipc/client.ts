@@ -23,6 +23,8 @@ export interface BundleHandleSummary {
   size_bytes: number;
   revision: number;
   manifest: BundleManifest;
+  /** Block 4 Phase 5: filesystem path used by verify_bundle_signature. */
+  path: string;
 }
 
 export interface BundleEntryPayload {
@@ -103,6 +105,50 @@ export interface BuildInfo {
   is_dev_build: boolean;
   rust_version: string;
   cargo_pkg_name: string;
+}
+
+export interface ParseDataFileInput {
+  path: string;
+  adapter_id?: string;
+  max_records?: number;
+}
+
+export interface ParseDataFileResult {
+  adapter_id: string;
+  adapter_metadata: Record<string, unknown>;
+  record_count: number;
+  records: Array<Record<string, unknown>>;
+}
+
+export interface AdapterInfo {
+  adapter_id: string;
+  adapter_version: string;
+  schema_version: string;
+  sample_files_glob: string[];
+  canonical_record_mapping: Record<string, string>;
+  detected_signatures: string[];
+}
+
+export interface ForecastProgressEvent {
+  forecast_handle: string;
+  week_index: number;
+  point_forecast: number;
+  ci_lower: number;
+  ci_upper: number;
+  progress_pct: number;
+  elapsed_ms: number;
+}
+
+export interface ForecastCompletedEvent {
+  forecast_handle: string;
+  horizon_weeks: number;
+  elapsed_ms: number;
+}
+
+export interface ForecastFailedEvent {
+  forecast_handle: string;
+  error: string;
+  kind: string;
 }
 
 export interface TelemetryEvent {
@@ -221,5 +267,25 @@ export const ipc = {
     invoke<AuditEntry[]>('list_audit_entries', { query }),
 
   // build info
-  getBuildInfo: () => invoke<BuildInfo>('get_build_info')
+  getBuildInfo: () => invoke<BuildInfo>('get_build_info'),
+
+  // adapters (Block 4 Phase 3)
+  parseDataFile: (input: ParseDataFileInput) =>
+    invoke<ParseDataFileResult>('parse_data_file', { input }),
+  listAdapters: () => invoke<AdapterInfo[]>('list_adapters'),
+
+  // save_bundle (Block 4 Phase 2 — full sidecar wiring)
+  saveBundleViaSidecar: (input: SaveBundleInput) =>
+    invoke<{
+      revision: number;
+      manifest: BundleManifest;
+      composite_hash: string;
+    }>('save_bundle', input)
 };
+
+export interface SaveBundleInput {
+  handleId: string;
+  targetPath: string;
+  extraFilesBase64?: Record<string, string>;
+  expectedRevision?: number | null;
+}

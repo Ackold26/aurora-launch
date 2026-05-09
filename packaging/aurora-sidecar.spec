@@ -1,0 +1,99 @@
+# PyInstaller spec для aurora-sidecar binary (Block 4 D1).
+#
+# Build с CI release pipeline:
+#   pip install pyinstaller
+#   pyinstaller packaging/aurora-sidecar.spec --distpath src-tauri/binaries/
+#
+# Output binary placed в `src-tauri/binaries/aurora-sidecar(.exe)`. Tauri
+# externalBin entry в tauri.conf.json picks it up automatically (suffixed
+# с -<target_triple> per platform).
+#
+# Cross-platform: Windows + macOS + Linux. PyInstaller spec only — actual
+# cross-compile is platform-specific (build на каждой target separately
+# in CI matrix).
+
+# -*- mode: python ; coding: utf-8 -*-
+from pathlib import Path
+
+block_cipher = None
+
+ROOT = Path(SPECPATH).parent
+ENTRY = ROOT / "src" / "aurora_launch" / "sidecar" / "__main__.py"
+
+a = Analysis(
+    [str(ENTRY)],
+    pathex=[str(ROOT / "src")],
+    binaries=[],
+    datas=[],
+    # Force-collect packages с lazy / dynamic imports — INV-02 lazy import
+    # protection. Numpy / scipy bring native libs PyInstaller may otherwise
+    # miss.
+    hiddenimports=[
+        "aurora_launch",
+        "aurora_launch.engines",
+        "aurora_launch.engines.bundle_container",
+        "aurora_launch.engines.bundle_streaming",
+        "aurora_launch.engines.bundle_persistence",
+        "aurora_launch.engines.bundle_lock",
+        "aurora_launch.engines.bundle_manifest",
+        "aurora_launch.engines.format_adapters",
+        "aurora_launch.engines.format_adapters.dsm_v2023",
+        "aurora_launch.engines.format_adapters.dsm_v2024",
+        "aurora_launch.engines.format_adapters.dsm_v2025",
+        "aurora_launch.engines.format_adapters.mediascope_adex",
+        "aurora_launch.engines.format_adapters.mediascope_tv_index",
+        "aurora_launch.engines.format_adapters.registry",
+        "aurora_launch.engines.launch_validate",
+        "aurora_launch.engines.launch_forecast",
+        "aurora_launch.engines.launch_conformal",
+        "aurora_launch.engines.similarity_calculator",
+        "aurora_launch.schemas",
+        "aurora_launch.schemas.adaptation",
+        "aurora_launch.schemas.proxy",
+        "aurora_launch.schemas.bundle",
+        "aurora_launch.sidecar.auth",
+        "aurora_launch.sidecar.events",
+        "aurora_launch.sidecar.methods",
+        "aurora_launch.sidecar.protocol",
+        "aurora_launch.sidecar.server",
+        "rfc8785",
+        "pydantic",
+        "numpy",
+    ],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[
+        # Exclude heavy ML packages until Phase A integration: PyTorch / TF
+        # not used by core sidecar; Phi-3.5 download path will load lazily.
+        "torch",
+        "tensorflow",
+    ],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    [],
+    name="aurora-sidecar",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,  # UPX compression sometimes triggers AV — disable
+    runtime_tmpdir=None,
+    console=True,  # IPC через stdin/stdout — must be console binary
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)

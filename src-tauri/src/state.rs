@@ -52,6 +52,11 @@ pub struct BundleHandleSummary {
     pub size_bytes: u64,
     pub revision: i64,
     pub manifest: serde_json::Value,
+    /// Block 4 Phase 5: filesystem path included so Inspector can call
+    /// `verify_bundle_signature` без storing path separately. INV-01: this
+    /// is an additive Optional field (per CPI-02 schema invariant); existing
+    /// frontend code that doesn't read it is unaffected.
+    pub path: String,
 }
 
 pub async fn init_local_storage(app_handle: &AppHandle) -> AuroraResult<()> {

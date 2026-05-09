@@ -1,6 +1,7 @@
 //! IPC command modules. Each module exports tauri::command-decorated functions
 //! registered в lib.rs::run().
 
+pub mod adapters;
 pub mod audit_log;
 pub mod build_info;
 pub mod bundle;

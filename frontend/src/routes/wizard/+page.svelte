@@ -8,13 +8,24 @@
   import { fly } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
 
+  import { onDestroy } from 'svelte';
+  import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+
   import Button from '$lib/components/Button.svelte';
   import Card from '$lib/components/Card.svelte';
   import VerdictPanel from '$lib/components/VerdictPanel.svelte';
   import RadarChart from '$lib/components/RadarChart.svelte';
   import ProgressBar from '$lib/components/ProgressBar.svelte';
+  import ForecastCone from '$lib/components/ForecastCone.svelte';
   import { ipc } from '$ipc/client';
-  import type { SimilarityDimensionScores } from '$types/aurora-schemas';
+  import type {
+    SimilarityDimensionScores
+  } from '$types/aurora-schemas';
+  import type {
+    ForecastProgressEvent,
+    ForecastCompletedEvent,
+    ForecastFailedEvent
+  } from '$ipc/client';
   import { pushToast } from '$lib/stores/toast';
   import { determineVerdict } from '$lib/utils/verdict';
 
@@ -30,6 +41,9 @@
 
   let step = $state(0);
   let importedFile = $state<string | null>(null);
+  let importedAdapter = $state<string | null>(null);
+  let importedRecordCount = $state<number | null>(null);
+  let importing = $state(false);
   let mappingDone = $state(false);
   let selectedProxy = $state<string | null>(null);
   let similarityScore = $state<number | null>(null);
@@ -39,6 +53,12 @@
   let forecastStatus = $state<{ progress: number | null; elapsedMs: number; etaMs: number | null }>(
     { progress: null, elapsedMs: 0, etaMs: null }
   );
+  let forecastPoints = $state<
+    { weekIndex: number; point: number; ciLower: number; ciUpper: number }[]
+  >([]);
+  let forecastHorizon = $state(26);
+  let forecastCompleted = $state(false);
+  let unlistenFns: UnlistenFn[] = [];
   let certSigned = $state(false);
 
   // Block 3 HIGH-10 fix: import from $lib/utils/verdict (SSOT).
@@ -79,7 +99,28 @@
     });
     if (typeof selected === 'string') {
       importedFile = selected;
-      pushToast({ level: 'success', title: 'Imported', body: selected });
+      importing = true;
+      try {
+        // Block 4 Phase 3: route к real adapter via sidecar
+        const result = await ipc.parseDataFile({ path: selected, max_records: 100 });
+        importedAdapter = result.adapter_id;
+        importedRecordCount = result.record_count;
+        pushToast({
+          level: 'success',
+          title: `Parsed via ${result.adapter_id}`,
+          body: `${result.record_count} records detected`
+        });
+      } catch (e) {
+        pushToast({
+          level: 'danger',
+          title: 'Import failed',
+          body: String(e)
+        });
+        importedAdapter = null;
+        importedRecordCount = null;
+      } finally {
+        importing = false;
+      }
     }
   }
 
@@ -123,32 +164,86 @@
   }
 
   async function startForecast() {
+    forecastPoints = [];
+    forecastCompleted = false;
+    forecastStatus = { progress: null, elapsedMs: 0, etaMs: null };
+
+    // Block 4 Phase 4: subscribe к sidecar event stream BEFORE invoking
+    // start_forecast (avoid event race during initial bootstrap).
+    const unlistenProgress = await listen<ForecastProgressEvent>(
+      'sidecar://forecast_progress',
+      ({ payload }) => {
+        if (payload.forecast_handle !== forecastHandleId) return;
+        forecastPoints = [
+          ...forecastPoints,
+          {
+            weekIndex: payload.week_index,
+            point: payload.point_forecast,
+            ciLower: payload.ci_lower,
+            ciUpper: payload.ci_upper
+          }
+        ];
+        forecastStatus = {
+          progress: payload.progress_pct / 100,
+          elapsedMs: payload.elapsed_ms,
+          etaMs: null
+        };
+      }
+    );
+    const unlistenCompleted = await listen<ForecastCompletedEvent>(
+      'sidecar://forecast_completed',
+      ({ payload }) => {
+        if (payload.forecast_handle !== forecastHandleId) return;
+        forecastCompleted = true;
+        forecastStatus = { ...forecastStatus, progress: 1 };
+        pushToast({
+          level: 'success',
+          title: $_('forecast.completed', {
+            values: { seconds: Math.round(payload.elapsed_ms / 1000) }
+          })
+        });
+      }
+    );
+    const unlistenCancelled = await listen<{ forecast_handle: string; week_index: number }>(
+      'sidecar://forecast_cancelled',
+      ({ payload }) => {
+        if (payload.forecast_handle !== forecastHandleId) return;
+        pushToast({ level: 'info', title: $_('forecast.cancelled') });
+      }
+    );
+    const unlistenFailed = await listen<ForecastFailedEvent>(
+      'sidecar://forecast_failed',
+      ({ payload }) => {
+        if (payload.forecast_handle !== forecastHandleId) return;
+        pushToast({
+          level: 'danger',
+          title: 'Forecast failed',
+          body: `${payload.kind}: ${payload.error}`
+        });
+      }
+    );
+    unlistenFns.push(unlistenProgress, unlistenCompleted, unlistenCancelled, unlistenFailed);
+
     try {
+      forecastHorizon = 26;
       const handle = await ipc.startForecast({
         project_id: crypto.randomUUID(),
-        horizon_weeks: 26,
+        horizon_weeks: forecastHorizon,
         seed: 42
       });
       forecastHandleId = handle.handle_id;
-      // Poll status (Block 4 will replace с event-stream)
-      const startedAt = Date.now();
-      const pollFn = async () => {
-        if (!forecastHandleId) return;
-        const s = await ipc.getForecastStatus(forecastHandleId);
-        forecastStatus = {
-          progress: s.state === 'completed' ? 1 : null,
-          elapsedMs: Date.now() - startedAt,
-          etaMs: s.eta_ms
-        };
-        if (s.state === 'running') {
-          setTimeout(pollFn, 800);
-        }
-      };
-      pollFn();
     } catch (e) {
       pushToast({ level: 'danger', title: 'Forecast start failed', body: String(e) });
+      // Clean up listeners если spawn failed
+      for (const u of unlistenFns) u();
+      unlistenFns = [];
     }
   }
+
+  onDestroy(() => {
+    for (const u of unlistenFns) u();
+    unlistenFns = [];
+  });
 
   async function cancelForecast() {
     if (!forecastHandleId) return;
@@ -188,11 +283,19 @@
         {#snippet children()}
           <p>Импортируйте DSM/Mediascope файлы или используйте Aurora Data Studio экспорт.</p>
           <div class="row">
-            <Button variant="primary" onclick={pickImport}>
+            <Button variant="primary" onclick={pickImport} loading={importing}>
               {#snippet children()}Choose file{/snippet}
             </Button>
             {#if importedFile}<code>{importedFile}</code>{/if}
           </div>
+          {#if importedAdapter}
+            <div class="import-summary">
+              <strong>Adapter:</strong> {importedAdapter}
+              {#if importedRecordCount !== null}
+                · <strong>{importedRecordCount}</strong> records
+              {/if}
+            </div>
+          {/if}
         {/snippet}
       </Card>
     {:else if step === 1}
@@ -247,15 +350,28 @@
               {#snippet children()}Start forecast{/snippet}
             </Button>
           {:else}
-            <ProgressBar
-              progress={forecastStatus.progress}
-              elapsedMs={forecastStatus.elapsedMs}
-              etaMs={forecastStatus.etaMs}
-              label={forecastStatus.progress === 1 ? $_('forecast.completed', { values: { seconds: Math.round(forecastStatus.elapsedMs / 1000) } }) : 'Running…'}
-            />
-            <Button variant="ghost" onclick={cancelForecast}>
-              {#snippet children()}{$_('wizard.cancel')}{/snippet}
-            </Button>
+            <div class="forecast-running">
+              <ProgressBar
+                progress={forecastStatus.progress}
+                elapsedMs={forecastStatus.elapsedMs}
+                etaMs={forecastStatus.etaMs}
+                label={forecastCompleted
+                  ? $_('forecast.completed', { values: { seconds: Math.round(forecastStatus.elapsedMs / 1000) } })
+                  : 'Running…'}
+              />
+              <ForecastCone
+                points={forecastPoints}
+                horizonWeeks={forecastHorizon}
+                width={620}
+                height={300}
+                title="Forecast cone (live streaming)"
+              />
+              {#if !forecastCompleted}
+                <Button variant="ghost" onclick={cancelForecast}>
+                  {#snippet children()}{$_('wizard.cancel')}{/snippet}
+                </Button>
+              {/if}
+            </div>
           {/if}
         {/snippet}
       </Card>

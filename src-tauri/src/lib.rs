@@ -19,6 +19,7 @@ use std::sync::Mutex;
 
 mod commands;
 mod errors;
+mod sidecar;
 mod state;
 
 use errors::AuroraError;
@@ -82,6 +83,9 @@ pub fn run() {
             commands::audit_log::list_audit_entries,
             // build info
             commands::build_info::get_build_info,
+            // adapters (Block 4 Phase 3)
+            commands::adapters::parse_data_file,
+            commands::adapters::list_adapters,
         ])
         .setup(|app| {
             // Initialize local SQLite for telemetry + audit log
@@ -89,6 +93,26 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = state::init_local_storage(&app_handle).await {
                     log::error!("Failed to initialize local storage: {e}");
+                }
+            });
+
+            // Block 4 Phase 1: spawn Python sidecar (long-running daemon).
+            // Best-effort — if sidecar binary is missing (dev w/o PyInstaller),
+            // app continues с degraded functionality (save/forecast/parse fail
+            // gracefully via AuroraError::Other "sidecar not running").
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                match sidecar::SidecarManager::spawn(&app_handle).await {
+                    Ok(manager) => {
+                        app_handle.manage(manager);
+                        log::info!("Sidecar manager initialised");
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Sidecar spawn failed (degraded mode — Phase 4 dependent flows \
+                             will fail with sidecar_not_running): {e}"
+                        );
+                    }
                 }
             });
             Ok(())
