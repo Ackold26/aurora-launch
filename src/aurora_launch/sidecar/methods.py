@@ -336,7 +336,52 @@ def _inspect_bundle_entry_json(params: dict[str, Any]) -> dict[str, Any]:
 # ─── Lifecycle ────────────────────────────────────────────────────────────────
 
 
+_SHUTDOWN_PER_FORECAST_TIMEOUT_S = 5.0
+
+
 @register("shutdown")
 def _shutdown(_params: dict[str, Any]) -> dict[str, Any]:
-    """Graceful shutdown signal — server loop exits после returning result."""
-    return {"shutting_down": True}
+    """Graceful shutdown signal — drains in-flight forecasts, then server loop
+    exits после returning result.
+
+    Drain protocol (D5 cooperative — NO SIGINT, NO terminate):
+      1. Set cancel flag on every active forecast handle (mirrors `cancel_forecast`).
+      2. Join each forecast thread with a per-thread timeout
+         (`_SHUTDOWN_PER_FORECAST_TIMEOUT_S`). Sampler threads exit on next
+         iteration boundary; 5s budget covers a single sample's max latency
+         observed in Block 4 audit.
+      3. Return per-forecast status (`signaled`, `joined`, `timed_out`) so Rust
+         parent can log a structured exit event.
+
+    Threads still alive after timeout are abandoned — Python interpreter
+    teardown handles them. The Rust parent should treat any `timed_out` entry
+    as a hint that the next start should not depend on shared on-disk state
+    being fully released yet (e.g., bundle staging path locks).
+
+    Future work (handed off to MM): wire this to
+    `aurora_common.updates.shutdown.GracefulShutdownCoordinator` once
+    `aurora-common` becomes a dependency of `aurora-launch`. The coordinator
+    adds module-pluggable handlers (training queue drain, telemetry flush)
+    that today are absent in Aurora Launch.
+    """
+    forecasts_signaled: list[str] = []
+    forecasts_joined: list[str] = []
+    forecasts_timed_out: list[str] = []
+
+    for handle, flag in list(_cancel_flags.items()):
+        flag.set()
+        forecasts_signaled.append(handle)
+
+    for handle, thread in list(_forecast_threads.items()):
+        thread.join(timeout=_SHUTDOWN_PER_FORECAST_TIMEOUT_S)
+        if thread.is_alive():
+            forecasts_timed_out.append(handle)
+        else:
+            forecasts_joined.append(handle)
+
+    return {
+        "shutting_down": True,
+        "forecasts_signaled": forecasts_signaled,
+        "forecasts_joined": forecasts_joined,
+        "forecasts_timed_out": forecasts_timed_out,
+    }

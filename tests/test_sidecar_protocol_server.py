@@ -120,6 +120,59 @@ class TestServerSmoke:
         assert keep is False
         data = json.loads(out.getvalue().strip())
         assert data["result"]["shutting_down"] is True
+        # New return shape — empty lists when no in-flight forecasts.
+        assert data["result"]["forecasts_signaled"] == []
+        assert data["result"]["forecasts_joined"] == []
+        assert data["result"]["forecasts_timed_out"] == []
+
+    def test_shutdown_drains_inflight_forecast(self, token: str):
+        """When `shutdown` runs while a forecast thread is alive, the cancel
+        flag is set and the thread is joined within the per-forecast timeout.
+
+        Uses a fake cooperative thread that exits as soon as its flag is set —
+        mirrors the contract of the real sampler в `cancel_forecast`.
+        """
+        import threading
+        from aurora_launch.sidecar import methods as sidecar_methods
+
+        # Snapshot module state to restore after test (other tests may register
+        # their own forecasts via start_forecast; cleanup keeps suite hermetic).
+        original_flags = dict(sidecar_methods._cancel_flags)
+        original_threads = dict(sidecar_methods._forecast_threads)
+
+        handle = "fake-handle-abc"
+        flag = threading.Event()
+
+        def _fake_sampler() -> None:
+            # Wait for cancel signal; exit promptly когда flag set.
+            flag.wait(timeout=2.0)
+
+        thread = threading.Thread(target=_fake_sampler, daemon=True)
+        thread.start()
+        sidecar_methods._cancel_flags[handle] = flag
+        sidecar_methods._forecast_threads[handle] = thread
+
+        try:
+            out = io.StringIO()
+            keep = serve_once(
+                self._request("shutdown", {}, token),
+                expected_token=token,
+                out=out,
+            )
+            assert keep is False
+            data = json.loads(out.getvalue().strip())
+            assert data["result"]["shutting_down"] is True
+            assert handle in data["result"]["forecasts_signaled"]
+            assert handle in data["result"]["forecasts_joined"]
+            assert handle not in data["result"]["forecasts_timed_out"]
+            assert flag.is_set(), "cancel flag must be set by shutdown"
+            assert not thread.is_alive(), "thread must have joined"
+        finally:
+            # Restore registry to pre-test state — никаких висящих handles.
+            sidecar_methods._cancel_flags.clear()
+            sidecar_methods._cancel_flags.update(original_flags)
+            sidecar_methods._forecast_threads.clear()
+            sidecar_methods._forecast_threads.update(original_threads)
 
     def test_save_bundle_initial_creates_file(self, token: str, tmp_path):
         """End-to-end: sidecar creates new bundle через JSON-RPC."""
