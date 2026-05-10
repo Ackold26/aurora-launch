@@ -361,18 +361,33 @@ def _shutdown(_params: dict[str, Any]) -> dict[str, Any]:
     Future work (handed off to MM): wire this to
     `aurora_common.updates.shutdown.GracefulShutdownCoordinator` once
     `aurora-common` becomes a dependency of `aurora-launch`. The coordinator
-    adds module-pluggable handlers (training queue drain, telemetry flush)
-    that today are absent in Aurora Launch.
+    would add module-pluggable handlers (training queue drain, telemetry flush)
+    which today are not registered in Aurora Launch.
+
+    Concurrency note: we take a single snapshot of forecast handles from
+    `_forecast_threads.keys()` and use it for BOTH cancel-flag setting and
+    join-waiting. Iterating `_cancel_flags` and `_forecast_threads`
+    independently could observe a freshly-registered handle in one dict but
+    not the other (start_forecast registers both, but Python lacks an atomic
+    multi-dict write). One snapshot eliminates that window — any handle
+    registered after the snapshot is simply not drained by this call.
     """
+    handles = list(_forecast_threads.keys())
+
     forecasts_signaled: list[str] = []
     forecasts_joined: list[str] = []
     forecasts_timed_out: list[str] = []
 
-    for handle, flag in list(_cancel_flags.items()):
-        flag.set()
-        forecasts_signaled.append(handle)
+    for handle in handles:
+        flag = _cancel_flags.get(handle)
+        if flag is not None:
+            flag.set()
+            forecasts_signaled.append(handle)
 
-    for handle, thread in list(_forecast_threads.items()):
+    for handle in handles:
+        thread = _forecast_threads.get(handle)
+        if thread is None:
+            continue
         thread.join(timeout=_SHUTDOWN_PER_FORECAST_TIMEOUT_S)
         if thread.is_alive():
             forecasts_timed_out.append(handle)

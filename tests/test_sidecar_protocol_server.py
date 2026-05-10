@@ -174,6 +174,55 @@ class TestServerSmoke:
             sidecar_methods._forecast_threads.clear()
             sidecar_methods._forecast_threads.update(original_threads)
 
+    def test_shutdown_handles_dict_skew_between_threads_and_flags(self, token: str):
+        """Defensive: if a handle is in `_forecast_threads` but its cancel flag
+        was already removed (e.g. by a prior `cancel_forecast`), shutdown must
+        still join the thread без KeyError.
+
+        This exercises the audit-fix where we use a single snapshot of handles
+        from `_forecast_threads.keys()` and tolerate missing cancel-flag entries.
+        """
+        import threading
+        from aurora_launch.sidecar import methods as sidecar_methods
+
+        original_flags = dict(sidecar_methods._cancel_flags)
+        original_threads = dict(sidecar_methods._forecast_threads)
+
+        handle = "fake-skew-handle"
+        flag = threading.Event()
+        # Pre-signal the flag so the thread exits immediately on its own.
+        flag.set()
+
+        def _fake_sampler() -> None:
+            flag.wait(timeout=1.0)
+
+        thread = threading.Thread(target=_fake_sampler, daemon=True)
+        thread.start()
+        # Register the thread без cancel flag — simulates the skew window
+        # where cancel_forecast removed the flag but thread hadn't yet exited.
+        sidecar_methods._forecast_threads[handle] = thread
+        # Note: NOT inserting into _cancel_flags.
+
+        try:
+            out = io.StringIO()
+            keep = serve_once(
+                self._request("shutdown", {}, token),
+                expected_token=token,
+                out=out,
+            )
+            assert keep is False
+            data = json.loads(out.getvalue().strip())
+            assert data["result"]["shutting_down"] is True
+            # Without cancel flag, handle is NOT in signaled list but IS joined.
+            assert handle not in data["result"]["forecasts_signaled"]
+            assert handle in data["result"]["forecasts_joined"]
+            assert handle not in data["result"]["forecasts_timed_out"]
+        finally:
+            sidecar_methods._cancel_flags.clear()
+            sidecar_methods._cancel_flags.update(original_flags)
+            sidecar_methods._forecast_threads.clear()
+            sidecar_methods._forecast_threads.update(original_threads)
+
     def test_save_bundle_initial_creates_file(self, token: str, tmp_path):
         """End-to-end: sidecar creates new bundle через JSON-RPC."""
         import base64

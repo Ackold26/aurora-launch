@@ -81,9 +81,11 @@ uv run mypy src/aurora_launch
 ### Запуск sidecar локально
 
 ```bash
-# Sidecar читает JSON-RPC со stdin, отдаёт ответ в stdout
-echo '{"id":1,"method":"ping","params":{},"auth":"<token>"}' | \
-  AURORA_SIDECAR_TOKEN=<token> uv run python -m aurora_launch.sidecar
+# Sidecar читает JSON-RPC со stdin, отдаёт ответ в stdout. Токен — 64-символьная hex-строка,
+# имя переменной окружения именно AURORA_SIDECAR_AUTH_TOKEN (см. src/aurora_launch/sidecar/auth.py).
+TOKEN=$(python -c "import secrets; print(secrets.token_hex(32))")
+echo "{\"id\":1,\"method\":\"ping\",\"params\":{},\"auth\":\"$TOKEN\"}" | \
+  AURORA_SIDECAR_AUTH_TOKEN=$TOKEN uv run python -m aurora_launch.sidecar
 ```
 
 ### CLI-инструменты
@@ -92,9 +94,12 @@ echo '{"id":1,"method":"ping","params":{},"auth":"<token>"}' | \
 |---|---|
 | `aurora-corpus generate <category> <variant>` | Генерация синтетического тестового корпуса |
 | `aurora-launch-reproduce <bundle> <hash>` | Проверка репродуцируемости бандла по хэшу |
-| `aurora-launch-detect <file>` | Распознавание формата входного файла |
+| `aurora-launch-export-ts <schema>` | Экспорт Pydantic-схем в TypeScript-типы |
+| `aurora-launch-schema-diff <a> <b>` | Сравнение двух версий схем bundle |
+| `aurora-launch-migrate-bundle <bundle>` | Миграция bundle между schema version'ами |
+| `aurora-launch-validate-license <license>` | Проверка license-токена |
 
-Полный список: `uv run python -c "import aurora_launch.cli; ..."` или `pyproject.toml` секция `[project.scripts]`.
+Источник истины: `pyproject.toml` секция `[project.scripts]`.
 
 ## Структура хранилища
 
