@@ -46,6 +46,93 @@ uv run aurora-corpus generate fmcg_food_snacks_savoury baseline --seed 42 --outp
 uv run aurora-launch-reproduce <bundle.aurora> <expected_hash>
 ```
 
+## Запуск для разработки
+
+Зависит от `uv` (см. https://docs.astral.sh/uv/) и Python 3.11+.
+
+```bash
+# Полная установка (включая dev-зависимости и опциональные группы)
+uv sync --all-extras
+
+# Запуск всех тестов
+uv run pytest
+
+# Параллельный прогон (быстрее на больших наборах)
+uv run pytest -n auto
+
+# Только определённый файл
+uv run pytest tests/test_sidecar_protocol_server.py -v
+
+# С покрытием кода
+uv run pytest --cov=aurora_launch --cov-report=term-missing
+```
+
+### Линтеры и проверки типов перед коммитом
+
+```bash
+# Форматирование и быстрые проверки
+uv run ruff check .
+uv run ruff format --check .
+
+# Проверка типов
+uv run mypy src/aurora_launch
+```
+
+### Запуск sidecar локально
+
+```bash
+# Sidecar читает JSON-RPC со stdin, отдаёт ответ в stdout
+echo '{"id":1,"method":"ping","params":{},"auth":"<token>"}' | \
+  AURORA_SIDECAR_TOKEN=<token> uv run python -m aurora_launch.sidecar
+```
+
+### CLI-инструменты
+
+| Команда | Назначение |
+|---|---|
+| `aurora-corpus generate <category> <variant>` | Генерация синтетического тестового корпуса |
+| `aurora-launch-reproduce <bundle> <hash>` | Проверка репродуцируемости бандла по хэшу |
+| `aurora-launch-detect <file>` | Распознавание формата входного файла |
+
+Полный список: `uv run python -c "import aurora_launch.cli; ..."` или `pyproject.toml` секция `[project.scripts]`.
+
+## Структура хранилища
+
+| Директория | Содержание |
+|---|---|
+| `00_Overview/` | Принципы продукта, roadmap, границы охвата |
+| `01_Concept/` | UX-решения для multi-proxy intake |
+| `02_Data_Spec/` | Pydantic-схемы (источник истины) |
+| `03_Architecture/` | Архитектурные решения, ссылки на математику |
+| `03_Architecture/decisions/` | ADR (Architecture Decision Records) |
+| `03_Architecture/PHASE_B_REQUIREMENTS.md` | ⭐ Контракт реализации Phase B |
+| `03_Architecture/PROXY_INTAKE_PROTOCOL.md` | ⭐ D002 — рабочий процесс ad-hoc proxy intake |
+| `04_Sprints/` | План пилотных клиентов, спринт-логи |
+| `05_Sessions/` | Логи рабочих сессий по разработке |
+| `06_References/` | Pricing, sales playbook, аудиторские отчёты |
+| `Final/` | Финальные документы (deployment, installer) |
+| `src/aurora_launch/` | Реализация |
+| `src/aurora_launch/engines/` | Математика + бизнес-логика |
+| `src/aurora_launch/sidecar/` | JSON-RPC сервер для общения с Tauri-оболочкой |
+| `src/aurora_launch/tools/` | CLI-инструменты |
+| `src/aurora_launch/schemas/` | Pydantic-модели |
+| `tests/` | Тесты + синтетические тестовые фикстуры |
+| `migrations/` | SQL-миграции для Supabase |
+
+## Содействие проекту
+
+Перед серьёзными правками — обязательное чтение `aurora-meta/ENGINEERING_INVARIANTS.md` (живой документ инженерных уроков; pre-flight read mandatory). Особое внимание:
+
+- **ИНВ-05** — криптографические утверждения требуют атакующего сценария первым
+- **ИНВ-09** — verify config consumption end-to-end до объявления готовым
+- **ИНВ-13** — verify infrastructure assumptions (`pip install -e .` ≠ `uv sync`; `cargo test` ≠ `wasm-pack test`)
+- **ИНВ-15** — adapter wiring path completeness end-to-end
+
+Стиль коммитов: `<тип>(<охват>): <краткое описание>` в imperative mood.
+Пример: `feat(sidecar): graceful shutdown drains in-flight forecasts`.
+
+Сообщения коммитов на английском (стандарт open-source); комментарии в коде — русский или английский по контексту.
+
 ## Architectural foundation
 
 - **D002 restored:** ad-hoc proxy intake (no donor library) per `03_Architecture/PROXY_INTAKE_PROTOCOL.md`
