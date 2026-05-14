@@ -24,6 +24,12 @@ Multiple customer-facing projects live in one customer's projects.db.
 Blobs are deduplicated across projects (e.g., shared proxy posterior).
 """
 
+from aurora_launch.persistence.autosave import (
+    AutosaveError,
+    AutosaveManager,
+    AutosaveSnapshot,
+    PendingRecovery,
+)
 from aurora_launch.persistence.blob_store import (
     BlobInfo,
     BlobStore,
@@ -40,10 +46,14 @@ from aurora_launch.persistence.project_db import (
 )
 
 __all__ = [
+    "AutosaveError",
+    "AutosaveManager",
+    "AutosaveSnapshot",
     "BlobInfo",
     "BlobStore",
     "BlobStoreError",
     "LoadedVersion",
+    "PendingRecovery",
     "ProjectDB",
     "ProjectDBError",
     "ProjectDetail",
