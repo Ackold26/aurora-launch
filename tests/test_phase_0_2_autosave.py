@@ -302,11 +302,13 @@ class TestTimerScheduling:
                 return None, {"tick": counter["n"]}
 
             mgr.start_autosave("p", provider)
-            # Wait for at least 2 ticks
-            time.sleep(0.35)
+            # Wait for at least 2 ticks. Margin generous (1.0s) для CI / heavy load —
+            # OS scheduler can delay threading.Timer past nominal interval when many
+            # tests run в parallel. Pf-09 hardening.
+            time.sleep(1.0)
             mgr.stop_autosave("p")
 
-            assert counter["n"] >= 2
+            assert counter["n"] >= 2, f"Expected ≥2 ticks within 1.0s, got {counter['n']}"
             slot1 = autosave_dir / _autosave_filename("p", 1)
             assert slot1.exists()
 

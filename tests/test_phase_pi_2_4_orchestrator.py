@@ -212,8 +212,22 @@ class TestBiasCheck:
             n_recipient=2,
             recipient_y=observed_y,
         )
-        # No bias warning
-        assert not any("Bias check" in w for w in result.warnings)
+        # No bias warning (но Mode 2 без recipient_y warning may appear if y empty)
+        assert not any("deviates" in w for w in result.warnings)
+
+    def test_mode_2_without_recipient_y_emits_warning(self) -> None:
+        """PI2-M3 audit fix: Mode 2 selected без y → explicit warning."""
+        orch = LaunchOrchestrator()
+        result = orch.forecast_recipient(
+            proxy=_make_proxy_bundle(),
+            anchors=_make_anchors(6),
+            spend_plan=_make_spend_plan(6),
+            horizon_periods=6,
+            granularity="monthly",
+            n_recipient=2,
+            recipient_y=None,
+        )
+        assert any("recipient_y" in w and "skipped" in w for w in result.warnings)
 
     def test_bias_check_exceeds_threshold(self) -> None:
         orch = LaunchOrchestrator()

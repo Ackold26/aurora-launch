@@ -233,15 +233,24 @@ class LaunchOrchestrator:
                 coverage_target=coverage_target,
             )
             if recipient_y is not None and len(recipient_y) > 0:
-                bias_pct = self._compute_bias_check(
+                bias_pct, bias_diagnostics = self._compute_bias_check(
                     forecast=forecast, recipient_y=recipient_y
                 )
-                if abs(bias_pct) > 30.0:
+                if bias_diagnostics:
+                    warnings.extend(bias_diagnostics)
+                elif abs(bias_pct) > 30.0:
                     warnings.append(
                         f"Bias check: observed baseline deviates {bias_pct:.1f}% "
                         f"from proxy expectation (>30% threshold). "
                         f"Recipient may differ from proxy materially."
                     )
+            else:
+                # PI2-M3 audit fix: explicit warning when Mode 2 selected but
+                # no recipient_y available для bias check.
+                warnings.append(
+                    "Mode 2 (TRANSFER_WITH_BIAS_CHECK) selected but recipient_y "
+                    "not provided — bias check skipped, falling back к pure transfer."
+                )
             signature = "transfer_with_bias_check_v1"
 
         elif engine_config.mode == EngineMode.OLS_WITH_PROXY_PRIORS:
@@ -332,16 +341,25 @@ class LaunchOrchestrator:
     @staticmethod
     def _compute_bias_check(
         forecast: TransferForecast, recipient_y: list[float]
-    ) -> float:
+    ) -> tuple[float, list[str]]:
         """Compare observed y mean vs predicted point forecast mean.
 
-        Returns: relative bias in % (positive = observed > predicted).
+        Returns: (bias_pct, diagnostics). bias_pct = relative bias в % (positive
+        = observed > predicted). diagnostics — non-empty если bias check could
+        not be performed cleanly (e.g., degenerate predicted_mean=0).
+
+        PI2-B4 audit fix: degenerate predicted_mean=0 now returns diagnostic
+        warning rather than silently returning 0.0 (which would suppress
+        any user-visible bias signal).
         """
         if not forecast.points or not recipient_y:
-            return 0.0
+            return 0.0, []
         n = min(len(recipient_y), len(forecast.points))
         observed_mean = sum(recipient_y[:n]) / n
         predicted_mean = sum(p.point_forecast for p in forecast.points[:n]) / n
         if predicted_mean == 0:
-            return 0.0
-        return 100.0 * (observed_mean - predicted_mean) / predicted_mean
+            return 0.0, [
+                "Bias check inconclusive: predicted_mean = 0 (degenerate forecast). "
+                f"Observed mean = {observed_mean:.4g}. Review anchors + proxy similarity."
+            ]
+        return 100.0 * (observed_mean - predicted_mean) / predicted_mean, []

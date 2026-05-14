@@ -134,6 +134,13 @@ def extract_proxy_priors(
 
     priors: dict[str, ProxyChannelPrior] = {}
     for i, channel_id in enumerate(media_cols):
+        # PI2-B2 audit fix: detect NaN propagation early с explicit message,
+        # вместо silently converting к NaN and crashing downstream Pydantic.
+        if np.any(np.isnan(betas[i])):
+            raise ProxyExtractionError(
+                f"Channel {channel_id!r}: NaN found в media_betas posterior samples. "
+                f"Check PyMC convergence — divergent transitions can corrupt posterior."
+            )
         beta_mean = float(np.mean(betas[i]))
         beta_std = float(np.std(betas[i], ddof=1)) if n_samples > 1 else 0.0
         # σ floor — pure zero std means perfect knowledge что вычислительно
@@ -143,12 +150,24 @@ def extract_proxy_priors(
         # tail samples из numerical artefacts; clamp к non-negative.
         beta_mean = max(beta_mean, 0.0)
 
+        # Defence-in-depth for alpha/gamma/decay: NaN check before mean
+        for param_name, arr in (("alphas", alphas[i]), ("gammas", gammas[i]),
+                                 ("adstock_decay", decays[i])):
+            if np.any(np.isnan(arr)):
+                raise ProxyExtractionError(
+                    f"Channel {channel_id!r}: NaN found в {param_name} posterior. "
+                    f"Check PyMC convergence."
+                )
+
+        # PI2-B1 hill_alpha cap aligned с ChannelTransferParams.hill_alpha le=20
+        hill_alpha = min(max(float(np.mean(alphas[i])), 0.01), 20.0)
+
         priors[channel_id] = ProxyChannelPrior(
             channel_id=channel_id,
             proxy_beta_mean=beta_mean,
             proxy_beta_std=beta_std,
             adstock_decay=float(np.clip(np.mean(decays[i]), 0.0, 1.0)),
-            hill_alpha=max(float(np.mean(alphas[i])), 0.01),  # alpha > 0 invariant
+            hill_alpha=hill_alpha,
             hill_half_saturation=max(float(np.mean(gammas[i])), _SIGMA_FLOOR),
             n_samples=n_samples,
         )

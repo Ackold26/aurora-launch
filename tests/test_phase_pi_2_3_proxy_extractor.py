@@ -174,6 +174,38 @@ class TestExtraction:
         priors = extract_proxy_priors(posterior, ["tv"])
         assert priors["tv"].proxy_beta_std > 0  # floor kicks in
 
+    def test_nan_in_media_betas_raises(self) -> None:
+        """PI2-B2 audit fix: NaN в posterior detected early с explicit error."""
+        posterior = _make_posterior(n_channels=2, n_samples=100)
+        posterior["media_betas"][0, 50:] = float("nan")
+        with pytest.raises(ProxyExtractionError, match="NaN found в media_betas"):
+            extract_proxy_priors(posterior, ["tv", "digital"])
+
+    def test_nan_in_alphas_raises(self) -> None:
+        posterior = _make_posterior(n_channels=2, n_samples=100)
+        posterior["alphas"][0, 50] = float("nan")
+        with pytest.raises(ProxyExtractionError, match="NaN found в alphas"):
+            extract_proxy_priors(posterior, ["tv", "digital"])
+
+    def test_nan_in_decay_raises(self) -> None:
+        posterior = _make_posterior(n_channels=2, n_samples=100)
+        posterior["adstock_decay"][0, 99] = float("nan")
+        with pytest.raises(ProxyExtractionError, match="NaN found в adstock_decay"):
+            extract_proxy_priors(posterior, ["tv", "digital"])
+
+    def test_hill_alpha_capped_at_20(self) -> None:
+        """PI2-B1 propagated to extractor: alpha clamped к 20."""
+        rng = np.random.default_rng(0)
+        # Synthetic posterior с unrealistic alpha posterior (e.g., 100)
+        posterior = {
+            "media_betas": rng.normal(0.1, 0.01, size=(1, 100)),
+            "alphas": np.full((1, 100), 100.0),  # extreme
+            "gammas": rng.normal(50.0, 5.0, size=(1, 100)),
+            "adstock_decay": np.clip(rng.normal(0.5, 0.05, size=(1, 100)), 0.0, 1.0),
+        }
+        priors = extract_proxy_priors(posterior, ["tv"])
+        assert priors["tv"].hill_alpha <= 20.0
+
     def test_negative_beta_clamped_to_zero(self) -> None:
         rng = np.random.default_rng(0)
         # Synthetic posterior с slightly negative samples (numerical artefact)

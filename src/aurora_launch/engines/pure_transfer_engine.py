@@ -79,7 +79,10 @@ class ChannelTransferParams(BaseModel):
     proxy_beta_mean: float = Field(ge=0)
     proxy_beta_std: float = Field(ge=0)
     adstock_decay: float = Field(ge=0, le=1)  # geometric decay lambda
-    hill_alpha: float = Field(gt=0)  # hill shape gamma в Optimizer terms
+    # PI2-B1 audit fix: cap hill_alpha to prevent numerical overflow (k^alpha
+    # OverflowError при alpha~155; NaN при alpha~100). PyMC HalfStudentT priors
+    # for adstock/hill typically produce alpha ∈ [0.5, 5.0]; le=20 is generous.
+    hill_alpha: float = Field(gt=0, le=20.0)
     hill_half_saturation: float = Field(gt=0)
     similarity_factor: float = Field(gt=0, le=1.0, default=1.0)
     similarity_inflation: float = Field(ge=0, default=0.0)
@@ -136,7 +139,10 @@ class TransferInputs(BaseModel):
         description="channel_id → spend per period (length = horizon_periods)"
     )
     proxy_baseline_mean: float = Field(gt=0)
-    coverage_target: float = Field(ge=0.5, le=0.99, default=0.95)
+    # PI2-B3 audit fix: restrict к explicitly supported coverage targets to
+    # match runtime _Z_CRITICAL dict. Previous Field(ge=0.5, le=0.99) accepted
+    # 0.85 which then crashed at forecast time с ValueError.
+    coverage_target: Literal[0.80, 0.90, 0.95, 0.99] = 0.95
 
     @model_validator(mode="after")
     def spend_plan_lengths_match_horizon(self) -> "TransferInputs":
@@ -233,17 +239,32 @@ def hill_saturation(
     hill(x) = x^alpha / (x^alpha + k^alpha)
 
     Monotonic non-decreasing, asymptote = 1.0, hill(k) = 0.5.
+
+    PI2-B1 audit fix: numpy float64 для k_pow (вместо Python float) prevents
+    OverflowError при alpha ≥ ~155. Handle inf/inf NaN: when both x_pow и
+    k_pow → inf, fall back на ratio sign (x > k → asymptote, x < k → 0).
     """
     if alpha <= 0:
         raise ValueError(f"alpha must be > 0, got {alpha}")
     if half_saturation <= 0:
         raise ValueError(f"half_saturation must be > 0, got {half_saturation}")
     arr = np.asarray(adstock, dtype=float)
-    # Clip very small values to avoid 0^alpha pow issues при alpha < 1
     x = np.clip(arr, 0.0, None)
-    x_pow = np.power(x, alpha)
-    k_pow = half_saturation ** alpha
-    return x_pow / (x_pow + k_pow)
+    # Use numpy float64 for k_pow to get inf (not OverflowError) при extreme alpha
+    with np.errstate(over="ignore", invalid="ignore"):
+        x_pow = np.power(x, alpha)
+        k_pow = np.float64(half_saturation) ** np.float64(alpha)
+    # Handle pathological combinations: both inf → fall back to sign of (x - k)
+    both_inf = np.isinf(x_pow) & np.isinf(k_pow)
+    only_x_inf = np.isinf(x_pow) & ~np.isinf(k_pow)
+    only_k_inf = ~np.isinf(x_pow) & np.isinf(k_pow)
+    normal_path = x_pow / (x_pow + k_pow)
+    # When both inf: compare base values (x > k → 1, x < k → 0, equal → 0.5)
+    both_inf_fallback = np.where(x > half_saturation, 1.0, np.where(x < half_saturation, 0.0, 0.5))
+    result = np.where(both_inf, both_inf_fallback,
+                      np.where(only_x_inf, 1.0,
+                               np.where(only_k_inf, 0.0, normal_path)))
+    return result
 
 
 # ---------------------------------------------------------------------------

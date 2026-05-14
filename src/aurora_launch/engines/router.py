@@ -30,10 +30,10 @@ Granularity-aware thresholds (D-06 dual-granularity decision):
 
                                   monthly    weekly
   threshold_pure_transfer         0          0
-  threshold_ols_low               1          1
+  threshold_ols_low               3          8
   threshold_bayesian              7          20
 
-Per Аnton's decision 2026-05-14: monthly И weekly both first-class.
+Per Антон's decision 2026-05-14: monthly И weekly both first-class.
 Routing thresholds re-calibrated при first-class monthly support
 (7 months ≈ 30 weeks of data, but Bayesian needs fewer monthly
 observations because each carries more signal).

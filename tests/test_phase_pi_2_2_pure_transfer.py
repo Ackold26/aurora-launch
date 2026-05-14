@@ -431,17 +431,19 @@ class TestForecastPureTransfer:
         assert width_95 > width_80
 
     def test_unsupported_coverage_target_raises(self) -> None:
-        inputs = TransferInputs(
-            granularity="monthly",
-            horizon_periods=6,
-            channels=_make_channels(),
-            anchors=_make_anchors(6),
-            spend_plan={"tv": [200.0] * 6, "digital": [80.0] * 6},
-            proxy_baseline_mean=500_000.0,
-            coverage_target=0.85,  # not в _Z_CRITICAL dict
-        )
-        with pytest.raises(ValueError, match="coverage_target"):
-            forecast_pure_transfer(inputs)
+        """PI2-B3 audit fix: coverage_target now Literal — Pydantic rejects 0.85
+        upfront вместо runtime crash. Test verifies schema-level rejection.
+        """
+        with pytest.raises(ValueError, match="literal_error"):
+            TransferInputs(
+                granularity="monthly",
+                horizon_periods=6,
+                channels=_make_channels(),
+                anchors=_make_anchors(6),
+                spend_plan={"tv": [200.0] * 6, "digital": [80.0] * 6},
+                proxy_baseline_mean=500_000.0,
+                coverage_target=0.85,  # type: ignore[arg-type]
+            )
 
 
 class TestSimilarityImpact:
@@ -509,6 +511,46 @@ class TestSimilarityImpact:
         # (channel contributions smaller, baseline unchanged)
         for b, l in zip(base_result.points, low_result.points):
             assert l.point_forecast < b.point_forecast
+
+
+class TestAuditPI2B1HillExtreme:
+    """Audit PI2-B1 attack scenarios: hill saturation must handle extreme alpha
+    без silent NaN or OverflowError. PyMC posterior pathological case."""
+
+    def test_hill_alpha_140_does_not_produce_nan(self) -> None:
+        """Previously alpha=140 → NaN propagation. Now bounded result."""
+        # Note: this tests the math function directly; Pydantic enforces le=20
+        # at the API level. This test guards against future relaxation.
+        out = hill_saturation(np.array([1e6]), alpha=140.0, half_saturation=100.0)
+        assert not np.isnan(out).any(), "hill_saturation должен не возвращать NaN"
+
+    def test_hill_alpha_extreme_no_overflow_error(self) -> None:
+        """Previously alpha=155 → OverflowError. Now numpy inf, handled gracefully."""
+        # Should not raise OverflowError
+        out = hill_saturation(np.array([200.0]), alpha=155.0, half_saturation=100.0)
+        assert not np.isnan(out).any()
+        # x > k → asymptote 1.0 in extreme regime
+        assert out[0] > 0.5
+
+    def test_channel_params_rejects_alpha_above_cap(self) -> None:
+        """PI2-B1: ChannelTransferParams.hill_alpha le=20 — Pydantic gate."""
+        with pytest.raises(ValueError, match="hill_alpha"):
+            ChannelTransferParams(
+                channel_id="tv",
+                proxy_beta_mean=0.1,
+                proxy_beta_std=0.01,
+                adstock_decay=0.5,
+                hill_alpha=25.0,  # exceeds le=20
+                hill_half_saturation=100.0,
+            )
+
+    def test_hill_handles_large_adstock(self) -> None:
+        """Audit: large adstock should NOT crash."""
+        large_adstock = np.array([1e10, 1e12, 1e15])
+        out = hill_saturation(large_adstock, alpha=2.0, half_saturation=100.0)
+        # All near asymptote
+        assert (out > 0.99).all()
+        assert not np.isnan(out).any()
 
 
 class TestGranularityAware:
