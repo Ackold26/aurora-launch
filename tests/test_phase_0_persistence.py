@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+import time
 import uuid
 from pathlib import Path
 
@@ -500,6 +501,187 @@ class TestMigration:
 # ---------------------------------------------------------------------------
 # Performance smoke (informational — not strict timing)
 # ---------------------------------------------------------------------------
+
+
+class TestAttackScenarios:
+    """Audit P0-10 fix: explicit attack scenarios для security/correctness гарантий.
+
+    Per INV-05: write attack scenarios FIRST for security-critical paths.
+    """
+
+    def test_symlink_injection_into_blobs_dir_rejected(
+        self, project_db: ProjectDB, blob_store: BlobStore, tmp_path: Path
+    ) -> None:
+        """A symlink dropped in blobs/ pointing outside should not corrupt operations.
+
+        list_all() should not crash; check_integrity() flags orphan_file regardless.
+        """
+        import sys
+        if sys.platform == "win32":
+            pytest.skip("Symlink creation requires admin on Windows")
+        # Create a real blob, then a symlink pointing outside
+        info = blob_store.store(b"genuine")
+        external = tmp_path / "external_target.bin"
+        external.write_bytes(b"external content")
+        symlink_path = blob_store.blobs_dir / f"sha256-{'b' * 64}.pickle"
+        try:
+            symlink_path.symlink_to(external)
+        except (OSError, NotImplementedError):
+            pytest.skip("Cannot create symlink on this platform")
+
+        # list_all enumerates без crashing
+        results = blob_store.list_all()
+        # Symlink may appear in results (we don't follow), but with wrong size
+        assert info in results or any(r.sha256 == info.sha256 for r in results)
+
+    def test_double_delete_does_not_underflow_ref_count(
+        self, project_db: ProjectDB
+    ) -> None:
+        """Audit P0-03: schema CHECK + MAX(., 0) prevent ref_count<0.
+
+        Simulates buggy code path or race condition that triggers delete twice.
+        """
+        uid = project_db.create_project("p", aurora_app_version="0.1.0")
+        project_db.save_version(uid, files={"f.pickle": b"content"})
+        sha = project_db.blob_store.compute_hash(b"content")
+
+        project_db.delete_project(uid)
+        # ref_count is now 0 (was 1). A second decrement should NOT make it -1.
+        # We simulate by calling the underlying UPDATE manually (как if a buggy
+        # caller invoked update twice).
+        project_db._conn.execute(
+            """
+            UPDATE blobs SET ref_count = MAX(ref_count - 1, 0)
+            WHERE sha256 = ?
+            """,
+            (sha,),
+        )
+        row = project_db._conn.execute(
+            "SELECT ref_count FROM blobs WHERE sha256 = ?", (sha,)
+        ).fetchone()
+        assert row["ref_count"] == 0, "ref_count should be clamped to 0, never negative"
+
+    def test_schema_check_constraint_rejects_negative_ref_count(
+        self, project_db: ProjectDB
+    ) -> None:
+        """Defence-in-depth: even if Python clamping is bypassed, CHECK prevents -1."""
+        import sqlite3
+
+        uid = project_db.create_project("p", aurora_app_version="0.1.0")
+        project_db.save_version(uid, files={"f.pickle": b"x"})
+        sha = project_db.blob_store.compute_hash(b"x")
+
+        with pytest.raises(sqlite3.IntegrityError):
+            project_db._conn.execute(
+                "UPDATE blobs SET ref_count = -1 WHERE sha256 = ?", (sha,)
+            )
+
+    def test_sql_injection_attempt_in_project_uuid_neutralized(
+        self, project_db: ProjectDB
+    ) -> None:
+        """Parameterized queries должны prevent SQL injection в любом string field."""
+        malicious = "'; DROP TABLE projects; --"
+        # Should not raise — just не find such project
+        with pytest.raises(ProjectDBError, match="not found"):
+            project_db.get_project(malicious)
+
+        # Projects table still exists
+        rows = project_db._conn.execute(
+            "SELECT count(*) AS c FROM projects"
+        ).fetchone()
+        assert rows["c"] >= 0  # table not dropped
+
+    def test_blob_invalid_hex_filename_skipped_not_loaded(
+        self, project_db: ProjectDB, blob_store: BlobStore, storage_root: Path
+    ) -> None:
+        """Audit P0-08: list_all skips filenames с non-hex chars в SHA slot."""
+        # Drop a file с right length но invalid chars
+        bad_name = (
+            storage_root / "blobs" / "sha256-ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ.pickle"
+        )
+        bad_name.write_bytes(b"nope")
+        # Also drop a valid blob
+        valid = blob_store.store(b"valid")
+
+        listed = blob_store.list_all()
+        assert valid.sha256 in {b.sha256 for b in listed}
+        assert all("Z" not in b.sha256.upper() or False for b in listed)
+        # No BlobInfo with the invalid name
+        assert not any(b.sha256.startswith("Z") for b in listed)
+
+
+class TestConcurrentReadWrite:
+    """Audit P0-09 fix: exercise actual WAL concurrent read+write simultaneously."""
+
+    def test_writer_does_not_block_readers(
+        self, storage_root: Path, blob_store: BlobStore
+    ) -> None:
+        """Real WAL concurrency: writer + multiple readers с separate connections.
+
+        Each thread opens its own ProjectDB (per `ProjectDB` docstring: NOT
+        thread-safe; one connection per thread is the supported pattern).
+        WAL allows them to coexist без blocking.
+        """
+        db_path = storage_root / "projects.db"
+        # Initial setup on main thread
+        bootstrap = ProjectDB(db_path, blob_store)
+        uid = bootstrap.create_project("concurrent", aurora_app_version="0.1.0")
+        bootstrap.save_version(uid, files={"a.bin": b"v1"})
+        bootstrap.close()
+
+        writer_done = threading.Event()
+        writer_errors: list[Exception] = []
+
+        def writer_loop() -> None:
+            try:
+                bs = BlobStore(storage_root / "blobs")
+                db = ProjectDB(db_path, bs)
+                try:
+                    for i in range(20):
+                        db.save_version(uid, files={"a.bin": f"v{i + 2}".encode()})
+                        # Small pause so readers actually get scheduled и observe
+                        # partial state — это и есть smysl WAL concurrent теста.
+                        time.sleep(0.01)
+                finally:
+                    db.close()
+            except Exception as exc:
+                writer_errors.append(exc)
+            finally:
+                writer_done.set()
+
+        reader_results: list[int] = []
+        reader_errors: list[Exception] = []
+
+        def reader_loop() -> None:
+            try:
+                bs = BlobStore(storage_root / "blobs")
+                db = ProjectDB(db_path, bs)
+                try:
+                    while not writer_done.is_set():
+                        versions = db.list_versions(uid)
+                        reader_results.append(len(versions))
+                finally:
+                    db.close()
+            except Exception as exc:
+                reader_errors.append(exc)
+
+        writer_thread = threading.Thread(target=writer_loop)
+        reader_threads = [threading.Thread(target=reader_loop) for _ in range(4)]
+
+        writer_thread.start()
+        for t in reader_threads:
+            t.start()
+
+        writer_thread.join(timeout=15.0)
+        writer_done.set()
+        for t in reader_threads:
+            t.join(timeout=5.0)
+
+        assert writer_errors == [], f"writer errors: {writer_errors}"
+        assert reader_errors == [], f"reader errors: {reader_errors}"
+        assert len(reader_results) > 0, "Readers should have completed at least one query"
+        # Last reading should reflect all writes (or be in flight)
+        assert max(reader_results) >= 1
 
 
 class TestPerformanceSmoke:

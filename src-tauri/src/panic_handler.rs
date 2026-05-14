@@ -214,19 +214,33 @@ fn crash_filename(timestamp_utc: &str) -> String {
 }
 
 fn write_crash_dump(dir: &Path, dump: &CrashDump) -> std::io::Result<()> {
+    // Audit P0-04 fix: atomic write via tmp + rename. fs::write на real path
+    // can leave a partial file если process is killed mid-write (panic abort,
+    // signal). Atomic rename guarantees readers see either complete file или
+    // nothing.
     let json = serde_json::to_vec_pretty(dump)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-    if json.len() > MAX_CRASH_DUMP_BYTES {
+    let final_bytes = if json.len() > MAX_CRASH_DUMP_BYTES {
         // Defensive: truncate backtrace and re-serialise. Should be very rare.
         let mut trimmed = dump.clone();
         trimmed.backtrace = Some("(backtrace truncated — dump too large)".to_string());
-        let json = serde_json::to_vec_pretty(&trimmed)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        let path = dir.join(crash_filename(&dump.timestamp_utc));
-        return fs::write(&path, json);
-    }
+        serde_json::to_vec_pretty(&trimmed)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?
+    } else {
+        json
+    };
+
     let path = dir.join(crash_filename(&dump.timestamp_utc));
-    fs::write(&path, json)
+    let tmp = path.with_extension(format!("dump.{}.tmp", process::id()));
+    fs::write(&tmp, &final_bytes)?;
+    match fs::rename(&tmp, &path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            // Best-effort cleanup of tmp
+            let _ = fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
 }
 
 /// Crash recovery: enumerate pending dump files. Used by IPC command.

@@ -51,8 +51,8 @@ pub async fn list_pending_crashes() -> AuroraResult<Vec<CrashSummary>> {
 #[tauri::command]
 pub async fn get_crash_details(file_path: String) -> AuroraResult<CrashDump> {
     let path = PathBuf::from(&file_path);
-    validate_inside_crash_dir(&path)?;
-    panic_handler::read_dump(&path).map_err(|e| {
+    let validated = validated_crash_path(&path)?;
+    panic_handler::read_dump(&validated).map_err(|e| {
         AuroraError::Other(format!("Cannot read crash dump {file_path}: {e}"))
     })
 }
@@ -60,10 +60,27 @@ pub async fn get_crash_details(file_path: String) -> AuroraResult<CrashDump> {
 #[tauri::command]
 pub async fn dismiss_crash(file_path: String) -> AuroraResult<()> {
     let path = PathBuf::from(&file_path);
-    validate_inside_crash_dir(&path)?;
-    panic_handler::dismiss_dump(&path).map_err(|e| {
+    let validated = validated_crash_path(&path)?;
+    panic_handler::dismiss_dump(&validated).map_err(|e| {
         AuroraError::Other(format!("Cannot dismiss crash dump {file_path}: {e}"))
     })
+}
+
+/// Audit P0-02 hardening: return the validated canonical path to use для
+/// downstream filesystem operations. Caller MUST use this instead of the
+/// raw input path to prevent symlink/TOCTOU abuses.
+fn validated_crash_path(path: &std::path::Path) -> AuroraResult<PathBuf> {
+    validate_inside_crash_dir(path)?;
+    // Reconstruct: canon_dir + filename component (validated)
+    let crash_dir = panic_handler::crash_dir()
+        .ok_or_else(|| AuroraError::Other("Crash handler not initialised".to_string()))?;
+    let canon_dir = crash_dir
+        .canonicalize()
+        .map_err(|e| AuroraError::Other(format!("Cannot canonicalise crash dir: {e}")))?;
+    let name = path
+        .file_name()
+        .ok_or_else(|| AuroraError::Other("No filename".to_string()))?;
+    Ok(canon_dir.join(name))
 }
 
 #[tauri::command]
@@ -83,29 +100,57 @@ pub async fn dismiss_all_crashes() -> AuroraResult<u32> {
 /// Guard against path traversal: the file must reside inside the resolved
 /// crash directory. Frontend should never pass a path obtained from anywhere
 /// other than list_pending_crashes, но we double-check.
+///
+/// Audit P0-02 fix: reject paths whose final filename contains directory
+/// separators OR `..` components OR is not strictly a `crash-*.dump` file.
+/// Then resolve only the directory-level canonicalization (which exists)
+/// и compare paths in canonical form. No falling back to uncanonicalized
+/// path comparisons где TOCTOU could allow traversal.
 fn validate_inside_crash_dir(path: &std::path::Path) -> AuroraResult<()> {
     let Some(crash_dir) = panic_handler::crash_dir() else {
         return Err(AuroraError::Other(
             "Crash handler not initialised — cannot validate path".to_string(),
         ));
     };
-    // Canonicalise both sides где возможно. If the path doesn't exist
-    // (already dismissed) we still want consistent behaviour, поэтому fall
-    // back to parent comparison.
-    let canon_dir = crash_dir.canonicalize().unwrap_or(crash_dir.clone());
-    let canon_path = path
-        .canonicalize()
-        .or_else(|_| {
-            path.parent()
-                .map(|p| p.canonicalize())
-                .unwrap_or_else(|| Ok(path.to_path_buf()))
-                .map(|parent| parent.join(path.file_name().unwrap_or_default()))
-        })
-        .unwrap_or_else(|_| path.to_path_buf());
 
-    if !canon_path.starts_with(&canon_dir) {
+    // Step 1: extract just the filename component. It must be a single
+    // path segment (no separators) and match crash-*.dump pattern.
+    let Some(name) = path.file_name() else {
         return Err(AuroraError::Other(format!(
-            "Path {} is outside crash dump directory",
+            "Invalid path (no filename): {}",
+            path.display()
+        )));
+    };
+    let Some(name_str) = name.to_str() else {
+        return Err(AuroraError::Other(
+            "Invalid path: filename is not valid UTF-8".to_string(),
+        ));
+    };
+    if name_str.contains('/') || name_str.contains('\\') || name_str.contains("..") {
+        return Err(AuroraError::Other(format!(
+            "Path traversal rejected: {}",
+            path.display()
+        )));
+    }
+    if !name_str.starts_with("crash-") || !name_str.ends_with(".dump") {
+        return Err(AuroraError::Other(format!(
+            "Path is not a crash dump file: {}",
+            path.display()
+        )));
+    }
+
+    // Step 2: canonicalise crash_dir (it exists, was created by install_panic_hook).
+    // Build target as canonical_dir + name; check starts_with.
+    let canon_dir = crash_dir.canonicalize().map_err(|e| {
+        AuroraError::Other(format!("Cannot canonicalise crash dir: {e}"))
+    })?;
+    let target = canon_dir.join(name_str);
+
+    // Step 3: if target exists, also canonicalise to detect symlink trickery.
+    let canon_target = target.canonicalize().unwrap_or_else(|_| target.clone());
+    if !canon_target.starts_with(&canon_dir) {
+        return Err(AuroraError::Other(format!(
+            "Path {} resolves outside crash dump directory",
             path.display()
         )));
     }

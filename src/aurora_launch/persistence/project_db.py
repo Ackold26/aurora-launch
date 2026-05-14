@@ -128,10 +128,13 @@ class VersionDiff:
 
 
 def _utc_now_iso() -> str:
-    """ISO 8601 UTC with millisecond precision; matches SQLite strftime format."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.") + (
-        f"{datetime.now(timezone.utc).microsecond // 1000:03d}Z"
-    )
+    """ISO 8601 UTC with millisecond precision; matches SQLite strftime format.
+
+    Audit P0-01 fix: single now() call to prevent inconsistent timestamps
+    when second boundary crosses between two now() invocations.
+    """
+    now = datetime.now(timezone.utc)
+    return now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z"
 
 
 class ProjectDB:
@@ -327,12 +330,27 @@ class ProjectDB:
                 raise ProjectDBError(f"Project not found: {project_uuid}")
 
     def delete_project(self, project_uuid: str) -> None:
-        """Delete project, all versions, decrement blob ref-counts (GC after)."""
+        """Delete project, all versions, decrement blob ref-counts (GC after).
+
+        Audit P0-03 fix: use MAX(ref_count - 1, 0) to guard против underflow
+        в случае двойного delete от concurrent processes (WAL BEGIN IMMEDIATE
+        защищает single-process; cross-process needs explicit clamp).
+        Schema has CHECK (ref_count >= 0) as defense-in-depth.
+        """
         with self._tx():
+            # Verify project exists (raise raньше чем DELETE для clear error)
+            row = self._conn.execute(
+                "SELECT 1 FROM projects WHERE project_uuid = ?", (project_uuid,)
+            ).fetchone()
+            if row is None:
+                raise ProjectDBError(f"Project not found: {project_uuid}")
+
             # Decrement ref_count for blobs referenced by versions of this project.
+            # MAX(.., 0) clamps к нулю — schema CHECK would reject negative anyway,
+            # но clamp keeps the update idempotent under race conditions.
             self._conn.execute(
                 """
-                UPDATE blobs SET ref_count = ref_count - 1
+                UPDATE blobs SET ref_count = MAX(ref_count - 1, 0)
                 WHERE sha256 IN (
                     SELECT vf.blob_sha256 FROM version_files vf
                     JOIN versions v ON vf.version_id = v.version_id
@@ -341,11 +359,9 @@ class ProjectDB:
                 """,
                 (project_uuid,),
             )
-            cur = self._conn.execute(
+            self._conn.execute(
                 "DELETE FROM projects WHERE project_uuid = ?", (project_uuid,)
             )
-            if cur.rowcount == 0:
-                raise ProjectDBError(f"Project not found: {project_uuid}")
         _log.info("Deleted project %s", project_uuid)
 
     # ---- Version operations ------------------------------------------------

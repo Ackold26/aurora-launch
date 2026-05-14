@@ -63,7 +63,8 @@ CREATE INDEX IF NOT EXISTS idx_version_files_blob ON version_files(blob_sha256);
 CREATE TABLE IF NOT EXISTS blobs (
     sha256 TEXT PRIMARY KEY,                               -- content hash (lowercase hex, 64 chars)
     size_bytes INTEGER NOT NULL,
-    ref_count INTEGER NOT NULL DEFAULT 0,                  -- 0 = orphan (GC candidate)
+    ref_count INTEGER NOT NULL DEFAULT 0                   -- 0 = orphan (GC candidate)
+        CHECK (ref_count >= 0),                            -- audit P0-03 fix: prevent underflow от double-delete
     created_at TEXT NOT NULL,
     storage_path TEXT NOT NULL                             -- relative path: 'blobs/sha256-aabb.pickle'
 );

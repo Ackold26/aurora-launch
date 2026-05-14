@@ -177,7 +177,10 @@ class BlobStore:
             raise BlobStoreError(f"Failed to delete blob {sha256}: {exc}") from exc
 
     def list_all(self) -> list[BlobInfo]:
-        """Enumerate всех blobs on disk (for GC reconciliation, audit)."""
+        """Enumerate всех blobs on disk (for GC reconciliation, audit).
+
+        Audit P0-08 fix: validate lowercase hex chars in parsed SHA, не только length.
+        """
         results: list[BlobInfo] = []
         if not self.blobs_dir.exists():
             return results
@@ -190,7 +193,7 @@ class BlobStore:
             ):
                 continue
             sha = name[len(BLOB_FILENAME_PREFIX) : -len(BLOB_FILE_SUFFIX)]
-            if len(sha) != 64:
+            if len(sha) != 64 or any(c not in "0123456789abcdef" for c in sha):
                 _log.warning("Skipping malformed blob filename: %s", name)
                 continue
             try:
