@@ -20,6 +20,7 @@ use std::sync::Mutex;
 mod commands;
 mod errors;
 mod panic_handler;
+mod paths;
 mod sidecar;
 mod state;
 
@@ -40,10 +41,16 @@ pub fn run() {
     // command surfaces these dumps for support submission.
     panic_handler::install_panic_hook(env!("CARGO_PKG_VERSION"), BUILD_PROFILE);
 
+    // Phase Π.1.1: ensure all standard data subdirectories exist.
+    if let Err(e) = paths::ensure_layout() {
+        log::warn!("Failed to create standard data layout: {}", e);
+    }
+
     log::info!(
-        "aurora_launch starting — build_profile={}, version={}",
+        "aurora_launch starting — build_profile={}, version={}, user={}",
         BUILD_PROFILE,
-        env!("CARGO_PKG_VERSION")
+        env!("CARGO_PKG_VERSION"),
+        paths::current_username()
     );
 
     tauri::Builder::default()
