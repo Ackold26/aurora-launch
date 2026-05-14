@@ -140,6 +140,7 @@ class AutosaveManager:
         session_id: str | None = None,
         interval_s: float = DEFAULT_AUTOSAVE_INTERVAL_S,
         rolling_count: int = DEFAULT_ROLLING_COUNT,
+        register_signal_handlers: bool = False,
     ) -> None:
         self.autosave_dir = Path(autosave_dir)
         self.autosave_dir.mkdir(parents=True, exist_ok=True)
@@ -159,6 +160,30 @@ class AutosaveManager:
         self._timers: dict[str, threading.Timer] = {}
         self._lock = threading.Lock()
         self._shutdown_flag = threading.Event()
+
+        # S-05 audit fix: register signal handlers for graceful shutdown
+        # (SIGTERM, SIGINT). Triggered atexit too. Without these, daemon
+        # timer threads get killed mid-flight and session marker remains
+        # as if crashed.
+        if register_signal_handlers:
+            self._install_signal_handlers()
+
+    def _install_signal_handlers(self) -> None:
+        """Register SIGTERM/SIGINT/atexit handlers для graceful flush."""
+        import atexit
+        import signal
+
+        atexit.register(self.shutdown)
+        # Only register signal handlers on main thread (signal module limitation).
+        if threading.current_thread() is threading.main_thread():
+            try:
+                signal.signal(signal.SIGTERM, lambda _s, _f: self.shutdown())
+                if hasattr(signal, "SIGINT"):
+                    # SIGINT default raises KeyboardInterrupt — keep that behaviour
+                    # but ensure we shutdown cleanly first via atexit.
+                    pass  # atexit covers это
+            except (ValueError, OSError) as exc:
+                _log.warning("Cannot install signal handlers: %s", exc)
 
     # ---- session lifecycle -------------------------------------------------
 
