@@ -39,8 +39,8 @@ from aurora_launch.persistence.blob_store import BlobStore, BlobStoreError
 
 _log = logging.getLogger(__name__)
 
-SCHEMA_FILE = Path(__file__).parent / "schema.sql"
-CURRENT_SCHEMA_VERSION = 1
+MIGRATIONS_DIR = Path(__file__).parent / "migrations"
+CURRENT_SCHEMA_VERSION = 1  # bump as migrations are added
 
 Granularity = str  # 'monthly' | 'weekly' — runtime check, not Literal (sqlite3 doesn't know Literal)
 ALLOWED_GRANULARITIES = frozenset({"monthly", "weekly"})
@@ -140,39 +140,83 @@ def _utc_now_iso() -> str:
 class ProjectDB:
     """Aurora Launch Planner project database (working storage)."""
 
-    def __init__(self, db_path: Path, blob_store: BlobStore) -> None:
+    def __init__(
+        self,
+        db_path: Path,
+        blob_store: BlobStore,
+        *,
+        encryption_key: str | None = None,
+    ) -> None:
         """Open or initialise database at db_path. blob_store stores artefacts.
 
         Schema is applied on first open. WAL mode enabled for concurrent reads.
+
+        S-09 SQLCipher encryption:
+          - encryption_key=None: plain sqlite3 (legacy / tests / unencrypted dev)
+          - encryption_key=<64 hex>: sqlcipher3 + PRAGMA key
+          - encryption_key="auto": resolve via encryption.get_or_create_db_key()
+            (production path — OS keychain)
         """
         self.db_path = Path(db_path)
         self.blob_store = blob_store
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        self._conn = sqlite3.connect(
-            str(self.db_path),
-            isolation_level=None,  # explicit transaction control via BEGIN/COMMIT
-            detect_types=0,
-        )
-        self._conn.row_factory = sqlite3.Row
+        self._encrypted = encryption_key is not None
+        if encryption_key == "auto":
+            from aurora_launch.persistence.encryption import get_or_create_db_key
+            encryption_key = get_or_create_db_key()
+
+        if self._encrypted:
+            # Use sqlcipher3 для encrypted DB.
+            try:
+                import sqlcipher3  # type: ignore[import-untyped]
+                import sqlcipher3.dbapi2 as _sqlcipher_dbapi  # type: ignore[import-untyped]
+            except ImportError as exc:
+                raise ProjectDBError(
+                    "sqlcipher3 not installed — cannot open encrypted ProjectDB. "
+                    "Install via `pip install sqlcipher3`."
+                ) from exc
+            self._conn = sqlcipher3.connect(
+                str(self.db_path),
+                isolation_level=None,
+                detect_types=0,
+            )
+            # PRAGMA key MUST be set as первое statement, before any read.
+            # SQLCipher syntax: PRAGMA key = "x'<hex>'" (raw key, no key derivation).
+            self._conn.execute(f"PRAGMA key = \"x'{encryption_key}'\"")
+            # Use sqlcipher3's Row class (sqlite3.Row не compatible с different cursor type)
+            self._conn.row_factory = _sqlcipher_dbapi.Row
+        else:
+            self._conn = sqlite3.connect(
+                str(self.db_path),
+                isolation_level=None,
+                detect_types=0,
+            )
+            self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode = WAL")
-        self._conn.execute("PRAGMA synchronous = NORMAL")  # WAL: NORMAL safe per SQLite docs
+        self._conn.execute("PRAGMA synchronous = NORMAL")
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._apply_schema()
 
     def _apply_schema(self) -> None:
-        """Apply schema DDL idempotently. Future migrations gated by schema_version.
+        """Apply pending schema migrations via simple monotonic migrator (S-01).
 
-        Note: `executescript` issues its own COMMIT after each DDL statement,
-        so wrapping it в explicit BEGIN/COMMIT raises 'no transaction is active'.
-        We rely on `CREATE TABLE IF NOT EXISTS` + `INSERT OR IGNORE` for idempotency.
+        Forward-only migrations. Each migration runs in its own transaction
+        (via executescript). Existing CREATE TABLE IF NOT EXISTS + INSERT OR
+        IGNORE patterns в v001_initial.sql keep это idempotent.
         """
-        ddl = SCHEMA_FILE.read_text(encoding="utf-8")
-        self._conn.executescript(ddl)
-        current = self._conn.execute(
-            "SELECT MAX(version) AS v FROM schema_version"
-        ).fetchone()
-        v = current["v"] if current and current["v"] is not None else 0
+        from aurora_launch.persistence.migrator import (
+            MigrationError,
+            apply_pending_migrations,
+            get_current_version,
+        )
+
+        try:
+            apply_pending_migrations(self._conn, MIGRATIONS_DIR)
+        except MigrationError as exc:
+            raise ProjectDBError(f"Schema migration failed: {exc}") from exc
+
+        v = get_current_version(self._conn)
         if v > CURRENT_SCHEMA_VERSION:
             raise ProjectDBError(
                 f"Database schema version {v} is newer than supported "
