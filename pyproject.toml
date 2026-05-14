@@ -21,6 +21,13 @@ dependencies = [
     # ImportError, but pilot DSM data on Materia Medica side = .xlsx (not .csv).
     # Without this dep installation user gets ImportError на первом import.
     "openpyxl>=3.1.5",
+    # Math engines (Phase π.1 — ported from Aurora Econometrica).
+    # JAX / NumPyro intentionally NOT listed here — optional Tier-1 MCMC backend;
+    # user can install separately for 5-15× speed-up. Without JAX, Tier-2 PyTensor
+    # NUTS is used automatically.
+    "pymc>=5.0",
+    "arviz>=0.18",
+    "pytensor>=2.18",
 ]
 
 [tool.uv]
