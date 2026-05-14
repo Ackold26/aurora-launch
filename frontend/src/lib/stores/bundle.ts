@@ -3,6 +3,7 @@ import { writable, derived, get } from 'svelte/store';
 
 import { ipc } from '$ipc/client';
 import type { BundleHandleSummary } from '$ipc/client';
+import { track } from '$lib/services/telemetry';
 
 export const activeBundle = writable<BundleHandleSummary | null>(null);
 
@@ -26,6 +27,18 @@ export async function closeActiveBundle(): Promise<void> {
   activeBundle.set(null);
   isDirty.set(false);
   lastSavedAt.set(null);
+}
+
+/** Save the active bundle to the given path. TELEMETRY-P16: version_save. */
+export async function saveBundleTo(targetPath: string): Promise<void> {
+  const $b = get(activeBundle);
+  if (!$b) return;
+  await ipc.saveBundle($b.handle_id, targetPath);
+  const revision = $b.revision;
+  lastSavedAt.set(new Date().toISOString());
+  isDirty.set(false);
+  // TELEMETRY-P16: version_save
+  track('version_save', { revision });
 }
 
 export async function readEntry(entry: string): Promise<Uint8Array | null> {

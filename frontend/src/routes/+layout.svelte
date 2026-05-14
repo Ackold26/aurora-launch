@@ -10,6 +10,7 @@
   import { activeBundle } from '$lib/stores/bundle';
   import { ipc } from '$ipc/client';
   import { pushToast } from '$lib/stores/toast';
+  import { track, initTelemetryInternal } from '$lib/services/telemetry';
 
   import Toaster from '$lib/components/Toaster.svelte';
   import PerfFooter from '$lib/components/PerfFooter.svelte';
@@ -31,6 +32,15 @@
       console.warn('License refresh failed', e);
     }
 
+    // TELEMETRY-P16: app_open — resolve opt-in, then track launch.
+    try {
+      await initTelemetryInternal();
+      const buildInfo = await ipc.getBuildInfo().catch(() => null);
+      track('app_open', { build_profile: buildInfo?.build_profile ?? 'unknown' });
+    } catch (e) {
+      console.debug('[telemetry] app_open failed', e);
+    }
+
     // Cmd+Shift+F → in-app feedback (PREMIUM P10)
     function onKey(e: KeyboardEvent) {
       const isMod = e.metaKey || e.ctrlKey;
@@ -50,6 +60,8 @@
     if (!feedbackText.trim()) return;
     try {
       await ipc.captureFeedback({ text: feedbackText });
+      // TELEMETRY-P16: support_diagnostics_sent
+      track('support_diagnostics_sent', { has_screenshot: false, has_log: false });
       pushToast({ level: 'success', title: $_('feedback.captured') });
       feedbackText = '';
       feedbackOpen = false;

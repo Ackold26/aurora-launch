@@ -105,6 +105,25 @@
   --surface-skeleton: color-mix(in srgb, var(--bg-surface) 60%, var(--text-muted));
   --surface-skeleton-shimmer: color-mix(in srgb, var(--bg-surface) 30%, var(--text-muted));
 
+  /* Surface tier aliases (P-14) — used by ForecastHistory, CertChainViewer, CommandPalette */
+  --bg-elevated: #222532;          /* raised panel above surface */
+  --surface-base: var(--bg-surface);
+  --surface-hover: color-mix(in srgb, var(--bg-surface) 70%, var(--text-muted) 30%);
+  --surface-selected: color-mix(in srgb, var(--accent) 12%, var(--bg-surface));
+
+  /* Border tier aliases (P-14) */
+  --border-default: #3a3d4d;       /* standard rule, stronger than --border-subtle */
+
+  /* Action aliases (P-14) — mirrors --accent so ForecastHistory buttons resolve */
+  --color-primary: var(--accent);
+  --color-primary-hover: color-mix(in srgb, var(--accent) 80%, #fff 20%);
+  --color-muted: var(--text-muted);
+
+  /* Display type scale (P-14) — used by ForecastHistory section headings */
+  --typography-fontSize-display-xs: 1.125rem;
+  --typography-fontSize-display-sm: 1.5rem;
+  --typography-fontSize-ui-base: var(--typography-fontSize-ui-body);  /* alias used by CommandPalette */
+
   /* Motion timings (Block 2D) */
   --motion-fast: 150ms;
   --motion-default: 200ms;
@@ -132,6 +151,12 @@
   --shadow-md: 0 4px 12px rgba(20, 30, 60, 0.12);
   --shadow-lg: 0 12px 32px rgba(20, 30, 60, 0.18);
   --shadow-glow: 0 0 24px rgba(46, 91, 255, 0.18);
+
+  /* P-14 surface/border overrides for light theme */
+  --bg-elevated: #F0F2F7;
+  --surface-hover: #F5F6FA;
+  --surface-selected: color-mix(in srgb, var(--accent) 8%, #FFFFFF);
+  --border-default: #C8CBD6;
 }
 
 /* High contrast (a11y, ГОСТ Р 52872-2019) */

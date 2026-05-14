@@ -9,6 +9,7 @@
   import { setLocale, type SupportedLocale, SUPPORTED_LOCALES } from '$lib/i18n';
   import { ipc } from '$ipc/client';
   import type { BuildInfo } from '$ipc/client';
+  import { track, notifyOptInChange } from '$lib/services/telemetry';
 
   let telemetryOptIn = $state(false);
   let buildInfo = $state<BuildInfo | null>(null);
@@ -31,6 +32,12 @@
     telemetryOptIn = target.checked;
     try {
       await ipc.setTelemetryOptIn(telemetryOptIn);
+      // Notify telemetry service of opt-in state change (flush or discard buffer).
+      notifyOptInChange(telemetryOptIn);
+      // TELEMETRY-P16: settings_changed (telemetry toggle itself)
+      if (telemetryOptIn) {
+        track('settings_changed', { setting_key: 'telemetry_opt_in' });
+      }
     } catch (err) {
       console.error('telemetry opt-in toggle failed', err);
     }
@@ -38,10 +45,14 @@
 
   function changeTheme(mode: ThemeMode) {
     themeMode.set(mode);
+    // TELEMETRY-P16: settings_changed
+    track('settings_changed', { setting_key: 'theme' });
   }
 
   function changeLocale(loc: SupportedLocale) {
     setLocale(loc);
+    // TELEMETRY-P16: settings_changed
+    track('settings_changed', { setting_key: 'locale' });
   }
 </script>
 

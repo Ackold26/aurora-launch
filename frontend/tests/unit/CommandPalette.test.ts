@@ -192,6 +192,62 @@ describe('CommandPalette', () => {
     expect(screen.getByRole('dialog')).toBeTruthy();
   });
 
+  // ---------- ARIA combobox pattern (WAI-ARIA 1.2 §3.8) ----------
+
+  it('input has role="combobox" with aria-expanded=true when open', () => {
+    render(CommandPalette, defaultProps({ open: true }));
+    const input = screen.getByRole('combobox');
+    expect(input.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('input aria-controls references listbox by id', () => {
+    render(CommandPalette, defaultProps());
+    const input = screen.getByRole('combobox');
+    const listboxId = input.getAttribute('aria-controls');
+    expect(listboxId).toBeTruthy();
+    const listbox = document.getElementById(listboxId!);
+    expect(listbox).toBeTruthy();
+    expect(listbox!.getAttribute('role')).toBe('listbox');
+  });
+
+  it('each option has unique id matching palette-option-<cmd.id> pattern', () => {
+    render(CommandPalette, defaultProps());
+    const options = screen.getAllByRole('option');
+    const ids = options.map((o) => o.getAttribute('id') ?? '');
+    // All IDs present and start with "palette-option-"
+    expect(ids.every((id) => id.startsWith('palette-option-'))).toBe(true);
+    // All IDs unique
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('aria-activedescendant on input matches first option id initially', () => {
+    render(CommandPalette, defaultProps());
+    const input = screen.getByRole('combobox');
+    const options = screen.getAllByRole('option');
+    const firstOptionId = options[0].getAttribute('id');
+    expect(input.getAttribute('aria-activedescendant')).toBe(firstOptionId);
+  });
+
+  it('aria-activedescendant updates after ArrowDown navigation', async () => {
+    render(CommandPalette, defaultProps());
+    const backdrop = screen.getByRole('dialog');
+    await fireEvent.keyDown(backdrop, { key: 'ArrowDown' });
+    const input = screen.getByRole('combobox');
+    const options = screen.getAllByRole('option');
+    // After one ArrowDown: index 1 selected
+    const secondOptionId = options[1].getAttribute('id');
+    expect(input.getAttribute('aria-activedescendant')).toBe(secondOptionId);
+  });
+
+  it('aria-selected reflects current highlight: selected=true only on active option', () => {
+    render(CommandPalette, defaultProps());
+    const options = screen.getAllByRole('option');
+    const selected = options.filter((o) => o.getAttribute('aria-selected') === 'true');
+    const deselected = options.filter((o) => o.getAttribute('aria-selected') === 'false');
+    expect(selected).toHaveLength(1);
+    expect(deselected).toHaveLength(options.length - 1);
+  });
+
   // ---------- mouse hover ----------
 
   it('mouseenter on item → that item becomes selected', async () => {

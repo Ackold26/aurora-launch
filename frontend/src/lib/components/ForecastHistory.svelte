@@ -32,6 +32,7 @@
     type VersionDiff,
   } from '$ipc/projects';
   import ForecastHistorySkeleton from '$lib/components/skeletons/ForecastHistorySkeleton.svelte';
+  import { formatTimeAgo } from '$lib/utils/time';
 
   interface Props {
     projectUuid: string;
@@ -121,16 +122,7 @@
   }
 
   function timeAgo(iso: string): string {
-    // Minimal relative-time formatter; production would use Intl.RelativeTimeFormat
-    // от P-12 i18n setup. For now: deterministic Russian short form.
-    const t = new Date(iso).getTime();
-    if (!Number.isFinite(t)) return iso;
-    const secs = Math.max(0, Math.floor((Date.now() - t) / 1000));
-    if (secs < 60) return 'только что';
-    if (secs < 3600) return `${Math.floor(secs / 60)} мин назад`;
-    if (secs < 86400) return `${Math.floor(secs / 3600)} ч назад`;
-    if (secs < 86400 * 30) return `${Math.floor(secs / 86400)} дн назад`;
-    return new Date(iso).toLocaleDateString('ru-RU');
+    return formatTimeAgo(iso, 'ru');
   }
 
   function shortHash(hash: string | null): string {

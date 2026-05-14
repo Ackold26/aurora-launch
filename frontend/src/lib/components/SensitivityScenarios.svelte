@@ -11,6 +11,9 @@
 -->
 
 <script lang="ts">
+  import { onMount } from 'svelte';
+  import { track } from '$lib/services/telemetry';
+
   // Phase Premium P-04: accept RAW numbers + granularity + currency.
   // Component formats internally via Intl.NumberFormat — calling code passes
   // pure numeric forecast values, not pre-formatted strings. Eliminates
@@ -78,15 +81,26 @@
     return formatter.format(n);
   }
 
+  // TELEMETRY-P16: sensitivity_open — fires once on component mount.
+  onMount(() => {
+    track('sensitivity_open', {});
+  });
+
   function handleClick(name: 'pessimistic' | 'base' | 'optimistic') {
     onSelectScenario?.(name);
+  }
+
+  function handleSwitchToExpert() {
+    // TELEMETRY-P16: mode_override_used — user explicitly switched to Expert mode.
+    track('mode_override_used', { mode_name: 'expert' });
+    onSwitchToExpert?.();
   }
 </script>
 
 <section class="sensitivity-scenarios" aria-label="Сценарии чувствительности прогноза">
   <header class="scenarios-header">
     <h3 class="scenarios-title">Сценарии прогноза</h3>
-    <button type="button" class="expert-toggle" onclick={onSwitchToExpert}>
+    <button type="button" class="expert-toggle" onclick={handleSwitchToExpert}>
       ⚙ Expert mode (расширенные параметры)
     </button>
   </header>

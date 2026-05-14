@@ -31,6 +31,10 @@
   let selectedIndex = $state(0);
   let inputRef = $state<HTMLInputElement | null>(null);
 
+  // Stable listbox + option IDs for ARIA combobox pattern (WAI-ARIA 1.2 §3.8)
+  const LISTBOX_ID = 'palette-listbox';
+  const optionId = (cmdId: string) => `palette-option-${cmdId}`;
+
   // Fuzzy filter: substring match w/ case-insensitive, label + description + category
   const filteredCommands = $derived.by(() => {
     const query = searchInput.toLowerCase().trim();
@@ -40,6 +44,11 @@
       return haystack.includes(query);
     });
   });
+
+  // Active-descendant ID for screen-reader tracking of keyboard selection (WAI-ARIA 1.2 §3.8)
+  const activeDescendant = $derived(
+    filteredCommands.length > 0 ? optionId(filteredCommands[selectedIndex]?.id ?? '') : undefined
+  );
 
   $effect(() => {
     if (open) {
@@ -85,10 +94,10 @@
     onkeydown={handleKeydown}
     role="dialog"
     aria-modal="true"
-    aria-labelledby="palette-title"
+    aria-label="Палитра команд"
     tabindex="-1"
   >
-    <div class="palette" role="combobox" aria-expanded="true" aria-haspopup="listbox" aria-controls="palette-list">
+    <div class="palette">
       <header class="palette-header">
         <div class="palette-icon" aria-hidden="true">⌘</div>
         <input
@@ -97,6 +106,11 @@
           type="text"
           placeholder="Поиск действий…"
           aria-label="Поиск действий"
+          aria-autocomplete="list"
+          aria-expanded={open}
+          aria-controls={LISTBOX_ID}
+          aria-activedescendant={activeDescendant}
+          role="combobox"
           class="palette-search"
           autocomplete="off"
           spellcheck="false"
@@ -104,12 +118,13 @@
         <kbd class="palette-shortcut-hint">Esc</kbd>
       </header>
 
-      <ul id="palette-list" class="palette-list" role="listbox" aria-label="Команды">
+      <ul id={LISTBOX_ID} class="palette-list" role="listbox" aria-label="Команды">
         {#if filteredCommands.length === 0}
-          <li class="palette-empty">Ничего не найдено</li>
+          <li class="palette-empty" role="presentation">Ничего не найдено</li>
         {:else}
           {#each filteredCommands as cmd, i (cmd.id)}
             <li
+              id={optionId(cmd.id)}
               class="palette-item"
               class:selected={i === selectedIndex}
               role="option"

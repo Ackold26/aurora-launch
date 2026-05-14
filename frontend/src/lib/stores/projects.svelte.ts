@@ -18,6 +18,7 @@ import {
   loadSampleBundle as ipcLoadSampleBundle,
 } from '$ipc/projects';
 import type { ProjectSummary, ProjectDetail, SampleScenario, Granularity } from '$ipc/projects';
+import { track, categoriseError, fingerprintStack } from '$lib/services/telemetry';
 
 class ProjectsStore {
   projects = $state<ProjectSummary[]>([]);
@@ -33,6 +34,11 @@ class ProjectsStore {
       this.projects = await listProjects();
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e);
+      // TELEMETRY-P16: error_occurred (store actions)
+      track('error_occurred', {
+        error_category: categoriseError(e),
+        stack_fingerprint: fingerprintStack(e instanceof Error ? e.stack : undefined),
+      });
     } finally {
       this.loading = false;
     }
@@ -41,6 +47,8 @@ class ProjectsStore {
   /** Create a new project, then refresh the list. Returns the new project_uuid. */
   async create(name: string, granularity: Granularity = 'monthly'): Promise<string> {
     const result = await createProject(name, { granularity });
+    // TELEMETRY-P16: project_create
+    track('project_create', { granularity });
     await this.refresh();
     return result.project_uuid;
   }

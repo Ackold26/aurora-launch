@@ -57,19 +57,20 @@ describe('SaveIndicator — time-ago', () => {
     expect(screen.getByText(/только что/)).toBeTruthy();
   });
 
-  it('2 minutes ago shows "2 мин назад"', () => {
+  it('2 minutes ago shows a minutes-range string', () => {
     renderIndicator({ state: 'saved', lastSavedAt: nowMinus(120) });
-    expect(screen.getByText(/2 мин назад/)).toBeTruthy();
+    // Intl.RelativeTimeFormat may produce "2 мин. назад" or "2 мин назад" depending on runtime
+    expect(screen.getByText(/2.мин/)).toBeTruthy();
   });
 
-  it('3 hours ago shows "3 ч назад"', () => {
+  it('3 hours ago shows an hours-range string', () => {
     renderIndicator({ state: 'saved', lastSavedAt: nowMinus(3 * 3600) });
-    expect(screen.getByText(/3 ч назад/)).toBeTruthy();
+    expect(screen.getByText(/3.ч/)).toBeTruthy();
   });
 
-  it('2 days ago shows "2 дн назад"', () => {
+  it('2 days ago shows a days-range string', () => {
     renderIndicator({ state: 'saved', lastSavedAt: nowMinus(2 * 86400) });
-    expect(screen.getByText(/2 дн назад/)).toBeTruthy();
+    expect(screen.getByText(/2.дн/)).toBeTruthy();
   });
 });
 

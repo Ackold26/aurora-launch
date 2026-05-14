@@ -28,6 +28,7 @@
   } from '$ipc/client';
   import { pushToast } from '$lib/stores/toast';
   import { determineVerdict } from '$lib/utils/verdict';
+  import { track } from '$lib/services/telemetry';
 
   const STEPS = [
     'import',
@@ -196,6 +197,11 @@
         if (payload.forecast_handle !== forecastHandleId) return;
         forecastCompleted = true;
         forecastStatus = { ...forecastStatus, progress: 1 };
+        // TELEMETRY-P16: forecast_complete
+        track('forecast_complete', {
+          horizon_periods: payload.horizon_weeks,
+          elapsed_ms: payload.elapsed_ms,
+        });
         pushToast({
           level: 'success',
           title: $_('forecast.completed', {
@@ -226,6 +232,8 @@
 
     try {
       forecastHorizon = 26;
+      // TELEMETRY-P16: forecast_start
+      track('forecast_start', { horizon_weeks: forecastHorizon });
       const handle = await ipc.startForecast({
         project_id: crypto.randomUUID(),
         horizon_weeks: forecastHorizon,
