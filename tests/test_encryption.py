@@ -70,6 +70,18 @@ class TestKeyResolution:
             )
 
 
+def _sqlcipher_available() -> bool:
+    try:
+        import sqlcipher3  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+@pytest.mark.skipif(
+    not _sqlcipher_available(),
+    reason="sqlcipher3 not installed — install via `pip install sqlcipher3` для encryption tests",
+)
 class TestSQLCipherIntegration:
     """ProjectDB с encryption_key — verifies SQLCipher actually encrypts."""
 

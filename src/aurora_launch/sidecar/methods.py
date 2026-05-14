@@ -13,6 +13,16 @@ Block 4 method inventory:
 - `inspect_bundle_entry_json` — Phase 5: Inspector tab data wiring
 - `shutdown` — graceful exit signal from Rust parent
 
+Phase Π.3b — ProjectDB wired handlers:
+- `create_project` — create new project in singleton ProjectDB
+- `list_projects` — list all projects
+- `get_project` — get project detail + version list
+- `delete_project` — delete project and all its blobs
+- `list_versions` — list versions of a project
+- `compare_versions` — diff two versions by file content hashes
+- `import_aurora_bundle` — import .aurora ZIP bundle into ProjectDB
+- `load_sample_bundle` — load pilot XLSX + derive synthetic posterior
+
 All `cancel_forecast` cancellation goes through `_cancel_flags` dict —
 cooperative pattern (D5: NO SIGINT, NO terminate).
 """
@@ -20,6 +30,7 @@ cooperative pattern (D5: NO SIGINT, NO terminate).
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 import uuid
@@ -35,6 +46,80 @@ from aurora_launch.sidecar import events
 _METHODS: dict[str, Callable[[dict[str, Any]], Any]] = {}
 _cancel_flags: dict[str, threading.Event] = {}
 _forecast_threads: dict[str, threading.Thread] = {}
+
+
+# ─── ProjectDB singleton ──────────────────────────────────────────────────────
+
+
+class SidecarStorageError(RuntimeError):
+    """Raised when ProjectDB singleton initialization fails."""
+
+
+_PROJECT_DB: Any = None  # ProjectDB | None — typed as Any to avoid top-level import
+_PROJECT_DB_LOCK = threading.Lock()
+
+
+def _get_project_db() -> Any:
+    """Return module-level ProjectDB singleton; initialize on first call.
+
+    Path resolution priority:
+      1. AURORA_PROJECT_DB_PATH env var (tests / staging override)
+      2. platformdirs.user_data_dir("Aurora Launch") if platformdirs available
+      3. ~/.aurora-launch/ fallback
+
+    Per INV-11: explicit exception wrapping, no bare pass.
+    """
+    global _PROJECT_DB  # noqa: PLW0603
+
+    if _PROJECT_DB is not None:
+        return _PROJECT_DB
+
+    with _PROJECT_DB_LOCK:
+        # Double-checked locking (another thread may have initialized while waiting)
+        if _PROJECT_DB is not None:
+            return _PROJECT_DB
+
+        try:
+            from aurora_launch.persistence.blob_store import BlobStore
+            from aurora_launch.persistence.project_db import ProjectDB
+
+            env_path = os.environ.get("AURORA_PROJECT_DB_PATH")
+            if env_path:
+                data_root = Path(env_path)
+            else:
+                try:
+                    import platformdirs  # type: ignore[import-untyped]
+                    data_root = Path(platformdirs.user_data_dir("Aurora Launch"))
+                except ImportError:
+                    data_root = Path.home() / ".aurora-launch"
+
+            data_root.mkdir(parents=True, exist_ok=True)
+            blobs_dir = data_root / "blobs"
+            blobs_dir.mkdir(parents=True, exist_ok=True)
+
+            blob_store = BlobStore(blobs_dir)
+            # AURORA_PROJECT_DB_KEY env override:
+            #   "none"  → unencrypted (CI without sqlcipher3, tests)
+            #   "auto"  → keychain-backed (default production)
+            #   hex64   → explicit key (advanced ops)
+            key_env = os.environ.get("AURORA_PROJECT_DB_KEY", "auto").strip().lower()
+            if key_env == "none":
+                encryption_key: str | None = None
+            elif key_env == "auto":
+                encryption_key = "auto"
+            else:
+                encryption_key = key_env  # explicit hex passed through
+            db = ProjectDB(
+                data_root / "projects.db",
+                blob_store,
+                encryption_key=encryption_key,
+            )
+            _PROJECT_DB = db
+            return _PROJECT_DB
+        except Exception as exc:
+            raise SidecarStorageError(
+                f"Cannot initialize ProjectDB: {exc}"
+            ) from exc
 
 
 def register(name: str):
@@ -67,6 +152,323 @@ class MethodNotFoundError(LookupError):
 @register("ping")
 def _ping(_params: dict[str, Any]) -> dict[str, Any]:
     return {"pong": True, "version": __version__, "methods": list_methods()}
+
+
+# ─── Phase Π.3b: ProjectDB handlers ─────────────────────────────────────────
+
+
+@register("create_project")
+def _create_project(params: dict[str, Any]) -> dict[str, Any]:
+    """Create a new project in ProjectDB.
+
+    Params:
+      - name: str
+      - granularity: str = "monthly" | "weekly"
+      - metadata: dict = {}
+    Returns:
+      - project_uuid, name, created_at
+    """
+    name = str(params.get("name", "")).strip()
+    if not name:
+        raise ValueError("name must be non-empty")
+    granularity = str(params.get("granularity", "monthly"))
+    metadata = params.get("metadata") or {}
+    if not isinstance(metadata, dict):
+        raise ValueError("metadata must be a dict")
+
+    db = _get_project_db()
+    try:
+        project_uuid = db.create_project(
+            name=name,
+            aurora_app_version=__version__,
+            granularity=granularity,
+            metadata=metadata,
+        )
+        detail = db.get_project(project_uuid)
+    except Exception as exc:
+        raise SidecarStorageError(f"create_project failed: {exc}") from exc
+
+    return {
+        "project_uuid": project_uuid,
+        "name": detail.name,
+        "created_at": detail.created_at,
+    }
+
+
+@register("list_projects")
+def _list_projects(_params: dict[str, Any]) -> dict[str, Any]:
+    """List all projects ordered by last_modified DESC.
+
+    Returns: {"projects": [...]}
+    """
+    db = _get_project_db()
+    try:
+        summaries = db.list_projects()
+    except Exception as exc:
+        raise SidecarStorageError(f"list_projects failed: {exc}") from exc
+
+    return {
+        "projects": [
+            {
+                "project_uuid": s.project_uuid,
+                "name": s.name,
+                "created_at": s.created_at,
+                "last_modified": s.last_modified,
+                "granularity": s.granularity,
+                "version_count": s.version_count,
+                "current_version_id": s.current_version_id,
+            }
+            for s in summaries
+        ]
+    }
+
+
+@register("get_project")
+def _get_project(params: dict[str, Any]) -> dict[str, Any]:
+    """Get project detail + all versions (no blob payloads).
+
+    Params: project_uuid: str
+    Returns: project metadata + versions list
+    """
+    project_uuid = str(params.get("project_uuid", "")).strip()
+    if not project_uuid:
+        raise ValueError("project_uuid must be non-empty")
+
+    db = _get_project_db()
+    try:
+        detail = db.get_project(project_uuid)
+    except Exception as exc:
+        raise SidecarStorageError(f"get_project failed: {exc}") from exc
+
+    return {
+        "project_uuid": detail.project_uuid,
+        "name": detail.name,
+        "metadata": detail.metadata,
+        "versions": [
+            {
+                "version_id": v.version_id,
+                "revision": v.revision,
+                "label": v.label,
+                "created_at": v.created_at,
+                "file_count": v.file_count,
+            }
+            for v in detail.versions
+        ],
+    }
+
+
+@register("delete_project")
+def _delete_project(params: dict[str, Any]) -> dict[str, Any]:
+    """Delete a project and all its versions + blobs.
+
+    Params: project_uuid: str
+    Returns: {"deleted": true}
+    """
+    project_uuid = str(params.get("project_uuid", "")).strip()
+    if not project_uuid:
+        raise ValueError("project_uuid must be non-empty")
+
+    db = _get_project_db()
+    try:
+        db.delete_project(project_uuid)
+    except Exception as exc:
+        raise SidecarStorageError(f"delete_project failed: {exc}") from exc
+
+    return {"deleted": True}
+
+
+@register("list_versions")
+def _list_versions(params: dict[str, Any]) -> dict[str, Any]:
+    """List all versions of a project (chronological ascending).
+
+    Params: project_uuid: str
+    Returns: {"versions": [...]}
+    """
+    project_uuid = str(params.get("project_uuid", "")).strip()
+    if not project_uuid:
+        raise ValueError("project_uuid must be non-empty")
+
+    db = _get_project_db()
+    try:
+        versions = db.list_versions(project_uuid)
+    except Exception as exc:
+        raise SidecarStorageError(f"list_versions failed: {exc}") from exc
+
+    return {
+        "versions": [
+            {
+                "version_id": v.version_id,
+                "revision": v.revision,
+                "label": v.label,
+                "decision_note": v.decision_note,
+                "created_at": v.created_at,
+                "composite_bundle_hash": v.composite_bundle_hash,
+                "file_count": v.file_count,
+            }
+            for v in versions
+        ]
+    }
+
+
+@register("compare_versions")
+def _compare_versions(params: dict[str, Any]) -> dict[str, Any]:
+    """Diff two versions by file-path / blob hash.
+
+    Params: version_id_a: int, version_id_b: int
+    Returns: files_only_in_a, files_only_in_b, files_changed, files_unchanged
+    """
+    try:
+        version_id_a = int(params["version_id_a"])
+        version_id_b = int(params["version_id_b"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"version_id_a and version_id_b must be integers: {exc}") from exc
+
+    db = _get_project_db()
+    try:
+        diff = db.compare_versions(version_id_a, version_id_b)
+    except Exception as exc:
+        raise SidecarStorageError(f"compare_versions failed: {exc}") from exc
+
+    return {
+        "files_only_in_a": diff.files_only_in_a,
+        "files_only_in_b": diff.files_only_in_b,
+        "files_changed": diff.files_changed,
+        "files_unchanged": diff.files_unchanged,
+    }
+
+
+@register("import_aurora_bundle")
+def _import_aurora_bundle(params: dict[str, Any]) -> dict[str, Any]:
+    """Import a .aurora ZIP bundle into ProjectDB.
+
+    Params:
+      - bundle_path: str
+      - project_name: str | None
+      - granularity: str = "monthly"
+    Returns: {"project_uuid": str, "version_id": int}
+    """
+    from aurora_launch.persistence import migration_from_zip
+
+    bundle_path_raw = str(params.get("bundle_path", "")).strip()
+    if not bundle_path_raw:
+        raise ValueError("bundle_path must be non-empty")
+    bundle_path = Path(bundle_path_raw)
+
+    project_name = params.get("project_name") or None
+    granularity = str(params.get("granularity", "monthly"))
+
+    db = _get_project_db()
+    try:
+        project_uuid = migration_from_zip.import_aurora_bundle(
+            bundle_path,
+            db,
+            project_name=project_name,
+            granularity=granularity,
+        )
+        # get_project to find current_version_id (HEAD after import)
+        detail = db.get_project(project_uuid)
+    except Exception as exc:
+        raise SidecarStorageError(f"import_aurora_bundle failed: {exc}") from exc
+
+    return {
+        "project_uuid": project_uuid,
+        "version_id": detail.current_version_id,
+    }
+
+
+# Known pilot XLSX scenarios — paths from test files
+_SAMPLE_BUNDLE_PATHS: dict[str, Path] = {
+    "kagotsel_venarus": Path(
+        "C:/Users/ackol/Desktop/Аврора - материалы для обучения и тестирования"
+        "/Эконометрика - тестовые файлы/XLSX"
+        "/Кагоцел РФ+_данные для эконометрики + наши данные 29.08.xlsx"
+    ),
+    "afala_afalaza": Path(
+        "C:/Users/ackol/Desktop/Аврора - материалы для обучения и тестирования"
+        "/Эконометрика - тестовые файлы/XLSX"
+        "/Венарус_данные для эконометрики для модели + наши данные.xlsx"
+    ),
+    "multi_proxy": Path(
+        "C:/Users/ackol/Desktop/Аврора - материалы для обучения и тестирования"
+        "/Эконометрика - тестовые файлы/XLSX/MMX 2021-2025 исходник.xlsx"
+    ),
+}
+
+
+@register("load_sample_bundle")
+def _load_sample_bundle(params: dict[str, Any]) -> dict[str, Any]:
+    """Load pilot XLSX + derive synthetic posterior; save as ProjectDB version.
+
+    Params: scenario: str — one of "kagotsel_venarus" | "afala_afalaza" | "multi_proxy"
+    Returns: {"project_uuid", "version_id", "channels", "n_periods"}
+    """
+    from aurora_launch.persistence.safe_serializer import serialize
+    from aurora_launch.sample_bundles.econometrica_xlsx_adapter import (
+        load_econometrica_xlsx,
+    )
+    from aurora_launch.sample_bundles.synthetic_posterior import (
+        derive_synthetic_posterior,
+    )
+
+    scenario = str(params.get("scenario", "")).strip()
+    if scenario not in _SAMPLE_BUNDLE_PATHS:
+        raise ValueError(
+            f"Unknown scenario {scenario!r}. "
+            f"Valid: {sorted(_SAMPLE_BUNDLE_PATHS.keys())}"
+        )
+
+    xlsx_path = _SAMPLE_BUNDLE_PATHS[scenario]
+    if not xlsx_path.exists():
+        raise FileNotFoundError(
+            f"Sample XLSX not found at {xlsx_path}. "
+            f"Ensure pilot test files are present on this machine."
+        )
+
+    db = _get_project_db()
+    try:
+        dataset = load_econometrica_xlsx(xlsx_path)
+        posterior_result = derive_synthetic_posterior(dataset)
+
+        # Serialize posterior as msgpack blob (safe_serializer format)
+        posterior_payload = {
+            "posterior_samples": posterior_result.posterior_samples,
+            "normalization": posterior_result.normalization,
+            "config": posterior_result.config,
+            "media_cols": posterior_result.media_cols,
+            "n_proxy_observations": posterior_result.n_proxy_observations,
+        }
+        posterior_bytes = serialize(posterior_payload)
+
+        project_name = f"Sample: {scenario}"
+        project_uuid = db.create_project(
+            name=project_name,
+            aurora_app_version=__version__,
+            granularity=dataset.granularity,
+            metadata={
+                "scenario": scenario,
+                "source_xlsx": xlsx_path.name,
+                "n_periods": dataset.n_periods,
+                "channel_ids": dataset.channel_ids,
+            },
+        )
+
+        version_id = db.save_version(
+            project_uuid,
+            files={"proxy_posterior.msgpack": posterior_bytes},
+            label="Initial synthetic posterior",
+            decision_note=f"Loaded from sample XLSX: {xlsx_path.name}",
+        )
+    except (SidecarStorageError, FileNotFoundError, ValueError):
+        raise
+    except Exception as exc:
+        raise SidecarStorageError(f"load_sample_bundle failed: {exc}") from exc
+
+    return {
+        "project_uuid": project_uuid,
+        "version_id": version_id,
+        "channels": dataset.channel_ids,
+        "n_periods": dataset.n_periods,
+    }
 
 
 # ─── Phase 2: save_bundle ─────────────────────────────────────────────────────
@@ -178,36 +580,204 @@ class UnsupportedFormatError(ValueError):
 # ─── Phase 4: forecast streaming ──────────────────────────────────────────────
 
 
+class _ProjectNotFoundInDB(LookupError):
+    """Internal signal: project_id not in ProjectDB (triggers legacy fallback)."""
+
+
+class _ProjectForecastData:
+    """Pre-loaded project data for orchestrated forecast.
+
+    DB reads happen in the MAIN thread; this object is passed to the runner thread
+    containing only pure Python / numpy values — no sqlite3 Connection objects.
+    Avoids sqlite3 check_same_thread error.
+    """
+
+    __slots__ = ("project_uuid", "granularity", "posterior_blob", "project_metadata")
+
+    def __init__(
+        self,
+        project_uuid: str,
+        granularity: str,
+        posterior_blob: bytes,
+        project_metadata: dict[str, Any],
+    ) -> None:
+        self.project_uuid = project_uuid
+        self.granularity = granularity
+        self.posterior_blob = posterior_blob
+        self.project_metadata = project_metadata
+
+
+def _load_project_forecast_data(project_id: str) -> _ProjectForecastData:
+    """Load all forecast-necessary data from ProjectDB in the MAIN thread.
+
+    Raises _ProjectNotFoundInDB for missing UUID → caller takes legacy path.
+    Raises ValueError for present-but-invalid project (no versions, no posterior).
+    Per INV-11: explicit per-case exceptions, no bare pass.
+    """
+    from aurora_launch.persistence.project_db import ProjectDBError
+
+    db = _get_project_db()
+
+    try:
+        detail = db.get_project(project_id)
+    except ProjectDBError:
+        raise _ProjectNotFoundInDB(project_id)
+
+    if detail.current_version_id is None:
+        raise ValueError(
+            f"Project {project_id!r} has no saved versions — cannot run forecast"
+        )
+
+    loaded = db.load_version(detail.current_version_id)
+
+    posterior_blob: bytes | None = None
+    for entry_path, content in loaded.files.items():
+        if "posterior" in entry_path.lower() or "proxy" in entry_path.lower():
+            posterior_blob = content
+            break
+
+    if posterior_blob is None:
+        raise ValueError(
+            f"No proxy posterior blob found в version {detail.current_version_id} "
+            f"for project {project_id!r}. Entries: {list(loaded.files.keys())}"
+        )
+
+    return _ProjectForecastData(
+        project_uuid=project_id,
+        granularity=detail.granularity,
+        posterior_blob=posterior_blob,
+        project_metadata=dict(detail.metadata),
+    )
+
+
 @register("start_forecast")
 def _start_forecast(params: dict[str, Any]) -> dict[str, Any]:
     """Spawn forecast task в background thread. Returns handle immediately;
-    progress emitted as events `forecast_progress` (week-by-week) и final
+    progress emitted as events `forecast_progress` (period-by-period) и final
     `forecast_completed` или `forecast_cancelled`.
 
+    Phase Π.3b: wired to ProjectDB + LaunchOrchestrator.
+    DB reads happen synchronously in the main thread via _load_project_forecast_data
+    before spawning the runner — avoids sqlite3 check_same_thread constraint.
+    Backward compat: if project_uuid not in ProjectDB, falls back to
+    prior_predictive_samples_real (legacy path) with a warning event.
+
     Inputs:
-      - `project_id`: str
-      - `horizon_weeks`: int
-      - `seed`: int
-      - `priors`: dict (optional) — passes through to launch_validate
+      - `project_id`: str — project_uuid in ProjectDB (or legacy project_id)
+      - `horizon_weeks`: int (alias horizon_periods)
+      - `seed`: int = 42
+      - `anchors_override`: dict | None — RecipientAnchors fields override
+      - `spend_plan`: dict[str, list[float]] | None — per-channel spend by period
+
     Output:
       - `forecast_handle`: str (UUID) — for cancel + status correlation
+      - `project_id`: str — echoed
+      - `horizon_weeks`: int — echoed
     """
     project_id = str(params.get("project_id", ""))
-    horizon_weeks = int(params.get("horizon_weeks", 26))
+    horizon_weeks = int(params.get("horizon_weeks") or params.get("horizon_periods", 26))
     seed = int(params.get("seed", 42))
+    anchors_override: dict[str, Any] | None = params.get("anchors_override") or None
+    spend_plan_param: dict[str, list[float]] | None = params.get("spend_plan") or None
 
     handle = str(uuid.uuid4())
     cancel = threading.Event()
     _cancel_flags[handle] = cancel
 
-    def runner() -> None:
-        from aurora_launch.engines.launch_validate import (
-            prior_predictive_samples_real,
-        )
-        from aurora_launch.schemas.adaptation import PriorParam
+    # ── Synchronous DB pre-load in the MAIN thread ────────────────────────────
+    # sqlite3 objects cannot cross thread boundaries; load all data here.
+    pre_loaded: _ProjectForecastData | None = None
+    use_legacy = True
+    pre_load_error: Exception | None = None
 
-        started = time.monotonic()
+    if project_id:
         try:
+            pre_loaded = _load_project_forecast_data(project_id)
+            use_legacy = False
+        except _ProjectNotFoundInDB:
+            use_legacy = True  # trigger legacy path + warning
+        except (ValueError, SidecarStorageError) as exc:
+            pre_load_error = exc  # real error — surface as forecast_failed
+            use_legacy = False
+        except Exception as exc:  # noqa: BLE001
+            pre_load_error = exc
+            use_legacy = False
+
+    def runner() -> None:
+        started = time.monotonic()
+
+        # ── Pre-load error path (project found but unreadable) ────────────────
+        if pre_load_error is not None:
+            try:
+                events.emit(
+                    "forecast_failed",
+                    {
+                        "forecast_handle": handle,
+                        "error": str(pre_load_error),
+                        "kind": type(pre_load_error).__name__,
+                    },
+                )
+            except (OSError, ValueError):
+                pass
+            finally:
+                _cancel_flags.pop(handle, None)
+                _forecast_threads.pop(handle, None)
+            return
+
+        # ── Orchestrated path: pre-loaded data, no DB access in thread ────────
+        if pre_loaded is not None:
+            try:
+                _run_orchestrated_forecast_from_data(
+                    data=pre_loaded,
+                    horizon_periods=horizon_weeks,
+                    seed=seed,
+                    anchors_override=anchors_override,
+                    spend_plan=spend_plan_param,
+                    handle=handle,
+                    cancel=cancel,
+                    started=started,
+                )
+            except SystemExit:
+                return
+            except Exception as exc:  # noqa: BLE001
+                try:
+                    events.emit(
+                        "forecast_failed",
+                        {
+                            "forecast_handle": handle,
+                            "error": str(exc),
+                            "kind": type(exc).__name__,
+                        },
+                    )
+                except (OSError, ValueError):
+                    pass
+            finally:
+                _cancel_flags.pop(handle, None)
+                _forecast_threads.pop(handle, None)
+            return
+
+        # ── Legacy fallback ───────────────────────────────────────────────────
+        if use_legacy and project_id:
+            try:
+                events.emit(
+                    "forecast_warning",
+                    {
+                        "forecast_handle": handle,
+                        "warning": (
+                            f"project_id {project_id!r} not found in ProjectDB — "
+                            f"falling back to legacy prior_predictive_samples_real path"
+                        ),
+                    },
+                )
+            except (OSError, ValueError):
+                pass
+
+        try:
+            from aurora_launch.engines.launch_validate import (
+                prior_predictive_samples_real,
+            )
+            from aurora_launch.schemas.adaptation import PriorParam
+
             recipient_priors = {
                 "trend_slope": PriorParam(
                     mean=0.001, std=0.005, source="proxy_transferred"
@@ -219,16 +789,15 @@ def _start_forecast(params: dict[str, Any]) -> dict[str, Any]:
                 n_samples=50,
                 seed=seed,
             )
-            # Stream per-week aggregate (mean + ci) from samples
             for week_idx in range(horizon_weeks):
                 if cancel.is_set():
                     events.emit(
                         "forecast_cancelled",
-                        {"forecast_handle": handle, "week_index": week_idx},
+                        {"forecast_handle": handle, "period_index": week_idx},
                     )
                     return
                 weekly_values = [s.weekly_values[week_idx] for s in samples]
-                mean = sum(weekly_values) / len(weekly_values)
+                mean_val = sum(weekly_values) / len(weekly_values)
                 sorted_vals = sorted(weekly_values)
                 lo = sorted_vals[int(0.025 * len(sorted_vals))]
                 hi = sorted_vals[int(0.975 * len(sorted_vals))]
@@ -236,8 +805,8 @@ def _start_forecast(params: dict[str, Any]) -> dict[str, Any]:
                     "forecast_progress",
                     {
                         "forecast_handle": handle,
-                        "week_index": week_idx,
-                        "point_forecast": mean,
+                        "period_index": week_idx,
+                        "point_forecast": mean_val,
                         "ci_lower": lo,
                         "ci_upper": hi,
                         "progress_pct": round(
@@ -246,9 +815,6 @@ def _start_forecast(params: dict[str, Any]) -> dict[str, Any]:
                         "elapsed_ms": int((time.monotonic() - started) * 1000),
                     },
                 )
-                # Throttle slightly so UI animation remains smooth (real ML
-                # forecast won't need this — но here samples are computed
-                # already, all weeks in <1ms total).
                 time.sleep(0.05)
 
             events.emit(
@@ -257,16 +823,12 @@ def _start_forecast(params: dict[str, Any]) -> dict[str, Any]:
                     "forecast_handle": handle,
                     "horizon_weeks": horizon_weeks,
                     "elapsed_ms": int((time.monotonic() - started) * 1000),
+                    "path": "legacy_prior_predictive",
                 },
             )
         except SystemExit:
-            # POST_PILOT_BACKLOG B4-MED-2 close (2026-05-10):
-            # Server shutdown raises SystemExit в main thread; sampler runs
-            # в daemon thread that may continue past server's stdout close.
-            # Catching SystemExit prevents events.emit() write к закрытому pipe.
-            # Don't emit (stdout already closed); just exit cleanly via finally.
             return
-        except Exception as exc:  # noqa: BLE001 — broad to surface anything
+        except Exception as exc:  # noqa: BLE001
             try:
                 events.emit(
                     "forecast_failed",
@@ -277,9 +839,6 @@ def _start_forecast(params: dict[str, Any]) -> dict[str, Any]:
                     },
                 )
             except (OSError, ValueError):
-                # POST_PILOT_BACKLOG B4-MED-2 close (cont.):
-                # Pipe already closed (race against server shutdown). Swallow —
-                # forecast handle cleanup happens в finally regardless.
                 pass
         finally:
             _cancel_flags.pop(handle, None)
@@ -296,6 +855,138 @@ def _start_forecast(params: dict[str, Any]) -> dict[str, Any]:
         "project_id": project_id,
         "horizon_weeks": horizon_weeks,
     }
+
+
+def _run_orchestrated_forecast_from_data(
+    *,
+    data: _ProjectForecastData,
+    horizon_periods: int,
+    seed: int,
+    anchors_override: dict[str, Any] | None,
+    spend_plan: dict[str, list[float]] | None,
+    handle: str,
+    cancel: threading.Event,
+    started: float,
+) -> None:
+    """Run LaunchOrchestrator forecast from pre-loaded project data (no DB calls).
+
+    All sqlite3 access was done in the main thread. This function runs in the
+    background runner thread with pure Python / numpy values only.
+    Per INV-01: lazy imports inside function — no module-level PyMC.
+    """
+    from aurora_launch.engines.launch_orchestrator import LaunchOrchestrator, ProxyBundle
+    from aurora_launch.engines.pure_transfer_engine import RecipientAnchors
+    from aurora_launch.persistence.safe_serializer import deserialize
+
+    posterior_data = deserialize(data.posterior_blob)
+    proxy = ProxyBundle(
+        posterior_samples=posterior_data["posterior_samples"],
+        media_cols=posterior_data["media_cols"],
+        normalization=posterior_data["normalization"],
+        config=posterior_data.get("config", {}),
+        n_proxy_observations=int(
+            posterior_data.get("n_proxy_observations", 0)
+        ) or data.project_metadata.get("n_periods", 0),
+    )
+
+    # Build anchors from project metadata + optional caller override.
+    # Defaults produce a minimal valid RecipientAnchors (5% share, 80% distribution,
+    # flat seasonality, no price elasticity) suitable for pure-transfer baseline.
+    anchor_fields: dict[str, Any] = {
+        "market_size": 1_000_000.0,
+        "market_size_cv": 0.10,
+        "planned_share_trajectory": [0.05] * horizon_periods,
+        "distribution_trajectory": [0.8] * horizon_periods,
+        "pricing_index": 1.0,
+        "elasticity": 0.0,
+        "seasonality": None,
+    }
+    stored_anchors = data.project_metadata.get("anchors", {})
+    anchor_fields.update(stored_anchors)
+    if anchors_override:
+        anchor_fields.update(anchors_override)
+
+    # Adjust trajectory lengths to match horizon (in case stored anchors differ)
+    for traj_key in ("planned_share_trajectory", "distribution_trajectory"):
+        traj = anchor_fields.get(traj_key)
+        if not isinstance(traj, list) or len(traj) != horizon_periods:
+            default_val = 0.05 if traj_key == "planned_share_trajectory" else 0.8
+            anchor_fields[traj_key] = [default_val] * horizon_periods
+
+    anchors = RecipientAnchors.model_validate(anchor_fields)
+
+    # Build default spend plan (zeros per channel = pure transfer baseline)
+    effective_spend_plan: dict[str, list[float]]
+    if spend_plan:
+        effective_spend_plan = spend_plan
+    else:
+        effective_spend_plan = {
+            ch: [0.0] * horizon_periods for ch in proxy.media_cols
+        }
+
+    granularity = data.granularity  # "monthly" | "weekly"
+
+    orchestrator = LaunchOrchestrator()
+    orch_result = orchestrator.forecast_recipient(
+        proxy=proxy,
+        anchors=anchors,
+        spend_plan=effective_spend_plan,
+        horizon_periods=horizon_periods,
+        granularity=granularity,
+    )
+
+    forecast = orch_result.forecast
+    if forecast is None:
+        raise ValueError("Orchestrator returned None forecast (bias check hard-fail?)")
+
+    n_points = len(forecast.points)
+    for idx, point in enumerate(forecast.points):
+        if cancel.is_set():
+            events.emit(
+                "forecast_cancelled",
+                {"forecast_handle": handle, "period_index": idx},
+            )
+            return
+        events.emit(
+            "forecast_progress",
+            {
+                "forecast_handle": handle,
+                "period_index": idx,
+                "point_forecast": point.point_forecast,
+                "ci_lower": point.ci_lower,
+                "ci_upper": point.ci_upper,
+                "progress_pct": round((idx + 1) / max(n_points, 1) * 100.0, 2),
+                "elapsed_ms": int((time.monotonic() - started) * 1000),
+            },
+        )
+
+    forecast_summary: dict[str, Any] = {
+        "horizon_periods": n_points,
+        "granularity": granularity,
+        "methodology_signature": orch_result.methodology_signature,
+        "engine_mode": orch_result.engine_config.mode.value,
+        "warnings": orch_result.warnings,
+        "points": [
+            {
+                "point_forecast": p.point_forecast,
+                "ci_lower": p.ci_lower,
+                "ci_upper": p.ci_upper,
+            }
+            for p in forecast.points
+        ],
+    }
+
+    events.emit(
+        "forecast_completed",
+        {
+            "forecast_handle": handle,
+            "horizon_weeks": n_points,
+            "elapsed_ms": int((time.monotonic() - started) * 1000),
+            "path": "orchestrated",
+            "project_uuid": data.project_uuid,
+            "forecast": forecast_summary,
+        },
+    )
 
 
 @register("cancel_forecast")
@@ -393,6 +1084,19 @@ def _shutdown(_params: dict[str, Any]) -> dict[str, Any]:
             forecasts_timed_out.append(handle)
         else:
             forecasts_joined.append(handle)
+
+    # Close ProjectDB singleton so WAL checkpoint + file locks release cleanly.
+    global _PROJECT_DB  # noqa: PLW0603
+    with _PROJECT_DB_LOCK:
+        if _PROJECT_DB is not None:
+            try:
+                _PROJECT_DB.close()
+            except Exception as exc:  # noqa: BLE001
+                import logging as _logging
+                _logging.getLogger(__name__).warning(
+                    "ProjectDB close during shutdown raised: %s", exc
+                )
+            _PROJECT_DB = None
 
     return {
         "shutting_down": True,

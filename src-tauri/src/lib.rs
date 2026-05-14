@@ -105,6 +105,15 @@ pub fn run() {
             commands::crash_recovery::get_crash_details,
             commands::crash_recovery::dismiss_crash,
             commands::crash_recovery::dismiss_all_crashes,
+            // project management — ProjectDB + LaunchOrchestrator (R-03a)
+            commands::projects::create_project,
+            commands::projects::list_projects,
+            commands::projects::get_project,
+            commands::projects::delete_project,
+            commands::projects::list_versions,
+            commands::projects::compare_versions,
+            commands::projects::import_aurora_bundle,
+            commands::projects::load_sample_bundle,
         ])
         .setup(|app| {
             // Initialize local SQLite for telemetry + audit log
