@@ -101,6 +101,10 @@
   --font-display: var(--typography-fontFamily-uiDisplay);
   --font-mono: var(--typography-fontFamily-uiMono);
 
+  /* Skeleton tokens (P-10) */
+  --surface-skeleton: color-mix(in srgb, var(--bg-surface) 60%, var(--text-muted));
+  --surface-skeleton-shimmer: color-mix(in srgb, var(--bg-surface) 30%, var(--text-muted));
+
   /* Motion timings (Block 2D) */
   --motion-fast: 150ms;
   --motion-default: 200ms;

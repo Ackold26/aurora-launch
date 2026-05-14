@@ -11,24 +11,72 @@
 -->
 
 <script lang="ts">
+  // Phase Premium P-04: accept RAW numbers + granularity + currency.
+  // Component formats internally via Intl.NumberFormat — calling code passes
+  // pure numeric forecast values, not pre-formatted strings. Eliminates
+  // localisation bugs where one caller formats RUB and другой USD.
+
   interface ScenarioData {
     name: 'pessimistic' | 'base' | 'optimistic';
     title: string;
     description: string;
-    pointForecastFormatted: string;
-    ciLowerFormatted: string;
-    ciUpperFormatted: string;
+    /** Raw point forecast (units). */
+    pointForecast: number;
+    /** Raw 95% CI lower bound. */
+    ciLower: number;
+    /** Raw 95% CI upper bound. */
+    ciUpper: number;
     deltaPctVsBase: number;
   }
+
+  type Currency = 'RUB' | 'USD' | 'EUR' | 'units';
 
   interface Props {
     scenarios: ScenarioData[];
     selected?: 'pessimistic' | 'base' | 'optimistic';
+    /** Locale tag for Intl.NumberFormat. Defaults к 'ru-RU'. */
+    locale?: string;
+    /** Currency token. 'units' renders без currency symbol (plain number). */
+    currency?: Currency;
+    /** Compact display ('1,2 млн') vs full ('1 200 000'). Defaults к 'standard'. */
+    notation?: 'standard' | 'compact';
     onSelectScenario?: (name: string) => void;
     onSwitchToExpert?: () => void;
   }
 
-  let { scenarios, selected = 'base', onSelectScenario, onSwitchToExpert }: Props = $props();
+  let {
+    scenarios,
+    selected = 'base',
+    locale = 'ru-RU',
+    currency = 'RUB',
+    notation = 'standard',
+    onSelectScenario,
+    onSwitchToExpert,
+  }: Props = $props();
+
+  // Cached formatter — recreated only when locale/currency/notation change.
+  const formatter = $derived.by(() => {
+    const opts: Intl.NumberFormatOptions = {
+      notation,
+      maximumFractionDigits: notation === 'compact' ? 1 : 0,
+    };
+    if (currency !== 'units') {
+      opts.style = 'currency';
+      opts.currency = currency;
+      opts.currencyDisplay = 'narrowSymbol';
+    }
+    try {
+      return new Intl.NumberFormat(locale, opts);
+    } catch {
+      // Fallback for invalid locale/currency combo
+      return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+    }
+  });
+
+  function fmt(n: number): string {
+    if (!Number.isFinite(n)) return '—';
+    return formatter.format(n);
+  }
 
   function handleClick(name: 'pessimistic' | 'base' | 'optimistic') {
     onSelectScenario?.(name);
@@ -56,9 +104,9 @@
         <div class="scenario-tier-label">{scenario.title}</div>
         <p class="scenario-description">{scenario.description}</p>
         <div class="scenario-forecast">
-          <div class="scenario-point">{scenario.pointForecastFormatted}</div>
+          <div class="scenario-point">{fmt(scenario.pointForecast)}</div>
           <div class="scenario-ci">
-            CI: {scenario.ciLowerFormatted} — {scenario.ciUpperFormatted}
+            CI: {fmt(scenario.ciLower)} — {fmt(scenario.ciUpper)}
           </div>
         </div>
         {#if scenario.name !== 'base'}

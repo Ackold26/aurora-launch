@@ -1108,6 +1108,72 @@ def _inspect_bundle_entry_json(params: dict[str, Any]) -> dict[str, Any]:
     return {"payload": payload}
 
 
+# ─── Phase Premium P-03: trust score ─────────────────────────────────────────
+
+
+@register("compute_trust_score")
+def _compute_trust_score(params: dict[str, Any]) -> dict[str, Any]:
+    """Compute forecast trust score from 5 diagnostic components.
+
+    Per Plan v3.0 §A.5 formula (weights sum to 1.0):
+      - proxy_similarity_score (float 0..100)  × 0.30
+      - methodology_certified  (float 0..1)    × 0.20
+      - model_convergence_passed (float 0..1)  × 0.20
+      - data_sufficiency       (float 0..1)    × 0.20
+      - uncertainty_pct_inverse (float 0..1)   × 0.10
+
+    All inputs defensively clamped inside the engine — no pre-clamping needed.
+
+    Returns:
+      - score: int (0-100)
+      - tier: str (Manager-mode Russian label, INV-25)
+      - diagnostics: list[dict] (Expert-mode per-component breakdown, INV-25)
+
+    Per INV-11: explicit exception handling, no bare pass.
+    """
+    from aurora_launch.engines.trust_score import TrustScoreInputs, compute_trust_score
+
+    _REQUIRED_FLOAT_FIELDS = (
+        "proxy_similarity_score",
+        "methodology_certified",
+        "model_convergence_passed",
+        "data_sufficiency",
+        "uncertainty_pct_inverse",
+    )
+    for field_name in _REQUIRED_FLOAT_FIELDS:
+        if field_name not in params:
+            raise ValueError(
+                f"compute_trust_score: required field '{field_name}' missing from params"
+            )
+
+    try:
+        inputs = TrustScoreInputs(
+            proxy_similarity_score=float(params["proxy_similarity_score"]),
+            methodology_certified=float(params["methodology_certified"]),
+            model_convergence_passed=float(params["model_convergence_passed"]),
+            data_sufficiency=float(params["data_sufficiency"]),
+            uncertainty_pct_inverse=float(params["uncertainty_pct_inverse"]),
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"compute_trust_score: invalid param types: {exc}") from exc
+
+    result = compute_trust_score(inputs)
+
+    return {
+        "score": result.score,
+        "tier": result.tier,
+        "diagnostics": [
+            {
+                "label": d.label,
+                "value": d.value,
+                "status": d.status,
+                "weight": d.weight,
+            }
+            for d in result.diagnostics
+        ],
+    }
+
+
 # ─── Lifecycle ────────────────────────────────────────────────────────────────
 
 

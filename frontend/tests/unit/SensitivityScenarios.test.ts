@@ -5,33 +5,33 @@ import SensitivityScenarios from '../../src/lib/components/SensitivityScenarios.
 
 beforeEach(() => cleanup());
 
-// Canonical 3-card dataset matching the spec.
+// Canonical 3-card dataset matching the P-04 raw-numbers schema.
 const THREE_SCENARIOS = [
   {
     name: 'pessimistic' as const,
     title: 'Пессимистичный',
     description: 'Худший правдоподобный сценарий',
-    pointForecastFormatted: '1 200 000',
-    ciLowerFormatted: '900 000',
-    ciUpperFormatted: '1 500 000',
+    pointForecast: 1_200_000,
+    ciLower: 900_000,
+    ciUpper: 1_500_000,
     deltaPctVsBase: -18.5,
   },
   {
     name: 'base' as const,
     title: 'Базовый',
     description: 'Текущие параметры',
-    pointForecastFormatted: '1 470 000',
-    ciLowerFormatted: '1 100 000',
-    ciUpperFormatted: '1 840 000',
+    pointForecast: 1_470_000,
+    ciLower: 1_100_000,
+    ciUpper: 1_840_000,
     deltaPctVsBase: 0,
   },
   {
     name: 'optimistic' as const,
     title: 'Оптимистичный',
     description: 'Лучший правдоподобный сценарий',
-    pointForecastFormatted: '1 750 000',
-    ciLowerFormatted: '1 350 000',
-    ciUpperFormatted: '2 150 000',
+    pointForecast: 1_750_000,
+    ciLower: 1_350_000,
+    ciUpper: 2_150_000,
     deltaPctVsBase: 19.0,
   },
 ];
@@ -40,6 +40,7 @@ function defaultProps(overrides: Record<string, unknown> = {}) {
   return {
     scenarios: THREE_SCENARIOS,
     selected: 'base' as const,
+    currency: 'units' as const, // simpler text matches без currency symbols
     ...overrides,
   };
 }
@@ -147,5 +148,59 @@ describe('SensitivityScenarios', () => {
     scenarioButtons.forEach((btn) => {
       expect(btn.tagName.toLowerCase()).toBe('button');
     });
+  });
+
+  // ---------- P-04 raw-numbers + formatting ----------
+
+  it('renders raw point forecast number formatted as Russian locale', () => {
+    render(SensitivityScenarios, defaultProps({ currency: 'units' }));
+    // Russian locale: 1 200 000 (с non-breaking spaces or regular spaces)
+    // Intl.NumberFormat ru-RU uses NBSP ( ). Test через текст что contains 1, 200, 000.
+    const items = screen.getAllByText(/1\s?200\s?000/);
+    expect(items.length).toBeGreaterThan(0);
+  });
+
+  it('currency="RUB" renders ₽ symbol', () => {
+    render(SensitivityScenarios, defaultProps({ currency: 'RUB' }));
+    // narrowSymbol gives ₽
+    const text = document.body.textContent || '';
+    expect(text).toMatch(/₽|RUB/);
+  });
+
+  it('currency="USD" renders $ symbol', () => {
+    render(SensitivityScenarios, defaultProps({ currency: 'USD' }));
+    const text = document.body.textContent || '';
+    expect(text).toMatch(/\$|USD/);
+  });
+
+  it('currency="units" renders без currency symbol', () => {
+    render(SensitivityScenarios, defaultProps({ currency: 'units' }));
+    const text = document.body.textContent || '';
+    expect(text).not.toMatch(/₽|\$|€/);
+  });
+
+  it('notation="compact" produces shorter representation', () => {
+    render(SensitivityScenarios, defaultProps({ currency: 'units', notation: 'compact' }));
+    // ru-RU compact для 1_200_000 → "1,2 млн"
+    const text = document.body.textContent || '';
+    expect(text).toMatch(/млн|M/);
+  });
+
+  it('handles non-finite values gracefully (NaN → "—")', () => {
+    const scenarios = [
+      {
+        name: 'pessimistic' as const,
+        title: 'Пессимистичный',
+        description: 'Test',
+        pointForecast: NaN,
+        ciLower: NaN,
+        ciUpper: NaN,
+        deltaPctVsBase: 0,
+      },
+    ];
+    render(SensitivityScenarios, { scenarios, currency: 'units' });
+    // Дефис-длинный (—) returned для NaN
+    const dashes = screen.getAllByText('—');
+    expect(dashes.length).toBeGreaterThan(0);
   });
 });

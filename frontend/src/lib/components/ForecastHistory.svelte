@@ -31,6 +31,7 @@
     type VersionSummary,
     type VersionDiff,
   } from '$ipc/projects';
+  import ForecastHistorySkeleton from '$lib/components/skeletons/ForecastHistorySkeleton.svelte';
 
   interface Props {
     projectUuid: string;
@@ -170,11 +171,7 @@
   </header>
 
   {#if loading}
-    <div class="skeleton-stack" aria-hidden="true">
-      <div class="skeleton-row"></div>
-      <div class="skeleton-row"></div>
-      <div class="skeleton-row"></div>
-    </div>
+    <ForecastHistorySkeleton />
   {:else if error}
     <p class="error-state" role="alert">Не удалось загрузить историю: {error}</p>
   {:else if sortedVersions.length === 0}
@@ -458,36 +455,6 @@
 
   .error-state {
     color: var(--color-danger, #dc2626);
-  }
-
-  .skeleton-stack {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-2, 0.5rem);
-  }
-
-  .skeleton-row {
-    height: 64px;
-    background: var(--surface-skeleton, #f3f4f6);
-    border-radius: 8px;
-  }
-
-  @media (prefers-reduced-motion: no-preference) {
-    .skeleton-row {
-      background: linear-gradient(
-        90deg,
-        var(--surface-skeleton, #f3f4f6) 0%,
-        var(--surface-skeleton-shimmer, #e5e7eb) 50%,
-        var(--surface-skeleton, #f3f4f6) 100%
-      );
-      background-size: 200% 100%;
-      animation: shimmer 1.5s ease-in-out infinite;
-    }
-
-    @keyframes shimmer {
-      0% { background-position: 200% 0; }
-      100% { background-position: -200% 0; }
-    }
   }
 
   .diff-pane {

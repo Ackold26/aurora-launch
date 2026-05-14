@@ -14,6 +14,7 @@
   import Toaster from '$lib/components/Toaster.svelte';
   import PerfFooter from '$lib/components/PerfFooter.svelte';
   import Badge from '$lib/components/Badge.svelte';
+  import SaveIndicator from '$lib/components/SaveIndicator.svelte';
 
   let { children } = $props();
 
@@ -103,7 +104,11 @@
     {/if}
   </main>
 
-  <PerfFooter />
+  <!-- TODO: wire to wizard save state in Phase Premium P-02 follow-up -->
+  <div class="app-footer">
+    <SaveIndicator state="unsaved" lastSavedAt={null} />
+    <PerfFooter />
+  </div>
   <Toaster />
 
   {#if feedbackOpen}
@@ -147,6 +152,20 @@
     height: 100vh;
     background: var(--bg-main);
     color: var(--text-primary);
+  }
+
+  .app-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-4);
+    padding: 0 var(--spacing-4);
+    border-top: 1px solid var(--border-subtle);
+    background: var(--bg-surface);
+    /* PerfFooter carries its own border-top — neutralise it when nested here */
+    :global(.perf-footer) {
+      border-top: none;
+    }
   }
 
   .app-header {
