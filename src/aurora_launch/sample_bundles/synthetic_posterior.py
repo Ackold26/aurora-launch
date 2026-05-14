@@ -1,7 +1,7 @@
 """Synthetic posterior derivation от Эконометрика dataset (Phase Σ.0.4 + R-02 audit fix).
 
 For pilot demo bundles мы НЕ запускаем real PyMC training (~5 min per scenario,
-slow для onboarding UX). Instead, we derive posterior_samples synthetically
+slow for onboarding UX). Instead, we derive posterior_samples synthetically
 from observed correlations between adstock+hill-transformed spend и sales.
 
 **R-02 audit fix (2026-05-15):** previous version applied ridge regression on
@@ -30,8 +30,8 @@ This matches bayesian_engine output schema:
     control_betas,      # R-12 fix: was missing
   }
 
-This is NOT a substitute для real Bayesian training (that's still required
-for pilot live customers). It IS sufficient для UX demo flows + integration
+This is NOT a substitute for real Bayesian training (that's still required
+for pilot live customers). It IS sufficient for UX demo flows + integration
 tests + first-run wow scenarios.
 """
 
@@ -64,7 +64,7 @@ class SyntheticPosteriorError(RuntimeError):
 
 @dataclass(frozen=True)
 class SyntheticPosteriorResult:
-    """Synthetic posterior + normalization + config — drop-in для ProxyBundle."""
+    """Synthetic posterior + normalization + config — drop-in for ProxyBundle."""
 
     posterior_samples: dict[str, np.ndarray]
     normalization: dict[str, Any]
@@ -105,7 +105,7 @@ def _hill_saturation(
         x_pow = np.power(x, alpha)
         k_pow = np.float64(half_saturation) ** np.float64(alpha)
     denom = x_pow + k_pow
-    # Avoid divide-by-zero для all-zero spend channels
+    # Avoid divide-by-zero for all-zero spend channels
     return np.where(denom > 0, x_pow / denom, 0.0)
 
 
@@ -167,7 +167,7 @@ def _build_transformed_design_matrix(
 
     # Normalise по channel means (matches bayesian_engine downstream)
     transformed_means = X_transformed.mean(axis=0)
-    # Avoid divide-by-zero для all-zero channels (e.g., placeholder)
+    # Avoid divide-by-zero for all-zero channels (e.g., placeholder)
     transformed_means = np.where(transformed_means > 0, transformed_means, 1.0)
     X_normalised = X_transformed / transformed_means
 
@@ -246,7 +246,7 @@ def derive_synthetic_posterior(
         n_samples: posterior sample count per parameter (default 2000)
         hill_alpha: hill shape (default 2.0, OTC sensible)
         adstock_decay: adstock decay (default 0.5)
-        seed: RNG seed для determinism
+        seed: RNG seed for determinism
     """
     X_transformed, X_norm, y, channel_ids = _build_transformed_design_matrix(
         dataset, adstock_decay=adstock_decay, hill_alpha=hill_alpha

@@ -10,8 +10,8 @@ have own versioning (`aurora_launch_schema_version` field в bundle metadata).
 
 This module:
 1. Registers Aurora Launch sub-schemas с C6 registry (additive, no migration yet)
-2. Maintains forward-only BFS migration graph для Aurora Launch sub-schema versions
-3. Documents migration pattern для Phase B+ schema evolution (v1.0 → v1.1+)
+2. Maintains forward-only BFS migration graph for Aurora Launch sub-schema versions
+3. Documents migration pattern for Phase B+ schema evolution (v1.0 → v1.1+)
 
 Current registered Aurora Launch schemas:
 - aurora_launch_metadata v1.0 (B0.5 ships AuroraLaunchBundleMetadata + ProxyBrandMetadata)
@@ -78,7 +78,7 @@ class LaunchSchemaRegistry:
         """BFS shortest forward path from_version → to_version.
 
         Returns ordered migration list. Empty list if from == to.
-        Raises ValueError if no path exists или backward attempted.
+        Raises ValueError if no path exists or backward attempted.
         """
         if from_version == to_version:
             return []
@@ -118,7 +118,7 @@ class LaunchSchemaRegistry:
         """Apply forward migration path. Returns new dict.
 
         Adds `aurora_launch_migration_history` list field tracking applied
-        migrations (для audit trail per Phase A C6 H8 pattern).
+        migrations (for audit trail per Phase A C6 H8 pattern).
         """
         target = target_version or self._current_version
         current = metadata.get("aurora_launch_schema_version", "1.0")
@@ -163,5 +163,5 @@ def build_default_launch_registry() -> LaunchSchemaRegistry:
 # C6 registry knows about platform manifest_v3.0; Aurora Launch metadata
 # version tracked separately в bundle's `aurora_launch_metadata` field.
 def get_aurora_launch_metadata_class() -> type[AuroraLaunchBundleMetadata]:
-    """Returns the Pydantic model class для current Aurora Launch metadata version."""
+    """Returns the Pydantic model class for current Aurora Launch metadata version."""
     return AuroraLaunchBundleMetadata

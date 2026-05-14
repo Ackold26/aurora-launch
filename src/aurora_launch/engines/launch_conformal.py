@@ -71,7 +71,7 @@ def split_conformal_intervals(
     q_idx = max(0, min(q_idx, n_cal_actual - 1))
     quantile_residual = sorted_residuals[q_idx]
 
-    # Vovk 2005 correction для small n_cal
+    # Vovk 2005 correction for small n_cal
     if n_cal_actual < MIN_CALIBRATION_FOR_TIGHT_INTERVALS:
         # Inflate quantile by sqrt(50/n) factor (heuristic per audit H4)
         inflation = math.sqrt(MIN_CALIBRATION_FOR_TIGHT_INTERVALS / n_cal_actual)
@@ -116,7 +116,7 @@ def compute_conformal_intervals(
 
 
 def coverage_warning_threshold(n_calibration: int) -> str | None:
-    """Returns warning text if n_calibration insufficient для tight intervals."""
+    """Returns warning text if n_calibration insufficient for tight intervals."""
     if n_calibration < MIN_CALIBRATION_FOR_TIGHT_INTERVALS:
         return (
             f"Conformal calibration set has n={n_calibration} < {MIN_CALIBRATION_FOR_TIGHT_INTERVALS}. "

@@ -1,10 +1,30 @@
 /* Aurora Launch — global styles.
  *
  * Token loading order:
- *   1. tokens.css (generated from 06_Aurora_Design_system/01_Tokens/tokens.json)
- *   2. base reset + typography
- *   3. component-local styles in *.svelte files
+ *   1. Self-hosted fonts (P-11): @fontsource — latin + cyrillic subsets, no CDN (INV-13 privacy)
+ *   2. tokens.css (generated from 06_Aurora_Design_system/01_Tokens/tokens.json)
+ *   3. base reset + typography
+ *   4. component-local styles in *.svelte files
+ *
+ * Font strategy: full per-weight CSS files include unicode-range per subset.
+ * Browser fetches only needed woff2 files (cyrillic downloaded for Russian text).
  */
+
+/* Inter — body / UI (400 regular, 500 medium, 600 semibold, 700 bold) */
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
+
+/* Manrope — display / headers (400, 500, 600, 700) */
+@import '@fontsource/manrope/400.css';
+@import '@fontsource/manrope/500.css';
+@import '@fontsource/manrope/600.css';
+@import '@fontsource/manrope/700.css';
+
+/* JetBrains Mono — code / hex values / IDs (400, 500) */
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
 
 @import './lib/styles/tokens.css';
 @import './lib/styles/base.css';

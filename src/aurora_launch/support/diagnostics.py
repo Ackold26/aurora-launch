@@ -1,14 +1,14 @@
 """Diagnostics ZIP collector (Phase Π.4.1).
 
 Bundles system info + recent logs + audit log + crash dumps в single ZIP file
-для customer to attach к support email. Pure local operation (zero network).
+for customer to attach к support email. Pure local operation (zero network).
 
 Layout inside ZIP:
     diagnostics-{timestamp}.zip
     ├── system_info.json     (OS / Python / disk / RAM / app_version)
     ├── audit_log.json       (last 200 audit entries)
     ├── logs/                (rotated log files from logs_dir)
-    ├── crashes/             (crash dump JSON files если any)
+    ├── crashes/             (crash dump JSON files if any)
     └── README.txt           (Russian + English customer-facing explanation)
 
 Privacy guarantees:
@@ -143,12 +143,12 @@ _README_TEXT = """\
 Aurora Launch Planner — Diagnostics Bundle
 ===========================================
 
-Этот ZIP содержит информацию для службы поддержки Aurora:
+Этот ZIP содержит информацию for службы поддержки Aurora:
 
   * system_info.json    — версия ОС, Python, дисковое пространство
   * audit_log.json      — последние 200 операций (без данных проектов)
   * logs/               — журналы приложения (последние 7 дней)
-  * crashes/            — отчёты о сбоях (если были)
+  * crashes/            — отчёты о сбоях (if были)
 
 Что НЕ включено:
   * Данные ваших проектов (proxy posterior, прогнозы, бренды)
@@ -185,7 +185,7 @@ def collect_diagnostics(
     Args:
         data_root: %LOCALAPPDATA%/Aurora Launch path (logs/, crashes/ subdirs)
         output_dir: where к write ZIP. Defaults к %TEMP%/aurora-diagnostics-{ts}/
-        app_version: для inclusion в system_info
+        app_version: for inclusion в system_info
         audit_log_entries: optional pre-fetched audit log entries (caller
             queries SQLite audit_log table и passes list of dicts)
 

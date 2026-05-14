@@ -98,7 +98,7 @@ def generate_synthetic_project(
     #   - manifest_sha256 (verifies metadata + structure not tampered)
     #   - data_artifacts_hash (verifies actual data content not tampered)
     #   - aurora_launch_version (binds to specific Aurora Launch release)
-    # All three needed для closure of R8 file tampering — attacker swapping
+    # All three needed for closure of R8 file tampering — attacker swapping
     # data needs to recompute ALL three, but data_artifacts_hash is already
     # baked in во manifest_sha256 (so changing it changes manifest), and
     # version is signed at compile time. Composite hash detects any drift.
@@ -145,7 +145,7 @@ def generate_synthetic_project(
 def compute_bundle_hash(bundle_path: Path) -> tuple[str, str]:
     """Compute (manifest_sha256, reproducibility_token) of existing bundle.
 
-    Used by `aurora-launch-reproduce` для verification.
+    Used by `aurora-launch-reproduce` for verification.
 
     FIX B-Audit-3: ALSO recomputes reproducibility_token independently
     (not just trusts stored value) to detect tampering with that field

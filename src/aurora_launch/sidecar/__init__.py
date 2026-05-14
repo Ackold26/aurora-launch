@@ -10,7 +10,7 @@ Architecture:
 - Sidecar reads newline-delimited JSON requests from stdin.
 - Each request `{"id": int, "method": str, "params": object, "auth": str}`
   is auth-checked, then dispatched к method handler.
-- Responses `{"id": int, "result": ...}` или `{"id": int, "error": {...}}`
+- Responses `{"id": int, "result": ...}` or `{"id": int, "error": {...}}`
   written к stdout, newline-terminated.
 - Unsolicited events `{"event": str, "params": object}` (no `id`) emitted
   for forecast progress, audit log, etc.

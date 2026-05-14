@@ -1,4 +1,4 @@
-"""Sample bundle factory для pilot demos (Phase Σ.0.4).
+"""Sample bundle factory for pilot demos (Phase Σ.0.4).
 
 Provides 3 pre-trained pilot scenarios from real Эконометрика test datasets:
   A) Кагоцел proxy → Венарус recipient (cross-category transfer)
@@ -9,9 +9,9 @@ XLSX adapter normalises Эконометрика wide-format к unified DataFram
   Date, channel_<id>_spend, channel_<id>_impressions, ..., sales_brand, sales_competitors
 
 Sample bundles ship с pre-computed synthetic-but-realistic posterior_samples
-для each proxy brand. Real PyMC training of pilot data is offline-only
+for each proxy brand. Real PyMC training of pilot data is offline-only
 (slow, ~3-5 minutes per scenario) — synthetic posterior derived from data
-statistics (mean β, std β by historical correlation) для UX demo speed.
+statistics (mean β, std β by historical correlation) for UX demo speed.
 
 Phase Σ.0.4 deliverable: bundles loadable by orchestrator, demo "Open Sample"
 button в Wizard works <5s cold start (per Pf-01 budget).

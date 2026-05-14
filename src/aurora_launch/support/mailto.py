@@ -53,11 +53,11 @@ def format_support_email_body(
         diagnostics_path: absolute path к diagnostics ZIP file (for customer
             к find and attach manually)
         timestamp: ISO timestamp когда issue occurred
-        app_version: для inclusion в email body
+        app_version: for inclusion в email body
         customer_note: optional pre-filled note (rare — usually customer types это)
 
     Returns:
-        Plain text email body suitable для mailto: encoding.
+        Plain text email body suitable for mailto: encoding.
     """
     body = _BODY_TEMPLATE_RU.format(
         timestamp=timestamp,
@@ -88,13 +88,13 @@ def build_support_mailto_url(
     Args:
         diagnostics_path: path к diagnostics ZIP (mentioned в body)
         timestamp: ISO timestamp string (defaults к now)
-        app_version: для subject + body
-        customer_org: optional org/brand name для subject ("[Aurora Launch] Issue from Materia Medica")
+        app_version: for subject + body
+        customer_org: optional org/brand name for subject ("[Aurora Launch] Issue from Materia Medica")
         customer_note: optional pre-filled description
         support_email: override (defaults к support@auroraai.pro)
 
     Returns:
-        mailto: URL ready для opening в default email client.
+        mailto: URL ready for opening в default email client.
     """
     if timestamp is None:
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

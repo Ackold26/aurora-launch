@@ -5,7 +5,7 @@ Per ADR-019 §5: silent auto-injection 12 hardcoded РФ-events как binary du
 control columns. Customer customization (opt-out specific holidays, custom events)
 отложено в v2.2.0 (Quality of Life sprint).
 
-12 holidays cover ~80%+ типичной РФ-сезонности для FMCG / OTC / ритейл / e-commerce.
+12 holidays cover ~80%+ типичной РФ-сезонности for FMCG / OTC / ритейл / e-commerce.
 
 Auto-injection происходит в Studio bundle stage (data preprocessing). Model
 подхватывает holidays как control factors через `validator.py::CONTROL_PATTERNS`
@@ -188,14 +188,14 @@ def generate_holiday_dummies(
     date_series: pd.Series,
     holidays: Optional[List[str]] = None,
 ) -> pd.DataFrame:
-    """Generate РФ holiday dummy DataFrame для given date series.
+    """Generate РФ holiday dummy DataFrame for given date series.
 
     Args:
         date_series: pandas Series of dates (datetime). Indexed by row.
         holidays: optional subset of holiday names to inject. If None — all 12.
 
     Returns:
-        DataFrame с columns = holiday names, values = 0 или 1 per row.
+        DataFrame с columns = holiday names, values = 0 or 1 per row.
         Index match input date_series.
 
     Examples:
@@ -256,7 +256,7 @@ def detect_holiday_collinearity(
 ) -> List[Dict[str, object]]:
     """Detect overlapping holiday windows (per audit H3).
 
-    Returns warnings; не blocks model fitting. Documents для diagnostics panel.
+    Returns warnings; не blocks model fitting. Documents for diagnostics panel.
 
     Args:
         holidays_df: DataFrame с holiday dummies (output of generate_holiday_dummies).
@@ -292,7 +292,7 @@ def detect_holiday_collinearity(
         overlap_count = ((holidays_df[h1] == 1) & (holidays_df[h2] == 1)).sum()
         h1_count = max(1, holidays_df[h1].sum())
         h2_count = max(1, holidays_df[h2].sum())
-        # Use smaller denominator для proportion (small holiday vs large)
+        # Use smaller denominator for proportion (small holiday vs large)
         overlap_pct = overlap_count / min(h1_count, h2_count)
 
         if overlap_pct > threshold:
@@ -339,7 +339,7 @@ def list_holiday_names() -> List[str]:
 
 
 def get_holiday_metadata(holiday_name: str) -> Optional[Dict[str, str]]:
-    """Get description + category для конкретного holiday."""
+    """Get description + category for конкретного holiday."""
     for h in HOLIDAY_DEFINITIONS:
         if h['name'] == holiday_name:
             return {

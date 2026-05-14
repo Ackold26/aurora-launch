@@ -12,7 +12,7 @@ Selection logic per PHASE_B_REQUIREMENTS §5.1.3:
 Plus edge cases:
     n_proxies == 0 → "blocked" (no proxy provided)
     cross_category=True (cross-L1 non-adjacent) → "blocked"
-    recipient_weeks_available == 0 для new brand — OK (single proxy needed,
+    recipient_weeks_available == 0 for new brand — OK (single proxy needed,
     но multi requires anchor accumulation)
 """
 

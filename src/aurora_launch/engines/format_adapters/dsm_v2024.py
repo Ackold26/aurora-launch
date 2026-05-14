@@ -99,7 +99,7 @@ class DsmAdapterV2024:
         openpyxl + multi-sheet handling (production would expand).
 
         Audit (post-1D): refuses files >256 MB (`MAX_INPUT_FILE_BYTES`) to
-        prevent memory exhaustion от oversized или malicious input.
+        prevent memory exhaustion от oversized or malicious input.
         """
         from aurora_launch.engines.format_adapters import assert_file_size_ok
 

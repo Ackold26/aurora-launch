@@ -65,7 +65,7 @@ def compose_section_visibility(
     framing: Literal["cfo", "cmo", "balanced"],
     section_ids: list[str],
 ) -> dict[str, str]:
-    """Returns visibility per section для given framing preset."""
+    """Returns visibility per section for given framing preset."""
     preset = FRAMING_VISIBILITY.get(framing, FRAMING_VISIBILITY["balanced"])
     return {sid: preset.get(sid, "visible") for sid in section_ids}
 

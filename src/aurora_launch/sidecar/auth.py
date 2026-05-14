@@ -5,7 +5,7 @@ FIRST. See `tests/test_sidecar_auth.py` for the suite that pins the contract.
 
 Threat model:
 - Adversary: a malicious local process that opens our stdin/stdout pipes (e.g.,
-  via a shared FIFO, debugger attachment, или another user on the same machine).
+  via a shared FIFO, debugger attachment, or another user on the same machine).
 - Goal: block adversary from issuing IPC commands without the launch-time
   token shared between Rust parent and Python child.
 

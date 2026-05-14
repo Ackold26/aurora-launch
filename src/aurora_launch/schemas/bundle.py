@@ -53,7 +53,7 @@ class AuroraLaunchBundleMetadata(BaseModel):
     )
 
     schema_version: str = "3.0"
-    aurora_launch_version: Optional[str] = None  # H-A2-5: Optional для legacy bundle reads
+    aurora_launch_version: Optional[str] = None  # H-A2-5: Optional for legacy bundle reads
 
     # B1 — primary fields (B0.5 ships ProxyBrandMetadata; others Phase B+ sprints)
     proxy_brand_metadata: Optional[ProxyBrandMetadata] = None

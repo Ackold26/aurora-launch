@@ -170,7 +170,7 @@ class AutosaveManager:
             self._install_signal_handlers()
 
     def _install_signal_handlers(self) -> None:
-        """Register SIGTERM/SIGINT/atexit handlers для graceful flush.
+        """Register SIGTERM/SIGINT/atexit handlers for graceful flush.
 
         PI-RESCUE-09 audit fix: guard against double registration via
         `_signal_handlers_installed` flag (prevents atexit firing shutdown twice).
@@ -346,7 +346,7 @@ class AutosaveManager:
     # ---- recovery ----------------------------------------------------------
 
     def detect_pending_recovery(self) -> list[PendingRecovery]:
-        """Scan autosave_dir for orphan autosaves (different session_id или stale).
+        """Scan autosave_dir for orphan autosaves (different session_id or stale).
 
         Called at app startup. Returns list of recovery candidates for UI dialog.
         Excludes autosaves from the current session (those are live, not orphan).
@@ -456,7 +456,7 @@ class AutosaveManager:
 def _is_stale(saved_at_iso: str) -> bool:
     """Check if a saved_at timestamp is older than MAX_RECOVERY_AGE_DAYS."""
     try:
-        # Truncate microseconds для fromisoformat compat (Python 3.11+ handles Z)
+        # Truncate microseconds for fromisoformat compat (Python 3.11+ handles Z)
         ts = datetime.fromisoformat(saved_at_iso.replace("Z", "+00:00"))
     except ValueError:
         return True  # corrupted timestamp → treat as stale

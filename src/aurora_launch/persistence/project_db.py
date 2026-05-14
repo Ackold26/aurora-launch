@@ -13,7 +13,7 @@ Concurrency model:
 - All multi-row mutations wrapped in transactions
 - ProjectDB instance is NOT thread-safe; caller serialises (one per process)
 - Multi-process access works (WAL handles it) но external lock recommended
-  для ProjectDB.delete_project / GC
+  for ProjectDB.delete_project / GC
 
 Recovery model:
 - WAL recovery on open (SQLite handles unclean shutdown)
@@ -167,7 +167,7 @@ class ProjectDB:
             encryption_key = get_or_create_db_key()
 
         if self._encrypted:
-            # Use sqlcipher3 для encrypted DB.
+            # Use sqlcipher3 for encrypted DB.
             try:
                 import sqlcipher3  # type: ignore[import-untyped]
                 import sqlcipher3.dbapi2 as _sqlcipher_dbapi  # type: ignore[import-untyped]
@@ -382,7 +382,7 @@ class ProjectDB:
         Schema has CHECK (ref_count >= 0) as defense-in-depth.
         """
         with self._tx():
-            # Verify project exists (raise raньше чем DELETE для clear error)
+            # Verify project exists (raise raньше чем DELETE for clear error)
             row = self._conn.execute(
                 "SELECT 1 FROM projects WHERE project_uuid = ?", (project_uuid,)
             ).fetchone()
@@ -546,7 +546,7 @@ class ProjectDB:
             if not self.blob_store.exists(sha):
                 # File deleted but DB still has row — heal by re-writing
                 _log.warning(
-                    "Blob row exists для %s но file missing — re-writing",
+                    "Blob row exists for %s но file missing — re-writing",
                     sha[:12],
                 )
                 self.blob_store.store(content)

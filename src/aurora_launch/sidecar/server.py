@@ -68,7 +68,7 @@ def serve_once(
     try:
         request = parse_request_line(line)
     except ProtocolError as exc:
-        # Cannot extract id если parse failed — emit -1 id (best effort)
+        # Cannot extract id if parse failed — emit -1 id (best effort)
         resp = Response(id=-1, error=ErrorPayload("protocol_error", str(exc)))
         _events.write_line(resp.to_line(), out=out)
         return True

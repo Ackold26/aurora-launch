@@ -94,7 +94,7 @@ def main(
         _emit_result(result, json_output)
         sys.exit(2)
     except ValueError as exc:
-        # Internal manifest или repro_token hash mismatch — bundle corrupted/tampered
+        # Internal manifest or repro_token hash mismatch — bundle corrupted/tampered
         result["status"] = "error"
         result["error"] = str(exc)
         _emit_result(result, json_output)

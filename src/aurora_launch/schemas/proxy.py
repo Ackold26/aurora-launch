@@ -6,7 +6,7 @@ Audit Block 1D-extended — finding "schemas without model_config":
 all schemas в этом модуле теперь используют общий `_FROZEN_CONFIG` (frozen +
 extra="forbid"). Previously they inherited Pydantic defaults (`extra="ignore"`),
 silently dropping unknown fields — inconsistent с rest of codebase и
-defence-in-depth concern для bundle ingestion.
+defence-in-depth concern for bundle ingestion.
 """
 
 from __future__ import annotations

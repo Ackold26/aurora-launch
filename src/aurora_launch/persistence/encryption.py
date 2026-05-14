@@ -1,6 +1,6 @@
 """Database encryption key management (S-09 audit fix).
 
-Manages encryption keys для SQLCipher-encrypted ProjectDB. Keys stored в
+Manages encryption keys for SQLCipher-encrypted ProjectDB. Keys stored в
 OS native credential store via `keyring`:
   - Windows: Credential Manager (DPAPI-protected)
   - macOS: Keychain
@@ -70,7 +70,7 @@ def get_or_create_db_key(
       3. Newly generated key persisted к keychain (first run, if auto_create)
 
     Returns:
-        64-char hex string suitable для SQLCipher PRAGMA key.
+        64-char hex string suitable for SQLCipher PRAGMA key.
 
     Raises:
         EncryptionKeyError: keychain unavailable + auto_create=False + no env var
@@ -96,7 +96,7 @@ def get_or_create_db_key(
     except ImportError:
         _log.warning(
             "keyring library not installed — fallback к env-var-only mode. "
-            "Production setup requires `pip install keyring` для OS keychain."
+            "Production setup requires `pip install keyring` for OS keychain."
         )
         if not auto_create:
             raise EncryptionKeyError(
@@ -132,7 +132,7 @@ def clear_keychain_key(
     """Remove key from keychain. Returns True if removed, False if not present.
 
     Used by uninstall workflows + disaster recovery. WARNING: existing
-    encrypted DBs become unreadable если key not backed up separately.
+    encrypted DBs become unreadable if key not backed up separately.
     """
     try:
         import keyring  # noqa: PLC0415

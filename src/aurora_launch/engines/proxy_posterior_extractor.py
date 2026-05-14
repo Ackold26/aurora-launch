@@ -42,7 +42,7 @@ from typing import Any, Mapping
 
 import numpy as np
 
-# Numerical floor для σ (prevent division by zero downstream)
+# Numerical floor for σ (prevent division by zero downstream)
 _SIGMA_FLOOR = 1e-6
 
 
@@ -232,7 +232,7 @@ def proxy_baseline_from_normalization(
         proxy baseline value (float, > 0)
 
     Raises:
-        ProxyExtractionError: y_mean missing или non-positive
+        ProxyExtractionError: y_mean missing or non-positive
     """
     if "y_mean" not in normalization:
         raise ProxyExtractionError("normalization dict missing 'y_mean' key")
@@ -250,7 +250,7 @@ def to_channel_transfer_params(
     similarity_inflations: Mapping[str, float] | None = None,
 ) -> list[dict[str, Any]]:
     """Convert ProxyChannelPrior dict к pure_transfer_engine ChannelTransferParams
-    dict list ready для validation.
+    dict list ready for validation.
 
     Args:
         priors: shrunk (or raw) priors

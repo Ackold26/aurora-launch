@@ -177,9 +177,10 @@
   }
 
   .brand-name {
-    font-family: var(--font-serif);
-    font-weight: 500;
+    font-family: var(--font-display);
+    font-weight: 600;
     font-size: var(--typography-fontSize-ui-h3);
+    letter-spacing: -0.01em;
   }
 
   .app-nav {

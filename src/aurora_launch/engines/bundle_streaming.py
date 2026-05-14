@@ -164,7 +164,7 @@ class LazyFileMap(Mapping[str, bytes]):
     - keys() / __iter__ / __len__ enumerate from `manifest.files` only
       (not from `zf.namelist()`); `manifest.json` is excluded.
     - `__getitem__(name)` reads bytes from the underlying `ZipFile`,
-      verifies SHA-256 against the manifest entry on first access (если
+      verifies SHA-256 against the manifest entry on first access (if
       `manifest.integrity_check != "disabled"` and cache had no copy),
       then caches in the LRU.
     - `__contains__` does NOT trigger a read — checks manifest membership.
@@ -280,7 +280,7 @@ class LazyLoadedBundle(LoadedBundle):
             ) from exc
 
         # Defense-in-depth: even с central directory check above, real
-        # decompressed size could differ если archive crafted maliciously.
+        # decompressed size could differ if archive crafted maliciously.
         if len(data) != expected_entry.size_bytes:
             raise BundleIntegrityError(
                 f"Decompressed size mismatch для {name}: actual "
@@ -468,7 +468,7 @@ def open_lazy(
 
     stack = contextlib.ExitStack()
     try:
-        # Acquire shared lock first — held для bundle lifetime
+        # Acquire shared lock first — held for bundle lifetime
         stack.enter_context(bundle_lock(path, mode="shared", timeout=lock_timeout))
         zf = stack.enter_context(zipfile.ZipFile(path, "r"))
 

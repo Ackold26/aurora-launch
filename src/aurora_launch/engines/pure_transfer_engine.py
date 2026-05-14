@@ -39,7 +39,7 @@ Uncertainty decomposition (transparency-as-feature, Plan v3.0 §A.5):
   decomposition_pct[k]       = var[k] / total_var × 100
 
 This module is self-contained: no PyMC/JAX dependencies, no FastAPI.
-Self-implements adstock + hill для не зависеть от sub-agent's utils
+Self-implements adstock + hill for не зависеть от sub-agent's utils
 (Phase Π.1.5 mechanical port будет integrated при later refactor).
 """
 
@@ -89,7 +89,7 @@ class ChannelTransferParams(BaseModel):
 
 
 class RecipientAnchors(BaseModel):
-    """Anchor values для recipient brand (provided by user via wizard)."""
+    """Anchor values for recipient brand (provided by user via wizard)."""
 
     model_config = _FROZEN
 
@@ -127,7 +127,7 @@ class RecipientAnchors(BaseModel):
 
 
 class TransferInputs(BaseModel):
-    """Full input bundle для pure transfer forecast."""
+    """Full input bundle for pure transfer forecast."""
 
     model_config = _FROZEN
 
@@ -201,7 +201,7 @@ class TransferForecast:
     z_critical: float
     points: list[ForecastPoint]
     uncertainty_decomposition: UncertaintyDecomposition
-    methodology_signature: str  # tag для tracing — "pure_transfer_v1"
+    methodology_signature: str  # tag for tracing — "pure_transfer_v1"
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +240,7 @@ def hill_saturation(
 
     Monotonic non-decreasing, asymptote = 1.0, hill(k) = 0.5.
 
-    PI2-B1 audit fix: numpy float64 для k_pow (вместо Python float) prevents
+    PI2-B1 audit fix: numpy float64 for k_pow (вместо Python float) prevents
     OverflowError при alpha ≥ ~155. Handle inf/inf NaN: when both x_pow и
     k_pow → inf, fall back на ratio sign (x > k → asymptote, x < k → 0).
     """

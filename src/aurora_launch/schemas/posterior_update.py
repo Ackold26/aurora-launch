@@ -39,7 +39,7 @@ class PoolingWeights(BaseModel):
 
 
 class DriftDiagnostics(BaseModel):
-    """Drift detection result. Audit M-fix: min 8 weeks для valid result."""
+    """Drift detection result. Audit M-fix: min 8 weeks for valid result."""
 
     model_config = _FROZEN
 
@@ -61,9 +61,9 @@ class PosteriorDiagnostics(BaseModel):
 
 
 class PosteriorUpdateEvent(BaseModel):
-    """Audit-trail event для posterior update operation.
+    """Audit-trail event for posterior update operation.
 
-    Audit-fixed: includes before_model_hash + after_model_hash для traceability.
+    Audit-fixed: includes before_model_hash + after_model_hash for traceability.
     """
 
     model_config = _FROZEN
@@ -100,7 +100,7 @@ class UpdateEstimate(BaseModel):
 
 
 class AutoTriggerSuggestion(BaseModel):
-    """Auto-trigger suggestion для customer review.
+    """Auto-trigger suggestion for customer review.
 
     Audit M6: ALL-AND criteria: drift + ≥4 new weeks + CI tightening >10%.
     """

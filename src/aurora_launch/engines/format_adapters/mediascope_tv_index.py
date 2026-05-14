@@ -5,7 +5,7 @@ v0.3 spec v0.1: multi-row header (2-3 rows) + variable audiences (2-4+ groups
 per file) + «Channek» typo signature column header (legacy carries from AdEx).
 
 Production parsing requires:
-- Multi-row header detection (look для blank cells signalling group separators)
+- Multi-row header detection (look for blank cells signalling group separators)
 - Audience block extraction (one block per audience group)
 - Long-format normalization (channel × audience × period → record per row)
 

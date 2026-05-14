@@ -1,4 +1,4 @@
-"""Cross-platform advisory file lock для ProjectDB single-writer guarantee (S-04 audit fix).
+"""Cross-platform advisory file lock for ProjectDB single-writer guarantee (S-04 audit fix).
 
 Closes audit ARCH-06 / S-04: multiple Aurora Launch processes на same Windows
 account would write к same projects.db без coordination → WAL conflicts → user
@@ -48,7 +48,7 @@ class ProcessLock:
         """Try to acquire exclusive lock. Returns True if acquired.
 
         Args:
-            blocking: if True, wait until lock available (not recommended для UI app)
+            blocking: if True, wait until lock available (not recommended for UI app)
 
         Raises:
             ProcessLockError if blocking=False and lock held by another process.
@@ -57,7 +57,7 @@ class ProcessLock:
             return True
 
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
-        # Open in r+b mode if exists, else create. Use a+b для cross-platform safety.
+        # Open in r+b mode if exists, else create. Use a+b for cross-platform safety.
         self._handle = open(self.lock_path, "a+b")
         # Write PID into lock file for diagnostics
         try:

@@ -1,6 +1,6 @@
 """Aurora Launch schema diff CLI (B1 sprint).
 
-Outputs human-readable diff между Aurora Launch sub-schema versions для
+Outputs human-readable diff между Aurora Launch sub-schema versions for
 developer ergonomics. Helps reviewers understand what changed между
 v1.0 и v1.1 (when v1.1 ships) — additive fields, deprecated fields, etc.
 

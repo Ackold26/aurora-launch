@@ -89,7 +89,7 @@ def list_kpis(*, available_only: bool = True) -> list[LaunchKPI]:
 
     Args:
         available_only: if True (default), exclude `B+` phase deferred KPIs.
-                        Set False для full registry inspection.
+                        Set False for full registry inspection.
     """
     if available_only:
         return [k for k in LAUNCH_KPI_REGISTRY.values() if k.available_in_phase == "B0.5"]

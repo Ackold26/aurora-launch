@@ -317,7 +317,7 @@ def _load_or_generate_keypair(
 
 
 def _get_local_keypair() -> tuple[Ed25519PrivateKey, Ed25519PublicKey]:
-    """Return cached keypair для current process; load/generate on first use.
+    """Return cached keypair for current process; load/generate on first use.
 
     Cache keyed by resolved path string so test fixtures using
     monkeypatch.setenv(AURORA_PROJECT_DB_PATH=...) get isolated keypairs.
@@ -340,10 +340,10 @@ def _dev_public_key() -> Ed25519PublicKey:
     return _get_local_keypair()[1]
 
 
-# Legacy alias retained для existing tests + blob_store usage.
+# Legacy alias retained for existing tests + blob_store usage.
 @lru_cache(maxsize=1)
 def _get_dev_keypair() -> tuple[Ed25519PrivateKey, Ed25519PublicKey]:
-    """DEPRECATED: use _get_local_keypair (persisted). Kept для backward compat
+    """DEPRECATED: use _get_local_keypair (persisted). Kept for backward compat
     with tests that import this symbol; new code should not call this directly.
     """
     return _get_local_keypair()

@@ -22,7 +22,7 @@ _log = logging.getLogger(__name__)
 
 
 class DsmAdapterV2023(DsmAdapterV2024):
-    """DSM Group 2023 format adapter (subclasses V2024 для canonical mapping)."""
+    """DSM Group 2023 format adapter (subclasses V2024 for canonical mapping)."""
 
     def __init__(self) -> None:
         super().__init__()

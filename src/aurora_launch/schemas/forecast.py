@@ -52,7 +52,7 @@ class ForecastResult(BaseModel):
 
 
 class ForecastSummary(BaseModel):
-    """Aggregate forecast across horizons (для Cert / report headers)."""
+    """Aggregate forecast across horizons (for Cert / report headers)."""
 
     model_config = _FROZEN
 
@@ -102,7 +102,7 @@ class VerifierEndpoints(BaseModel):
 
 
 class ProxyMetadataSummary(BaseModel):
-    """Proxy metadata snapshot для Cert."""
+    """Proxy metadata snapshot for Cert."""
 
     model_config = _FROZEN
 
@@ -113,7 +113,7 @@ class ProxyMetadataSummary(BaseModel):
 
 
 class TransferSummary(BaseModel):
-    """Transfer provenance snapshot для Cert."""
+    """Transfer provenance snapshot for Cert."""
 
     model_config = _FROZEN
 

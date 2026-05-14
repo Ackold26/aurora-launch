@@ -35,7 +35,7 @@ INFLATION_BY_VERDICT = {
     "High": 1.2,
     "Medium": 1.5,
     "Low": 2.0,
-    "Insufficient": 3.0,  # BLOCKED downstream, but inflation defined для completeness
+    "Insufficient": 3.0,  # BLOCKED downstream, but inflation defined for completeness
 }
 
 
@@ -263,7 +263,7 @@ def detect_anti_patterns(
     """Detect risky proxy patterns. Returns list of warnings dict."""
     flags: list[dict] = []
 
-    # Leader as proxy для challenger
+    # Leader as proxy for challenger
     if proxy.brand_size == "LEADER" and recipient.brand_size == "CHALLENGER":
         flags.append({
             "pattern_id": "leader_as_proxy_for_challenger",
@@ -274,7 +274,7 @@ def detect_anti_patterns(
             ),
         })
 
-    # Premium proxy для economy recipient (or vice versa)
+    # Premium proxy for economy recipient (or vice versa)
     if (
         proxy.pricing_tier == "PREMIUM" and recipient.pricing_tier == "ECONOMY"
     ) or (
@@ -286,12 +286,12 @@ def detect_anti_patterns(
             "message": "Premium proxy for economy recipient — pricing elasticity differs significantly.",
         })
 
-    # Always-on proxy для dormant recipient
+    # Always-on proxy for dormant recipient
     if proxy.media_maturity == "ALWAYS_ON" and recipient.media_maturity == "DORMANT":
         flags.append({
             "pattern_id": "always_on_as_proxy_for_dormant",
             "severity": "warning",
-            "message": "Always-on media proxy для dormant brand — adstock decay assumptions different.",
+            "message": "Always-on media proxy for dormant brand — adstock decay assumptions different.",
         })
 
     return flags

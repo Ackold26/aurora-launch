@@ -54,7 +54,7 @@ class SyntheticProjectSpec(BaseModel):
 
 
 class FormatAdapterContract(BaseModel):
-    """Abstract contract для plug-in ProxyDataSource.
+    """Abstract contract for plug-in ProxyDataSource.
 
     Per PHASE_B_REQUIREMENTS.md §4.1 — extensibility point.
     """
@@ -68,7 +68,7 @@ class FormatAdapterContract(BaseModel):
 
 
 class ProxyDataSource(Protocol):
-    """Plug-in extensibility point для per-deal proxy data ingestion.
+    """Plug-in extensibility point for per-deal proxy data ingestion.
 
     Phase B+ extensibility. Phase B ships built-in DSM/Mediascope adapters.
     """

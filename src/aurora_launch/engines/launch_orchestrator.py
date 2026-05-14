@@ -6,7 +6,7 @@ Integration glue across Phase Π.2 components:
                              ├──► proxy_posterior_extractor ──► priors
     recipient anchors       ─┤                                     │
     spend plan              ─┤                                     ▼
-    n_recipient (+ y если)  ─┴──► router ──► EngineConfig ──► engine dispatch
+    n_recipient (+ y if)  ─┴──► router ──► EngineConfig ──► engine dispatch
                                                                    │
                                                                    ▼
                                                         TransferForecast OR
@@ -71,7 +71,7 @@ _log = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ProxyBundle:
-    """Pre-trained proxy state ready для transfer.
+    """Pre-trained proxy state ready for transfer.
 
     Caller obtains this by:
       (a) Running bayesian_engine.train_model and extracting from its result
@@ -82,7 +82,7 @@ class ProxyBundle:
         posterior_samples — bayesian_engine output {media_betas, alphas, ...}
         media_cols — channel IDs ordered to match posterior axis 0
         normalization — bayesian_engine output (contains y_mean for baseline)
-        config — bayesian_engine config used (для traceability + audit cert)
+        config — bayesian_engine config used (for traceability + audit cert)
     """
 
     posterior_samples: Mapping[str, Any]
@@ -98,14 +98,14 @@ class OrchestrationResult:
     """Full orchestration output: routing decision + forecast + diagnostics."""
 
     engine_config: EngineConfig
-    forecast: TransferForecast | None  # None если bias check failed hard
+    forecast: TransferForecast | None  # None if bias check failed hard
     proxy_priors_used: dict[str, ProxyChannelPrior]
     methodology_signature: str
     warnings: list[str] = field(default_factory=list)
 
 
 class OrchestratorError(RuntimeError):
-    """Raised для orchestration-level failures (e.g., engine selection mismatch)."""
+    """Raised for orchestration-level failures (e.g., engine selection mismatch)."""
 
 
 class LaunchOrchestrator:
@@ -146,7 +146,7 @@ class LaunchOrchestrator:
             horizon_periods: number of forecast periods
             granularity: 'monthly' or 'weekly' (D-06)
             n_recipient: number of recipient observations available
-            recipient_y: optional recipient observed y (для modes 2-4)
+            recipient_y: optional recipient observed y (for modes 2-4)
             similarity_factors / similarity_inflations: per-channel overrides
             coverage_target: CI coverage (0.80 / 0.90 / 0.95 / 0.99)
             shrinkage_factor: how strongly informative priors compress σ ([0,1])
@@ -177,7 +177,7 @@ class LaunchOrchestrator:
             granularity,
         )
 
-        # 2. Extract priors (always needed для all 4 modes)
+        # 2. Extract priors (always needed for all 4 modes)
         try:
             raw_priors = extract_proxy_priors(
                 proxy.posterior_samples, proxy.media_cols
@@ -189,7 +189,7 @@ class LaunchOrchestrator:
 
         shrunk_priors = shrink_proxy_priors(raw_priors, shrinkage_factor)
 
-        # 3. Proxy baseline для scale ratio
+        # 3. Proxy baseline for scale ratio
         try:
             proxy_baseline = proxy_baseline_from_normalization(proxy.normalization)
         except ProxyExtractionError as exc:
@@ -246,7 +246,7 @@ class LaunchOrchestrator:
                     )
             else:
                 # PI2-M3 audit fix: explicit warning when Mode 2 selected but
-                # no recipient_y available для bias check.
+                # no recipient_y available for bias check.
                 warnings.append(
                     "Mode 2 (TRANSFER_WITH_BIAS_CHECK) selected but recipient_y "
                     "not provided — bias check skipped, falling back к pure transfer."
@@ -345,7 +345,7 @@ class LaunchOrchestrator:
         """Compare observed y mean vs predicted point forecast mean.
 
         Returns: (bias_pct, diagnostics). bias_pct = relative bias в % (positive
-        = observed > predicted). diagnostics — non-empty если bias check could
+        = observed > predicted). diagnostics — non-empty if bias check could
         not be performed cleanly (e.g., degenerate predicted_mean=0).
 
         PI2-B4 audit fix: degenerate predicted_mean=0 now returns diagnostic
@@ -365,7 +365,7 @@ class LaunchOrchestrator:
         if not math.isfinite(predicted_mean):
             return 0.0, [
                 "Bias check inconclusive: predicted_mean is NaN or inf (degenerate forecast). "
-                "Review anchors, proxy similarity, и spend plan для invalid values."
+                "Review anchors, proxy similarity, и spend plan for invalid values."
             ]
         # R-11 audit fix: ε threshold вместо exact-zero check.
         # Previous `if predicted_mean == 0` missed near-zero values (e.g. 1e-10

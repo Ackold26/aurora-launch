@@ -1,11 +1,11 @@
-"""DSM Group 2025 format adapter (forward-compat для anticipated 2025 spec).
+"""DSM Group 2025 format adapter (forward-compat for anticipated 2025 spec).
 
 V2025 introduces (anticipated based on industry trends):
-- Tab separator (more robust для multilingual data)
+- Tab separator (more robust for multilingual data)
 - ISO 8601 datetime с timezone (vs V2024 plain ISO date)
 - Additional columns: SKU_id, Region_code, Pricing_segment
 
-Subclasses V2024 для canonical mapping; overrides format-specific bits.
+Subclasses V2024 for canonical mapping; overrides format-specific bits.
 This is forward-compat scaffolding — actual V2025 spec может adjust on real
 file release.
 """
@@ -68,7 +68,7 @@ class DsmAdapterV2025(DsmAdapterV2024):
         return False
 
     def parse(self, file_path: str) -> list[dict]:
-        """Override parse() для accept .tsv (V2025 specific extension).
+        """Override parse() for accept .tsv (V2025 specific extension).
 
         Refuses files >256 MB.
         """
@@ -92,7 +92,7 @@ class DsmAdapterV2025(DsmAdapterV2024):
         records: list[dict] = []
         with path.open("r", encoding="utf-8-sig") as f:
             header_line = f.readline().strip()
-            # Auto-detect: tab если в header, иначе comma fallback
+            # Auto-detect: tab if в header, else comma fallback
             sep = "\t" if "\t" in header_line else ","
             headers = [h.strip() for h in header_line.split(sep)]
 

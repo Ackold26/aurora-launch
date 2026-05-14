@@ -35,7 +35,7 @@ class PreferencesStore:
             conn.close()
 
     def load(self, customer_id: UUID) -> UserPreferences:
-        """Load preferences. Returns defaults если not set."""
+        """Load preferences. Returns defaults if not set."""
         conn = sqlite3.connect(self.db_path)
         try:
             cursor = conn.execute(

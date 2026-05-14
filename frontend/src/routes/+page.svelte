@@ -100,7 +100,10 @@
   }
 
   .hero h1 {
+    font-family: var(--font-display);
     font-size: 3rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
     margin-bottom: var(--spacing-2);
   }
 

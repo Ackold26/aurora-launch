@@ -2,7 +2,7 @@
 
 Closes audit Pf-03 (cold start ≤2s): PyMC takes 3-5s к import (numpy / scipy /
 pytensor backend setup). For Launch Planner, this delays Tauri webview ready
-event by perceived 5-7s — unacceptable для premium first-run wow.
+event by perceived 5-7s — unacceptable for premium first-run wow.
 
 Solution: defer PyMC import к first actual training call (proxy Bayesian
 training is rare event, typically once per pilot). UI shows "Starting Aurora"
@@ -16,7 +16,7 @@ Usage:
     with pm.Model() as model:
         ...
 
-Module-level imports должны use direct `import pymc as pm` ONLY если они
+Module-level imports должны use direct `import pymc as pm` ONLY if они
 already в the slow path. Hot-path code (sidecar startup, IPC handlers,
 schema validation, pure_transfer forecast) avoids PyMC entirely.
 """
@@ -65,7 +65,7 @@ def lazy_arviz() -> Any:
 
 
 def pymc_loaded() -> bool:
-    """Check без triggering import — useful для diagnostics."""
+    """Check без triggering import — useful for diagnostics."""
     return _pymc_module is not None
 
 

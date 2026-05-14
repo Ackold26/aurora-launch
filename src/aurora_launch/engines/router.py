@@ -1,4 +1,4 @@
-"""4-mode dual-math routing для Aurora Launch Planner forecast engines (Phase Π.2).
+"""4-mode dual-math routing for Aurora Launch Planner forecast engines (Phase Π.2).
 
 Selects appropriate forecast engine based on recipient data sufficiency.
 Critical: Launch's recipient brand often has 0-12 months of post-launch
@@ -50,7 +50,7 @@ ALLOWED_GRANULARITIES: frozenset[str] = frozenset({"monthly", "weekly"})
 
 
 class EngineMode(Enum):
-    """One of four routing modes для recipient training."""
+    """One of four routing modes for recipient training."""
 
     PURE_TRANSFER = "pure_transfer"
     TRANSFER_WITH_BIAS_CHECK = "transfer_with_bias_check"
@@ -65,7 +65,7 @@ class EngineMode(Enum):
 
 @dataclass(frozen=True)
 class RoutingThresholds:
-    """Per-granularity n_recipient thresholds для mode transitions.
+    """Per-granularity n_recipient thresholds for mode transitions.
 
     Values represent the FIRST n_recipient в каждом range:
       [0]                                  → PURE_TRANSFER
@@ -75,8 +75,8 @@ class RoutingThresholds:
     TRANSFER_WITH_BIAS_CHECK occupies (0, ols_low).
     """
 
-    ols_low: int  # min n_recipient для OLS path (smaller → transfer+bias)
-    bayesian: int  # min n_recipient для Bayesian (smaller → OLS+priors)
+    ols_low: int  # min n_recipient for OLS path (smaller → transfer+bias)
+    bayesian: int  # min n_recipient for Bayesian (smaller → OLS+priors)
 
 
 THRESHOLDS_MONTHLY = RoutingThresholds(ols_low=3, bayesian=7)
@@ -107,11 +107,11 @@ class EngineConfig:
     n_recipient: int
     n_proxy: int
     thresholds: RoutingThresholds
-    banner_message: str  # UX-friendly explanation для wizard banner
+    banner_message: str  # UX-friendly explanation for wizard banner
     banner_tone: Literal["good", "warn", "bad"]
     user_override_allowed: bool  # True if user can opt to upgrade/downgrade mode
     user_override_modes: tuple[EngineMode, ...] = field(default_factory=tuple)
-    # Shrinkage factor для Bayesian mode — how much trust the proxy posterior.
+    # Shrinkage factor for Bayesian mode — how much trust the proxy posterior.
     # Default 0.5 = informative но не dominating; can be tuned by Expert mode.
     shrinkage_factor: float = 0.5
 
@@ -132,13 +132,13 @@ def select_engine(
     """Select the forecast engine mode based на data sufficiency.
 
     Args:
-        n_recipient: number of recipient observations (months или weeks).
-        n_proxy: number of proxy observations. Must be ≥ minimum для Bayesian
+        n_recipient: number of recipient observations (months or weeks).
+        n_proxy: number of proxy observations. Must be ≥ minimum for Bayesian
             training (4 chains × ~25 observations recommended; we enforce
-            soft floor of 24 monthly или 52 weekly).
-        granularity: 'monthly' или 'weekly' (D-06).
+            soft floor of 24 monthly or 52 weekly).
+        granularity: 'monthly' or 'weekly' (D-06).
         user_override: optional explicit mode override. Only honored if
-            data is sufficient для that mode (e.g., can't force Bayesian с n=1).
+            data is sufficient for that mode (e.g., can't force Bayesian с n=1).
         shrinkage_factor: weight на proxy informative priors when applicable.
             Range [0.0, 1.0]. 0 = ignore proxy, 1 = full trust. Default 0.5.
 
@@ -211,7 +211,7 @@ def select_engine(
             EngineMode.BAYESIAN_WITH_PROXY_PRIORS,
         )
 
-    # Apply user_override если допустимо.
+    # Apply user_override if допустимо.
     final_mode = baseline_mode
     if user_override is not None:
         if user_override == baseline_mode:

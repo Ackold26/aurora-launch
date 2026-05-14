@@ -254,7 +254,7 @@ def should_trigger_auto_suggestion(
     2. ≥4 new weeks data
     3. estimated CI tightening >10%
 
-    All three must be True. Customer dismissal honored для cooldown period.
+    All three must be True. Customer dismissal honored for cooldown period.
     """
     now = now or datetime.now(timezone.utc)
 

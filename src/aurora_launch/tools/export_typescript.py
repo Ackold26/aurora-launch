@@ -106,11 +106,11 @@ def _model_to_ts_interface(
     model: type[BaseModel],
     model_registry: dict[str, type[BaseModel]],
 ) -> str:
-    """Generate TypeScript interface для Pydantic model."""
+    """Generate TypeScript interface for Pydantic model."""
     name = model.__name__
     lines = [f"export interface {name} {{"]
 
-    # Add docstring as JSDoc если present
+    # Add docstring as JSDoc if present
     if model.__doc__:
         first_line = model.__doc__.strip().split("\n")[0]
         lines.insert(0, f"/** {first_line} */")
@@ -118,10 +118,10 @@ def _model_to_ts_interface(
     fields = model.model_fields
     for field_name, field_info in fields.items():
         ts_type = _python_type_to_ts(field_info.annotation, model_registry)
-        # Mark optional если default is не PydanticUndefined
+        # Mark optional if default is не PydanticUndefined
         is_optional = field_info.is_required() is False
         opt_marker = "?" if is_optional else ""
-        # Add description as inline comment если present
+        # Add description as inline comment if present
         desc = field_info.description or ""
         comment = f"  /** {desc} */\n" if desc else ""
         lines.append(f"{comment}  {field_name}{opt_marker}: {ts_type};")

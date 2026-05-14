@@ -57,7 +57,7 @@ class MediascopeAdExAdapterV1:
                 except (OSError, UnicodeDecodeError):
                     pass
             else:
-                # XLSX или missing file — match по name
+                # XLSX or missing file — match по name
                 return True
 
         return False

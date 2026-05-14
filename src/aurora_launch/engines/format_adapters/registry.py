@@ -14,10 +14,10 @@ from aurora_launch.schemas.synthetic_corpus import (
 
 
 class AdapterRegistry:
-    """Plug-in registry для format adapters.
+    """Plug-in registry for format adapters.
 
     Auto-detection: `detect(file_path)` returns first matching adapter
-    или None. Registration: `register(adapter)` adds custom adapter.
+    or None. Registration: `register(adapter)` adds custom adapter.
 
     Built-in adapters auto-registered at module import via __init__.py.
     """

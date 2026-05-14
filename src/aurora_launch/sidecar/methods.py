@@ -734,8 +734,8 @@ def _load_project_forecast_data(project_id: str) -> _ProjectForecastData:
 @register("start_forecast")
 def _start_forecast(params: dict[str, Any]) -> dict[str, Any]:
     """Spawn forecast task в background thread. Returns handle immediately;
-    progress emitted as events `forecast_progress` (period-by-period) и final
-    `forecast_completed` или `forecast_cancelled`.
+    progress emitted as events `forecast_progress` (period-by-period) and final
+    `forecast_completed` or `forecast_cancelled`.
 
     Phase Π.3b: wired to ProjectDB + LaunchOrchestrator.
     DB reads happen synchronously in the main thread via _load_project_forecast_data
@@ -1090,7 +1090,7 @@ def _cancel_forecast(params: dict[str, Any]) -> dict[str, Any]:
 
 @register("inspect_bundle_entry_json")
 def _inspect_bundle_entry_json(params: dict[str, Any]) -> dict[str, Any]:
-    """Read JSON entry from bundle для inspector tab data (similarity, forecast,
+    """Read JSON entry from bundle for inspector tab data (similarity, forecast,
     etc.). Lazy reader pattern — does NOT load entire bundle.
 
     Inputs:

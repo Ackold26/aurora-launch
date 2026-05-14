@@ -135,7 +135,7 @@ class LicenseStatus:
     def has_feature(self, feature: str) -> bool:
         """Returns True if the current license tier includes the feature.
 
-        Fail-closed: any non-ACTIVE/GRACE state returns False для paid features.
+        Fail-closed: any non-ACTIVE/GRACE state returns False for paid features.
         """
         if self.state in (LicenseState.ACTIVE, LicenseState.GRACE):
             return feature in self.enabled_features
@@ -278,7 +278,7 @@ class LaunchLicenseValidator:
     def from_env(cls) -> LaunchLicenseValidator:
         """Construct from environment variables.
 
-        Bypass is honoured ONLY если both:
+        Bypass is honoured ONLY if both:
           - ``AURORA_LAUNCH_LICENSE_BYPASS`` ∈ {"1","true","yes"}
           - ``AURORA_BUILD_PROFILE`` == "dev"
         Production builds set ``AURORA_BUILD_PROFILE=production`` at package
@@ -392,6 +392,6 @@ class LaunchLicenseValidator:
                 public_verify_key_pem=self.public_verify_key_pem,
                 local_cache_path=self.cache_path,
                 machine_id=self.machine_id,
-                app_id=self.app_id,  # SH-1: required для verify_aud=True
+                app_id=self.app_id,  # SH-1: required for verify_aud=True
             )
         return self._sdk

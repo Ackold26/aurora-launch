@@ -1,4 +1,4 @@
-"""Synthetic data synthesis для corpus projects.
+"""Synthetic data synthesis for corpus projects.
 
 Implements MMM-realistic time series generation:
 - Hill saturation response per channel (γ_c, k_c)
@@ -60,7 +60,7 @@ _CATEGORY_RESPONSE_PARAMS_TABLE: dict[str, dict[str, tuple[float, float]]] = {
 def _category_response_params(category_l3: str, n_channels: int, rng: np.random.Generator) -> dict:
     """Category-specific MMM response curve parameters per ADAPTATION_RULES §1.4.
 
-    FIX H-Audit-3: explicit table coverage для all 14 declared categories.
+    FIX H-Audit-3: explicit table coverage for all 14 declared categories.
     Each category has tuple (low, high) for adstock/hill_gamma/hill_k —
     sampled per-channel within bounds (TV vs digital variation).
     Cross-category edge case uses widest bounds (deliberate volatility for
@@ -299,7 +299,7 @@ def synthesize_project_data(spec: SyntheticProjectSpec) -> dict:
 
     if is_awareness:
         # Awareness — logit-scale trajectory с ceiling 100.
-        # Baseline awareness (e.g., 5-15% для new brand)
+        # Baseline awareness (e.g., 5-15% for new brand)
         baseline_awareness = rng.uniform(0.05, 0.15)
         # Awareness response: logit transform → linear sum → inverse logit
         # Adstock-decayed media drives awareness lift

@@ -1,4 +1,4 @@
-"""Aurora Launch Pydantic v2 schemas — SSoT для data contracts."""
+"""Aurora Launch Pydantic v2 schemas — SSoT for data contracts."""
 
 from aurora_launch.schemas.bundle import AuroraLaunchBundleMetadata
 from aurora_launch.schemas.proxy import (

@@ -6,7 +6,7 @@ Per PHASE_B_REQUIREMENTS §5.2 + ADR-006 (Tauri webview PDF) + HIGH H2/H3 fixes:
 - 3 verifier formats (web + standalone HTML + CLI) — HIGH H3
 - Reproducibility recipe via aurora-launch-reproduce CLI — BLOCKER B1
 
-Real implementation для metadata composition + signing scope. Actual PDF
+Real implementation for metadata composition + signing scope. Actual PDF
 rendering (via Tauri webview / Typst / ReportLab fallback per ADR-006)
 deferred к Phase A C8 reporting integration.
 
@@ -177,7 +177,7 @@ async def build_certificate(ctx: Any, **kwargs: Any) -> dict[str, Any]:
     bundle_hash_sha256 = kwargs.get("bundle_hash_sha256", "0" * 64)
     bundle_hash_jcs_canonical = kwargs.get("bundle_hash_jcs_canonical", "0" * 64)
 
-    # Build summaries from kwargs или test fixtures
+    # Build summaries from kwargs or test fixtures
     proxy_metadata = ProxyMetadataSummary(
         proxy_code=kwargs.get("proxy_code", "TEST-2026-Q1"),
         similarity_score=kwargs.get("similarity_score", 0.72),

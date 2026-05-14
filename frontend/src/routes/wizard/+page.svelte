@@ -439,7 +439,8 @@
 
   .stepper li.active {
     color: var(--text-primary);
-    font-weight: 500;
+    font-weight: 600;
+    font-family: var(--font-display);
   }
   .stepper li.done {
     color: var(--color-success);

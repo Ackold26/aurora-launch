@@ -1,4 +1,4 @@
-"""Format adapters для proxy data ingestion (B0.5 §4.1).
+"""Format adapters for proxy data ingestion (B0.5 §4.1).
 
 Implements `ProxyDataSource` Protocol-based plug-in architecture.
 Phase B ships built-in DSM (V2023/V2024/V2025) + Mediascope AdEx + TV Index adapters.
@@ -7,7 +7,7 @@ Custom client adapters добавляются через `AdapterRegistry.regist
 
 Audit (post-1D extended) — file-size cap: every built-in adapter validates
 incoming file size against `MAX_INPUT_FILE_BYTES` before reading. Realistic
-DSM/Mediascope exports are <50 MB; any larger is either malicious или a
+DSM/Mediascope exports are <50 MB; any larger is either malicious or a
 caller bug.
 """
 
@@ -30,7 +30,7 @@ class FormatAdapterFileTooLarge(ValueError):
 
 def assert_file_size_ok(path, *, cap: int = MAX_INPUT_FILE_BYTES) -> None:
     """Helper: raise `FormatAdapterFileTooLarge` if file > cap. Adapters call
-    this before opening для consistent enforcement."""
+    this before opening for consistent enforcement."""
     from pathlib import Path as _Path
 
     p = _Path(path)

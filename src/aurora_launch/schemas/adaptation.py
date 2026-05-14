@@ -1,6 +1,6 @@
 """B3 Adaptation Layer Pydantic schemas (PHASE_B_REQUIREMENTS §5.1.4).
 
-Frozen contracts для:
+Frozen contracts for:
 - ProxyPriors (5 shape params per channel + global)
 - AnchorMagnitudes (recipient-side calibrated magnitudes)
 - TransferReport (validation output с heatmap + sensitivity + uncertainty decomp)

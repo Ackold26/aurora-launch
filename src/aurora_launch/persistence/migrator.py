@@ -86,7 +86,7 @@ def discover_migrations(migrations_dir: Path) -> list[Migration]:
             )
         seen.add(m.version)
 
-    # Check для gaps: versions must be 1..N contiguous
+    # Check for gaps: versions must be 1..N contiguous
     if migrations:
         expected = set(range(1, max(seen) + 1))
         missing = expected - seen
@@ -126,7 +126,7 @@ def _split_sql_statements(sql: str) -> list[str]:
     """Naive SQL splitter — splits on `;` outside string literals + comments.
 
     Conservative: handles single-line `--` comments + single-quoted strings.
-    Does NOT handle multi-line `/* ... */` comments или nested escapes —
+    Does NOT handle multi-line `/* ... */` comments or nested escapes —
     migration scripts должны avoid those constructs. Empty trimmed statements
     are filtered out.
     """
@@ -189,7 +189,7 @@ def apply_migration(conn: sqlite3.Connection, migration: Migration) -> None:
     )
 
     # Begin explicit transaction. sqlite3 в Python uses implicit transactions
-    # for DML by default; для DDL we must invoke BEGIN explicitly. The
+    # for DML by default; for DDL we must invoke BEGIN explicitly. The
     # isolation_level might be set to None (autocommit) by ProjectDB; we
     # don't rely on it. SAVEPOINT works across both modes.
     conn.execute("SAVEPOINT migration_apply")

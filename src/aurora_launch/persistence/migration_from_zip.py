@@ -91,7 +91,7 @@ def import_aurora_bundle(
         metadata=metadata,
     )
 
-    # Reuse source project_id где возможно для traceability — но project_uuid
+    # Reuse source project_id где возможно for traceability — но project_uuid
     # in new DB is generated fresh by create_project to avoid collision across
     # multiple imports of the same bundle.
 
@@ -114,7 +114,7 @@ def import_aurora_bundle(
         metadata={
             "import_timestamp": json.loads(loaded.files.get("manifest.json", b"{}") or b"{}"),
         }
-        if False  # keep metadata pure для now
+        if False  # keep metadata pure for now
         else {},
     )
 

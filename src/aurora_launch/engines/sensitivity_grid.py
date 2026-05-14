@@ -102,7 +102,7 @@ class SensitivityGrid:
     def relative_impact_pct(
         self, dimension: str, level: float
     ) -> float:
-        """Compute relative impact (%) vs baseline для UI bar chart."""
+        """Compute relative impact (%) vs baseline for UI bar chart."""
         point = self.lookup(dimension, level)
         if self.baseline_total == 0:
             return 0.0

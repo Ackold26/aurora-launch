@@ -48,15 +48,15 @@ def prior_predictive_samples_real(
     """Generate prior predictive forecast samples.
 
     Each sample draws priors from their distributions, simulates forecast
-    trajectory с baseline + noise. Used для visualization "what does model
+    trajectory с baseline + noise. Used for visualization "what does model
     expect before fitting".
 
-    Deterministic с seed для reproducibility.
+    Deterministic с seed for reproducibility.
     """
     rng = _make_rng(seed)
     samples: list[ForecastTrajectory] = []
 
-    # Extract baseline statistics from priors (если present)
+    # Extract baseline statistics from priors (if present)
     trend_prior = recipient_priors.get("trend_slope")
     trend_mean = trend_prior.mean if trend_prior else 0.0
     trend_std = trend_prior.std if trend_prior else 0.001
@@ -212,7 +212,7 @@ async def validate_transfer(ctx: Any, **kwargs: Any) -> dict[str, Any]:
     horizon_weeks = kwargs.get("horizon_weeks", 26)
     seed = kwargs.get("seed", 42)
 
-    # Build stub recipient priors для standalone testing
+    # Build stub recipient priors for standalone testing
     # In production: read upstream apply_recipient_magnitudes output from bundle
     recipient_priors: dict[str, PriorParam] = kwargs.get("recipient_priors") or {
         "trend_slope": PriorParam(mean=0.001, std=0.005, source="proxy_transferred"),
@@ -229,7 +229,7 @@ async def validate_transfer(ctx: Any, **kwargs: Any) -> dict[str, Any]:
     # Sensitivity analysis
     sensitivity_results = sensitivity_analysis_real(perturbation_pcts=perturbations)
 
-    # Heatmap (need ProxyPriors — build minimal stub если не passed)
+    # Heatmap (need ProxyPriors — build minimal stub if не passed)
     proxy_priors_dict = kwargs.get("proxy_priors_dict")
     if proxy_priors_dict:
         proxy_priors = ProxyPriors(**proxy_priors_dict)

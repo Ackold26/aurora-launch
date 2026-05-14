@@ -107,7 +107,7 @@ class CustomerSuccessTracker:
         period_end: datetime,
         total_hours_allowed: Decimal,
     ) -> UsageSummary:
-        """Aggregate usage для period."""
+        """Aggregate usage for period."""
         conn = sqlite3.connect(self.db_path)
         try:
             cursor = conn.execute(
@@ -206,7 +206,7 @@ class CustomerSuccessTracker:
     ) -> Optional[int]:
         """Linear extrapolation от recent usage rate.
 
-        Returns ETA в days, или None if no recent activity.
+        Returns ETA в days, or None if no recent activity.
         """
         period_end = datetime.now(timezone.utc)
         period_start = period_end - timedelta(weeks=lookback_weeks)
@@ -238,11 +238,11 @@ class CustomerSuccessTracker:
         period_start: datetime,
         period_end: datetime,
     ) -> str:
-        """CSV export для billing.
+        """CSV export for billing.
 
         FIX H-A3-1: CSV injection protection — escape leading control chars
         (=, +, -, @, \\t, \\r) by prefixing apostrophe (Excel-safe).
-        FIX H-A3-2: UTF-8 BOM prefix для Russian Excel compatibility.
+        FIX H-A3-2: UTF-8 BOM prefix for Russian Excel compatibility.
         """
         conn = sqlite3.connect(self.db_path)
         try:
@@ -270,7 +270,7 @@ class CustomerSuccessTracker:
         sanitized_rows = [tuple(_sanitize(v) for v in row) for row in rows]
 
         buf = StringIO()
-        # UTF-8 BOM для Russian Excel compatibility
+        # UTF-8 BOM for Russian Excel compatibility
         buf.write("﻿")
         writer = csv.writer(buf)
         writer.writerow([
@@ -289,7 +289,7 @@ def log_event(
     entry: ConsultingLogEntry,
     db_path: Optional[Path] = None,
 ) -> bool:
-    """Convenience function — uses default tracker если db_path не provided."""
+    """Convenience function — uses default tracker if db_path не provided."""
     global _default_tracker
     if db_path:
         tracker = CustomerSuccessTracker(db_path)

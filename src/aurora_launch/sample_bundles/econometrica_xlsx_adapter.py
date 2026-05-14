@@ -1,4 +1,4 @@
-"""XLSX adapter для Эконометрика wide-format test datasets (Phase Σ.0.4).
+"""XLSX adapter for Эконометрика wide-format test datasets (Phase Σ.0.4).
 
 Reads Materia Medica's standard data export format (DSM Group / Mediascope
 normalised) и returns structured EconometricaDataset for downstream
@@ -83,7 +83,7 @@ SALES_COMPETITORS_KEYWORDS: list[str] = [
 class EconometricaDataset:
     """Normalised view of one Эконометрика XLSX sheet."""
 
-    brand_id: str  # opaque identifier (from sheet name или caller)
+    brand_id: str  # opaque identifier (from sheet name or caller)
     granularity: str  # "monthly" (Эконометрика test data is monthly)
     n_periods: int
     dates_iso: list[str]  # ISO YYYY-MM-DD format
@@ -102,7 +102,7 @@ def _normalise_header(s: str) -> str:
 def _parse_russian_month(label: str) -> str | None:
     """Convert 'январь 2023' style label → ISO 'YYYY-MM-01'.
 
-    Returns None if не parseable (для caller to handle gracefully).
+    Returns None if не parseable (for caller to handle gracefully).
     """
     if not isinstance(label, str):
         return None
@@ -143,7 +143,7 @@ def _coerce_numeric(value: Any) -> float | None:
 
 
 def _detect_sheet_name(xlsx_path: Path, requested: str | None) -> str:
-    """Use first sheet если caller didn't specify."""
+    """Use first sheet if caller didn't specify."""
     sheets = pd.ExcelFile(xlsx_path).sheet_names
     if not sheets:
         raise EconometricaXLSXError(f"No sheets в {xlsx_path}")
@@ -219,7 +219,7 @@ def load_econometrica_xlsx(
     for row_idx, raw in enumerate(dates_raw):
         iso = _parse_russian_month(str(raw)) if raw is not None else None
         if iso is None:
-            # Try pandas parsing (если уже datetime)
+            # Try pandas parsing (if уже datetime)
             try:
                 ts = pd.to_datetime(raw, errors="coerce")
                 if not pd.isna(ts):

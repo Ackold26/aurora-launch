@@ -49,7 +49,7 @@ CROSS_CATEGORY_INFLATION_PENALTY: dict[int, float] = {
     4: float("inf"),  # Blocked — should never reach here
 }
 
-# Category-specific elasticity для pricing factor (per ADAPTATION_RULES §2.1)
+# Category-specific elasticity for pricing factor (per ADAPTATION_RULES §2.1)
 CATEGORY_ELASTICITY: dict[str, float] = {
     "FMCG_food.snacks": 0.7,
     "FMCG_food.dairy": 0.4,
@@ -153,7 +153,7 @@ async def extract_proxy_priors(ctx: Any, **kwargs: Any) -> dict[str, Any]:
     proxy_model_hash = kwargs.get("proxy_model_hash", "stub_hash")
 
     if not posterior_summary:
-        # Dev-time stub fallback (deterministic, suitable для integration tests)
+        # Dev-time stub fallback (deterministic, suitable for integration tests)
         posterior_summary = _build_stub_posterior_summary(channels)
 
     priors = extract_proxy_priors_from_posterior(
@@ -171,7 +171,7 @@ async def extract_proxy_priors(ctx: Any, **kwargs: Any) -> dict[str, Any]:
 
 
 def _build_stub_posterior_summary(channels: list[str]) -> dict[str, dict[str, Any]]:
-    """Build deterministic stub posterior summary для integration testing."""
+    """Build deterministic stub posterior summary for integration testing."""
     summary: dict[str, dict[str, Any]] = {
         "adstock_decay": {ch: {"mean": 0.4, "std": 0.05, "ess": 800} for ch in channels},
         "hill_gamma": {ch: {"mean": 2.0, "std": 0.3, "ess": 750} for ch in channels},
@@ -203,7 +203,7 @@ def apply_recipient_magnitudes_real(
     - similarity verdict factor (High 1.2× / Medium 1.5× / Low 2.0×)
     - cross-category penalty (1.0 / 1.0 / 1.0 / 1.5 / blocked)
 
-    Returns flat dict[param_id → PriorParam] для downstream model fit.
+    Returns flat dict[param_id → PriorParam] for downstream model fit.
     """
     if cross_category_distance >= 4:
         raise ValueError(
@@ -267,7 +267,7 @@ def apply_recipient_magnitudes_real(
 async def apply_recipient_magnitudes(ctx: Any, **kwargs: Any) -> dict[str, Any]:
     """Workflow handler entry point. Real implementation."""
     # In production: read priors / verdict / cross_cat from upstream bundle.
-    # Phase B v0.1.x: accept via kwargs или use deterministic test inputs.
+    # Phase B v0.1.x: accept via kwargs or use deterministic test inputs.
     proxy_model_hash = kwargs.get("proxy_model_hash", "stub")
     similarity_score = kwargs.get("similarity_score", 0.72)
     similarity_label = kwargs.get("similarity_label", "Medium")

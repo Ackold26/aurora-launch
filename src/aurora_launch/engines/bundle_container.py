@@ -240,7 +240,7 @@ class BundleZipWriter:
         *,
         schema_version: str | None = None,
     ) -> None:
-        """Stage a file для inclusion в bundle. Overrides if entry already exists."""
+        """Stage a file for inclusion в bundle. Overrides if entry already exists."""
         if entry_path == MANIFEST_FILENAME:
             raise ValueError(
                 f"Cannot add {MANIFEST_FILENAME} as a file — manifest is "
@@ -369,12 +369,12 @@ def _read_manifest_from_zip(path: Path) -> BundleManifest:
 
 @dataclass
 class BundleZipReader:
-    """Reader для `.aurora` bundles. Auto-detects ZIP vs legacy JSON.
+    """Reader for `.aurora` bundles. Auto-detects ZIP vs legacy JSON.
 
     Default `read()` is eager (Block 1A) — full bundle into RAM. For 50MB+
     bundles call `read_lazy()` (Block 1C) to defer per-entry reads behind
     a size-bounded LRU cache; the lazy bundle holds the ZipFile + advisory
-    lock for its lifetime and must be closed (или used as context manager).
+    lock for its lifetime and must be closed (or used as context manager).
     """
 
     schema_registry: LaunchSchemaRegistry | None = None
@@ -392,7 +392,7 @@ class BundleZipReader:
 
         Block 1C entrypoint. Reads `manifest.json` upfront, defers payload
         entries to first access (cached в size-bounded LRU). Caller MUST
-        close the returned bundle (или use `with`).
+        close the returned bundle (or use `with`).
 
         Falls back to `read()` (eager) for legacy `.aurora.json` bundles —
         single-file blobs где lazy не имеет смысла. The returned object in
@@ -537,7 +537,7 @@ class BundleZipReader:
 
         For backwards-compat reads, file content is the raw JSON bytes,
         registered as entry `legacy_bundle.json`. project_id is derived from
-        manifest_sha256 (deterministic) если legacy bundle не содержит explicit ID.
+        manifest_sha256 (deterministic) if legacy bundle не содержит explicit ID.
         """
         raw_bytes = path.read_bytes()
         legacy = json.loads(raw_bytes.decode("utf-8"))
@@ -549,7 +549,7 @@ class BundleZipReader:
 
         # Stable project_id from manifest_sha256 if explicit not present
         # (UUID v5 from a fixed namespace + manifest_sha keeps это deterministic
-        #  для same legacy bundle)
+        #  for same legacy bundle)
         synth_project_id = legacy.get("project_id") or str(
             uuid.uuid5(uuid.NAMESPACE_OID, manifest_sha or path.name)
         )
