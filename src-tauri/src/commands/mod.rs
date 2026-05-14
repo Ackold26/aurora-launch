@@ -5,6 +5,7 @@ pub mod adapters;
 pub mod audit_log;
 pub mod build_info;
 pub mod bundle;
+pub mod crash_recovery;
 pub mod feedback;
 pub mod forecast;
 pub mod license;

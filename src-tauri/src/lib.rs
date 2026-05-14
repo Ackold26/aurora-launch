@@ -19,6 +19,7 @@ use std::sync::Mutex;
 
 mod commands;
 mod errors;
+mod panic_handler;
 mod sidecar;
 mod state;
 
@@ -33,6 +34,12 @@ pub const BUILD_PROFILE: &str = env!("AURORA_BUILD_PROFILE");
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::init();
+    // Phase 0.3: install panic handler BEFORE anything else can crash.
+    // Hook writes crash-{ts}.dump к %LOCALAPPDATA%/Aurora Launch/crashes/
+    // when any thread panics. On next start, list_pending_crashes IPC
+    // command surfaces these dumps for support submission.
+    panic_handler::install_panic_hook(env!("CARGO_PKG_VERSION"), BUILD_PROFILE);
+
     log::info!(
         "aurora_launch starting — build_profile={}, version={}",
         BUILD_PROFILE,
@@ -86,6 +93,11 @@ pub fn run() {
             // adapters (Block 4 Phase 3)
             commands::adapters::parse_data_file,
             commands::adapters::list_adapters,
+            // crash recovery (Phase 0.3)
+            commands::crash_recovery::list_pending_crashes,
+            commands::crash_recovery::get_crash_details,
+            commands::crash_recovery::dismiss_crash,
+            commands::crash_recovery::dismiss_all_crashes,
         ])
         .setup(|app| {
             // Initialize local SQLite for telemetry + audit log

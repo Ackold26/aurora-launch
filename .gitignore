@@ -26,6 +26,11 @@ dist/
 build/
 .venv/
 
+# Tauri build artefacts (CI-produced, never commit locally)
+src-tauri/binaries/
+src-tauri/gen/
+src-tauri/icons/
+
 # Future: secrets / local configs (do not commit)
 .env
 .env.local
