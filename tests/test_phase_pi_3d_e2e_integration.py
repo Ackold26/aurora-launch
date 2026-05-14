@@ -760,10 +760,16 @@ class TestBackwardCompatLegacyForecast:
         })
         handle = start_result["forecast_handle"]
 
-        # Immediately cancel
+        # Immediately cancel. After audit A-09 (removed fake sleep pacing),
+        # legacy forecast может complete до что cancel arrives → handle already
+        # popped из _cancel_flags. Both outcomes valid: cancelled=True (handle
+        # still active) or cancelled=False с reason "handle not found или
+        # already finished" (race). The contract is "cancel never crashes."
         cancel_result = dispatch("cancel_forecast", {"forecast_handle": handle})
-        assert cancel_result["cancelled"] is True
-        assert cancel_result["forecast_handle"] == handle
+        if cancel_result["cancelled"]:
+            assert cancel_result["forecast_handle"] == handle
+        else:
+            assert "reason" in cancel_result
 
         # Wait for thread
         import aurora_launch.sidecar.methods as _methods_mod

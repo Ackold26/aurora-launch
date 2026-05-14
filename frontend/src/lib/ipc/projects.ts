@@ -75,7 +75,7 @@ export interface CreateProjectResult {
 
 export type Granularity = 'monthly' | 'weekly';
 
-export type SampleScenario = 'kagotsel_venarus' | 'afala_afalaza' | 'multi_proxy';
+export type SampleScenario = 'kagotsel_venarus' | 'venarus_baseline' | 'multi_proxy';
 
 // ─── Service functions ────────────────────────────────────────────────────────
 

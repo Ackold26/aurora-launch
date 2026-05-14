@@ -58,6 +58,58 @@ class SidecarStorageError(RuntimeError):
 _PROJECT_DB: Any = None  # ProjectDB | None — typed as Any to avoid top-level import
 _PROJECT_DB_LOCK = threading.Lock()
 
+# ─── AutosaveManager singleton ────────────────────────────────────────────────
+# Audit A-05 fix: AutosaveManager was shipped в S-05 but never instantiated
+# в sidecar; SIGTERM handler was dead code. We create the singleton lazily
+# alongside ProjectDB so signal handlers ARE registered. Wizard sessions (when
+# wired в Phase Premium) will call start_autosave/stop_autosave per project.
+_AUTOSAVE: Any = None  # AutosaveManager | None
+_AUTOSAVE_LOCK = threading.Lock()
+
+
+def _get_autosave_manager() -> Any:
+    """Return module-level AutosaveManager singleton (lazy init).
+
+    Singleton ensures SIGTERM/atexit handlers registered ONCE per sidecar
+    process. Currently no wizard session manager wires individual project
+    autosave timers — those will be added в Phase Premium when wizard state
+    becomes persistent. For now: signal handlers register; no active timers.
+    """
+    global _AUTOSAVE  # noqa: PLW0603
+
+    if _AUTOSAVE is not None:
+        return _AUTOSAVE
+
+    with _AUTOSAVE_LOCK:
+        if _AUTOSAVE is not None:
+            return _AUTOSAVE
+        try:
+            from aurora_launch.persistence.autosave import AutosaveManager
+
+            # Resolve data root same way as ProjectDB so session marker
+            # co-locates с the DB file.
+            env_path = os.environ.get("AURORA_PROJECT_DB_PATH")
+            if env_path:
+                data_root = Path(env_path)
+            else:
+                try:
+                    import platformdirs  # type: ignore[import-untyped]
+                    data_root = Path(platformdirs.user_data_dir("Aurora Launch"))
+                except ImportError:
+                    data_root = Path.home() / ".aurora-launch"
+            autosave_dir = data_root / "autosaves"
+            autosave_dir.mkdir(parents=True, exist_ok=True)
+
+            _AUTOSAVE = AutosaveManager(
+                autosave_dir=autosave_dir,
+                register_signal_handlers=True,
+            )
+            return _AUTOSAVE
+        except Exception as exc:
+            raise SidecarStorageError(
+                f"Cannot initialize AutosaveManager: {exc}"
+            ) from exc
+
 
 def _get_project_db() -> Any:
     """Return module-level ProjectDB singleton; initialize on first call.
@@ -99,12 +151,33 @@ def _get_project_db() -> Any:
 
             blob_store = BlobStore(blobs_dir)
             # AURORA_PROJECT_DB_KEY env override:
-            #   "none"  → unencrypted (CI without sqlcipher3, tests)
+            #   "none"  → unencrypted (CI без sqlcipher3, tests) — DEV-ONLY
             #   "auto"  → keychain-backed (default production)
             #   hex64   → explicit key (advanced ops)
+            #
+            # Audit A-04 fix: "none" requires explicit dev/test mode flag.
+            # Production binary must never silently bypass encryption from env.
             key_env = os.environ.get("AURORA_PROJECT_DB_KEY", "auto").strip().lower()
             if key_env == "none":
-                encryption_key: str | None = None
+                # Guard: dev/test profile OR explicit testing env var.
+                # Tauri build embeds AURORA_BUILD_PROFILE; tests set
+                # AURORA_LAUNCH_TESTING=1; sidecar standalone в dev может set
+                # either. Production builds use "production" profile и do NOT
+                # set the testing env var → "none" silently downgrades к "auto".
+                is_dev_profile = (
+                    os.environ.get("AURORA_BUILD_PROFILE", "").lower() == "dev"
+                )
+                is_testing = bool(os.environ.get("AURORA_LAUNCH_TESTING"))
+                if not (is_dev_profile or is_testing):
+                    import logging as _logging
+                    _logging.getLogger(__name__).warning(
+                        "AURORA_PROJECT_DB_KEY=none ignored in production "
+                        "(no AURORA_BUILD_PROFILE=dev or AURORA_LAUNCH_TESTING=1); "
+                        "falling back к keychain-backed key"
+                    )
+                    encryption_key: str | None = "auto"
+                else:
+                    encryption_key = None
             elif key_env == "auto":
                 encryption_key = "auto"
             else:
@@ -240,6 +313,9 @@ def _get_project(params: dict[str, Any]) -> dict[str, Any]:
     except Exception as exc:
         raise SidecarStorageError(f"get_project failed: {exc}") from exc
 
+    # Version dicts MUST include decision_note + composite_bundle_hash to match
+    # Rust VersionSummary deserialization contract (audit A-01 fix). Missing
+    # fields cause serde to fail на UI side даже когда field is Option<String>.
     return {
         "project_uuid": detail.project_uuid,
         "name": detail.name,
@@ -249,7 +325,9 @@ def _get_project(params: dict[str, Any]) -> dict[str, Any]:
                 "version_id": v.version_id,
                 "revision": v.revision,
                 "label": v.label,
+                "decision_note": v.decision_note,
                 "created_at": v.created_at,
+                "composite_bundle_hash": v.composite_bundle_hash,
                 "file_count": v.file_count,
             }
             for v in detail.versions
@@ -376,14 +454,17 @@ def _import_aurora_bundle(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-# Known pilot XLSX scenarios — paths from test files
+# Known pilot XLSX scenarios — paths from test files.
+# Audit A-06 fix: renamed misleading `afala_afalaza` к `venarus_baseline` since
+# the file IS Венарус data — original key suggested wrong proxy mapping.
+# Add real Afala scenario когда XLSX будет available (TODO).
 _SAMPLE_BUNDLE_PATHS: dict[str, Path] = {
     "kagotsel_venarus": Path(
         "C:/Users/ackol/Desktop/Аврора - материалы для обучения и тестирования"
         "/Эконометрика - тестовые файлы/XLSX"
         "/Кагоцел РФ+_данные для эконометрики + наши данные 29.08.xlsx"
     ),
-    "afala_afalaza": Path(
+    "venarus_baseline": Path(
         "C:/Users/ackol/Desktop/Аврора - материалы для обучения и тестирования"
         "/Эконометрика - тестовые файлы/XLSX"
         "/Венарус_данные для эконометрики для модели + наши данные.xlsx"
@@ -815,7 +896,10 @@ def _start_forecast(params: dict[str, Any]) -> dict[str, Any]:
                         "elapsed_ms": int((time.monotonic() - started) * 1000),
                     },
                 )
-                time.sleep(0.05)
+                # Audit A-09 fix: removed time.sleep(0.05) — was fake pacing
+                # making legacy path look "in progress" к UI. Per INV
+                # no-lying-progress, emit events at compute speed; UI shows
+                # real elapsed_ms not perceived smoothness.
 
             events.emit(
                 "forecast_completed",
@@ -1084,6 +1168,21 @@ def _shutdown(_params: dict[str, Any]) -> dict[str, Any]:
             forecasts_timed_out.append(handle)
         else:
             forecasts_joined.append(handle)
+
+    # Close AutosaveManager singleton (cancels timers, clears session marker).
+    # Audit A-05 fix: explicit shutdown path so SIGTERM handler isn't only
+    # exit path. Idempotent — if shutdown() already ran, this is a no-op.
+    global _AUTOSAVE  # noqa: PLW0603
+    with _AUTOSAVE_LOCK:
+        if _AUTOSAVE is not None:
+            try:
+                _AUTOSAVE.shutdown()
+            except Exception as exc:  # noqa: BLE001
+                import logging as _logging
+                _logging.getLogger(__name__).warning(
+                    "AutosaveManager shutdown raised: %s", exc
+                )
+            _AUTOSAVE = None
 
     # Close ProjectDB singleton so WAL checkpoint + file locks release cleanly.
     global _PROJECT_DB  # noqa: PLW0603

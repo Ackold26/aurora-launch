@@ -296,7 +296,7 @@ describe('ipc/projects — loadSampleBundle', () => {
   });
 
   it('supports all three sample scenarios', async () => {
-    const scenarios = ['kagotsel_venarus', 'afala_afalaza', 'multi_proxy'] as const;
+    const scenarios = ['kagotsel_venarus', 'venarus_baseline', 'multi_proxy'] as const;
     for (const scenario of scenarios) {
       mockInvoke.mockResolvedValueOnce({
         project_uuid: 'uuid-s',

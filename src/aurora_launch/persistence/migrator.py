@@ -119,20 +119,91 @@ def get_current_version(conn) -> int:
     return int(row[0]) if not hasattr(row, "keys") else int(row["v"])
 
 
+_SQL_STATEMENT_SEPARATOR = ";"
+
+
+def _split_sql_statements(sql: str) -> list[str]:
+    """Naive SQL splitter — splits on `;` outside string literals + comments.
+
+    Conservative: handles single-line `--` comments + single-quoted strings.
+    Does NOT handle multi-line `/* ... */` comments или nested escapes —
+    migration scripts должны avoid those constructs. Empty trimmed statements
+    are filtered out.
+    """
+    statements: list[str] = []
+    buf: list[str] = []
+    in_string = False
+    i = 0
+    while i < len(sql):
+        ch = sql[i]
+        if not in_string and ch == "-" and i + 1 < len(sql) and sql[i + 1] == "-":
+            # Single-line comment — skip к next newline
+            nl = sql.find("\n", i)
+            if nl == -1:
+                break
+            i = nl + 1
+            buf.append("\n")
+            continue
+        if ch == "'":
+            in_string = not in_string
+            buf.append(ch)
+            i += 1
+            continue
+        if ch == _SQL_STATEMENT_SEPARATOR and not in_string:
+            stmt = "".join(buf).strip()
+            if stmt:
+                statements.append(stmt)
+            buf = []
+            i += 1
+            continue
+        buf.append(ch)
+        i += 1
+    tail = "".join(buf).strip()
+    if tail:
+        statements.append(tail)
+    return statements
+
+
 def apply_migration(conn: sqlite3.Connection, migration: Migration) -> None:
-    """Apply a single migration script. Runs в its own transaction.
+    """Apply a single migration script atomically.
+
+    Audit A-02 fix: `executescript` issues implicit COMMIT before execution,
+    breaking transaction atomicity. We split на individual statements and run
+    inside explicit BEGIN/COMMIT (or ROLLBACK on failure) so partial DDL never
+    survives a mid-script error.
 
     Migration script SHOULD include `INSERT INTO schema_version` at end.
     Caller verifies version recorded после execution.
     """
     sql = migration.path.read_text(encoding="utf-8")
-    _log.info("Applying migration v%03d (%s)", migration.version, migration.name)
+    statements = _split_sql_statements(sql)
+    if not statements:
+        raise MigrationError(
+            f"Migration v{migration.version:03d} ({migration.name}) is empty"
+        )
+    _log.info(
+        "Applying migration v%03d (%s) — %d statement(s)",
+        migration.version,
+        migration.name,
+        len(statements),
+    )
+
+    # Begin explicit transaction. sqlite3 в Python uses implicit transactions
+    # for DML by default; для DDL we must invoke BEGIN explicitly. The
+    # isolation_level might be set to None (autocommit) by ProjectDB; we
+    # don't rely on it. SAVEPOINT works across both modes.
+    conn.execute("SAVEPOINT migration_apply")
     try:
-        conn.executescript(sql)
+        for stmt in statements:
+            conn.execute(stmt)
     except sqlite3.Error as exc:
+        conn.execute("ROLLBACK TO SAVEPOINT migration_apply")
+        conn.execute("RELEASE SAVEPOINT migration_apply")
         raise MigrationError(
             f"Migration v{migration.version:03d} ({migration.name}) failed: {exc}"
         ) from exc
+    else:
+        conn.execute("RELEASE SAVEPOINT migration_apply")
 
 
 def apply_pending_migrations(

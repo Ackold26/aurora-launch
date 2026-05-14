@@ -259,7 +259,7 @@ describe('projectsStore.loadSample()', () => {
     });
     mockListProjects.mockResolvedValueOnce([]);
 
-    await projectsStore.loadSample('afala_afalaza');
+    await projectsStore.loadSample('venarus_baseline');
 
     expect(capturedLoading).toBe(true);
     expect(projectsStore.loading).toBe(false);

@@ -225,30 +225,125 @@ def verify_blob(signed_data: bytes, public_key: Ed25519PublicKey) -> bytes:
 
 
 # ---------------------------------------------------------------------------
-# Dev keypair (process-cached; production replaces with Veracrypt keypair)
+# Local signing keypair — persisted across process restarts (audit A-03 fix)
 # ---------------------------------------------------------------------------
+#
+# Previous version generated a fresh keypair per process via Ed25519PrivateKey
+# .generate() inside lru_cache. That meant: process restart → new keypair →
+# every blob signed by the old process became permanently unverifiable.
+# Customer лишался всех своих saved versions после первого restart.
+#
+# Fix: store the private key bytes alongside the ProjectDB file (filesystem
+# permissions same as DB → if attacker can read DB they already have the data,
+# so co-located key isn't extra exposure). Future Phase Magic (M-CS) replaces
+# с Yandex KMS cloud signing.
+#
+# Key file:
+#   <AURORA_PROJECT_DB_PATH>/blob_signing_key.bin  (32 raw bytes)
+#
+# Override:
+#   AURORA_BLOB_SIGNING_KEY_PATH env var — explicit path (tests)
+#   AURORA_BLOB_SIGNING_DISABLE=1     — skip signing entirely (dev only)
+
+import os as _os
+from pathlib import Path as _Path
+
+_KEYPAIR_CACHE: dict[str, tuple[Ed25519PrivateKey, Ed25519PublicKey]] = {}
 
 
-@lru_cache(maxsize=1)
-def _get_dev_keypair() -> tuple[Ed25519PrivateKey, Ed25519PublicKey]:
-    """Generate (or return cached) dev Ed25519 keypair.
+def _resolve_keypair_path() -> _Path:
+    """Locate (or compute default location of) the persisted signing key file."""
+    override = _os.environ.get("AURORA_BLOB_SIGNING_KEY_PATH")
+    if override:
+        return _Path(override)
+    project_db_path = _os.environ.get("AURORA_PROJECT_DB_PATH")
+    if project_db_path:
+        return _Path(project_db_path) / "blob_signing_key.bin"
+    try:
+        import platformdirs  # type: ignore[import-untyped]
+        return _Path(platformdirs.user_data_dir("Aurora Launch")) / "blob_signing_key.bin"
+    except ImportError:
+        return _Path.home() / ".aurora-launch" / "blob_signing_key.bin"
 
-    Called at first use; cached for process lifetime via lru_cache.
-    Production code replaces DEV_PRIVATE_KEY / DEV_PUBLIC_KEY references
-    with keypair loaded from Veracrypt container.
+
+def _load_or_generate_keypair(
+    path: _Path,
+) -> tuple[Ed25519PrivateKey, Ed25519PublicKey]:
+    """Load 32-byte private key from disk, or generate + persist if absent.
+
+    Raw byte format compatible с Ed25519PrivateKey.from_private_bytes().
+    File permissions: best-effort 0o600 on POSIX; Windows uses default ACL.
     """
+    if path.exists():
+        try:
+            raw = path.read_bytes()
+            if len(raw) != 32:
+                raise ValueError(
+                    f"Signing key file {path} has invalid length {len(raw)} "
+                    f"(expected 32 raw Ed25519 bytes). Move aside and restart "
+                    f"к regenerate, OR investigate manual corruption."
+                )
+            private = Ed25519PrivateKey.from_private_bytes(raw)
+            return private, private.public_key()
+        except (OSError, ValueError) as exc:
+            _log.warning(
+                "Cannot load persisted signing key %s: %s. Generating new "
+                "keypair — existing signed blobs will fail verification "
+                "(BlobSignatureError on load).",
+                path, exc,
+            )
+            # fall-through to generation
+
+    path.parent.mkdir(parents=True, exist_ok=True)
     private = Ed25519PrivateKey.generate()
-    public = private.public_key()
-    _log.debug(
-        "Generated dev Ed25519 keypair (ephemeral — process scope only). "
-        "Replace with persistent keypair for production."
-    )
-    return private, public
+    raw_bytes = private.private_bytes_raw()
+    try:
+        # Write atomically: write tmp + rename
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_bytes(raw_bytes)
+        try:
+            _os.chmod(tmp, 0o600)  # best-effort POSIX; no-op on Windows
+        except OSError:
+            pass
+        _os.replace(tmp, path)
+    except OSError as exc:
+        _log.warning(
+            "Cannot persist signing keypair к %s: %s. Falling back к "
+            "ephemeral keypair — blobs will be unverifiable after restart. "
+            "Investigate filesystem permissions urgently.",
+            path, exc,
+        )
+    return private, private.public_key()
+
+
+def _get_local_keypair() -> tuple[Ed25519PrivateKey, Ed25519PublicKey]:
+    """Return cached keypair для current process; load/generate on first use.
+
+    Cache keyed by resolved path string so test fixtures using
+    monkeypatch.setenv(AURORA_PROJECT_DB_PATH=...) get isolated keypairs.
+    """
+    path = _resolve_keypair_path()
+    cache_key = str(path)
+    cached = _KEYPAIR_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    pair = _load_or_generate_keypair(path)
+    _KEYPAIR_CACHE[cache_key] = pair
+    return pair
 
 
 def _dev_private_key() -> Ed25519PrivateKey:
-    return _get_dev_keypair()[0]
+    return _get_local_keypair()[0]
 
 
 def _dev_public_key() -> Ed25519PublicKey:
-    return _get_dev_keypair()[1]
+    return _get_local_keypair()[1]
+
+
+# Legacy alias retained для existing tests + blob_store usage.
+@lru_cache(maxsize=1)
+def _get_dev_keypair() -> tuple[Ed25519PrivateKey, Ed25519PublicKey]:
+    """DEPRECATED: use _get_local_keypair (persisted). Kept для backward compat
+    with tests that import this symbol; new code should not call this directly.
+    """
+    return _get_local_keypair()

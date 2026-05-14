@@ -100,6 +100,23 @@ def serve_once(
 def serve_forever(token: str | None = None) -> int:
     """Blocking stdin loop. Returns exit code."""
     expected = token or load_token_from_env()
+
+    # Audit A-05 fix: eagerly initialize AutosaveManager so SIGTERM/atexit
+    # handlers register before any work. If init fails (missing data_root
+    # etc.), log a warning but continue — sidecar should still serve simple
+    # IPC commands that don't touch ProjectDB.
+    try:
+        from aurora_launch.sidecar.methods import _get_autosave_manager
+        _get_autosave_manager()
+    except Exception as exc:  # noqa: BLE001
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "AutosaveManager init at sidecar startup failed: %s. "
+            "SIGTERM handler NOT registered. ProjectDB-dependent flows "
+            "still work but unclean exits won't clear session marker.",
+            exc,
+        )
+
     # Boot beacon (event has no id, no auth — emitted under shared write lock
     # so no race with first response).
     _events.emit("sidecar_ready", {})

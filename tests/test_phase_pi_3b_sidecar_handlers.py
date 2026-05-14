@@ -51,13 +51,15 @@ def _reset_singleton() -> None:
 def isolated_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Each test gets its own isolated DB via env var.
 
-    Disables SQLCipher для CI without sqlcipher3 installed — singleton
-    initialises с plain sqlite3 backend.
+    Disables SQLCipher для CI без sqlcipher3 installed — singleton
+    initialises с plain sqlite3 backend. AURORA_LAUNCH_TESTING=1 unlocks
+    the "none" key sentinel (audit A-04 guard requires dev/test flag).
     """
     db_dir = tmp_path / "aurora_launch_test_db"
     db_dir.mkdir()
     monkeypatch.setenv("AURORA_PROJECT_DB_PATH", str(db_dir))
     monkeypatch.setenv("AURORA_PROJECT_DB_KEY", "none")
+    monkeypatch.setenv("AURORA_LAUNCH_TESTING", "1")
     _reset_singleton()
     yield db_dir
     _reset_singleton()
