@@ -1,11 +1,12 @@
 import { sveltekit } from '@sveltejs/kit/vite';
+import { svelteTesting } from '@testing-library/svelte/vite';
 import { defineConfig } from 'vite';
 
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({
-  plugins: [sveltekit()],
+  plugins: [sveltekit(), svelteTesting()],
 
   // Tauri expects a fixed port, fail if not available
   clearScreen: false,
@@ -44,6 +45,8 @@ export default defineConfig(async () => ({
   test: {
     environment: 'jsdom',
     globals: true,
+    include: ['tests/unit/**/*.test.ts'],
+    exclude: ['tests/e2e/**'],
     setupFiles: ['./tests/unit/setup.ts'],
     coverage: {
       reporter: ['text', 'html'],

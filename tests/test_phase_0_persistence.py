@@ -23,7 +23,12 @@ from pathlib import Path
 import pytest
 
 from aurora_launch.engines.bundle_container import BundleZipWriter
-from aurora_launch.persistence.blob_store import BlobStore, BlobStoreError
+from aurora_launch.persistence.blob_store import (
+    BlobLegacyFormatError,
+    BlobSignatureError,
+    BlobStore,
+    BlobStoreError,
+)
 from aurora_launch.persistence.migration_from_zip import (
     MigrationError,
     import_aurora_bundle,
@@ -69,7 +74,8 @@ class TestBlobStore:
     def test_store_and_load_round_trip(self, blob_store: BlobStore) -> None:
         content = b"hello aurora world"
         info = blob_store.store(content)
-        assert info.size_bytes == len(content)
+        # size_bytes is the on-disk size: 64-byte Ed25519 sig prefix + content bytes
+        assert info.size_bytes == len(content) + 64
         assert info.storage_path.exists()
         assert blob_store.load(info.sha256) == content
 
@@ -88,9 +94,14 @@ class TestBlobStore:
 
     def test_load_integrity_check_detects_tampering(self, blob_store: BlobStore) -> None:
         info = blob_store.store(b"original content")
-        # Tamper with the file on disk
-        info.storage_path.write_bytes(b"corrupted")
-        with pytest.raises(BlobStoreError, match="integrity check failed"):
+        # Tamper with file: write bytes that are >= 64 bytes but have an invalid signature.
+        # We patch the signature portion while keeping content length the same.
+        original = info.storage_path.read_bytes()
+        # Flip one byte in the signature prefix (bytes 0-63)
+        tampered = bytearray(original)
+        tampered[0] ^= 0xFF
+        info.storage_path.write_bytes(bytes(tampered))
+        with pytest.raises(BlobSignatureError):
             blob_store.load(info.sha256)
 
     def test_load_missing_blob_raises(self, blob_store: BlobStore) -> None:
@@ -117,15 +128,17 @@ class TestBlobStore:
         blob_store.store(b"b")
         # Drop a non-blob file in the dir
         (storage_root / "blobs" / "stray.txt").write_text("hi")
-        # Drop a blob with wrong-length name
-        (storage_root / "blobs" / "sha256-tooshort.pickle").write_text("nope")
+        # Drop a blob with wrong-length name (new .blob suffix)
+        (storage_root / "blobs" / "sha256-tooshort.blob").write_text("nope")
         results = blob_store.list_all()
         assert len(results) == 2
 
     def test_total_bytes(self, blob_store: BlobStore) -> None:
         blob_store.store(b"x" * 100)
         blob_store.store(b"y" * 200)
-        assert blob_store.total_bytes() == 300
+        # On-disk size = content + 64-byte Ed25519 signature prefix per blob.
+        # 100+64=164, 200+64=264 → total 428.
+        assert blob_store.total_bytes() == (100 + 64) + (200 + 64)
 
 
 # ---------------------------------------------------------------------------
@@ -523,7 +536,7 @@ class TestAttackScenarios:
         info = blob_store.store(b"genuine")
         external = tmp_path / "external_target.bin"
         external.write_bytes(b"external content")
-        symlink_path = blob_store.blobs_dir / f"sha256-{'b' * 64}.pickle"
+        symlink_path = blob_store.blobs_dir / f"sha256-{'b' * 64}.blob"
         try:
             symlink_path.symlink_to(external)
         except (OSError, NotImplementedError):
@@ -597,7 +610,7 @@ class TestAttackScenarios:
         """Audit P0-08: list_all skips filenames с non-hex chars в SHA slot."""
         # Drop a file с right length но invalid chars
         bad_name = (
-            storage_root / "blobs" / "sha256-ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ.pickle"
+            storage_root / "blobs" / "sha256-ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ.blob"
         )
         bad_name.write_bytes(b"nope")
         # Also drop a valid blob

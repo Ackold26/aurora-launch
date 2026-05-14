@@ -82,7 +82,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-22.04, macos-14, windows-2022]
         python-version: ['3.12']
     steps:
       - uses: actions/checkout@v4
@@ -91,7 +91,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - run: pip install -e ".[dev]"
-      - run: pytest -v
+      - run: pytest -v --cov=src/aurora_launch --cov-report=term-missing
 
   build-sidecar:
     name: Build sidecar — ${{ matrix.target }}
@@ -183,6 +183,15 @@ jobs:
         run: |
           npm ci
           npm run gen:tokens
+      - name: macOS — ad-hoc codesign (no Apple Developer account)
+        # Ad-hoc signing allows the DMG to open on the build machine without
+        # Gatekeeper prompt for internal/pilot distribution. For public
+        # distribution, replace with APPLE_CERTIFICATE + notarytool.
+        # "--deep" signs all embedded helpers including the sidecar binary.
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          codesign --force --deep --sign - src-tauri/binaries/aurora-sidecar-${{ matrix.target }} || true
+
       - name: Build Tauri app (production)
         working-directory: frontend
         env:
@@ -190,6 +199,10 @@ jobs:
           AURORA_UPDATER_PUBKEY: ${{ secrets.AURORA_UPDATER_PUBKEY }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.AURORA_UPDATER_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.AURORA_UPDATER_KEY_PASSWORD }}
+          # macOS: target flag required for Apple Silicon cross-build.
+          # For aarch64-apple-darwin runner, tauri build auto-detects;
+          # explicit flag guards against runner misconfiguration.
+          TAURI_TARGET: ${{ matrix.target }}
         run: npm run tauri:build
       - name: Collect installers
         shell: bash

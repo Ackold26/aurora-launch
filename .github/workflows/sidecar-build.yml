@@ -2,6 +2,18 @@
 # Triggered on push к main, on tags, и manually via workflow_dispatch.
 # Produces aurora-sidecar binary suffixed с Tauri target triple.
 #
+# Cross-compile rationale: PyInstaller embeds a Python interpreter + all
+# imported packages into a single binary. The resulting binary MUST be
+# built on the target OS (same libc/dylib ABI). Cross-compilation is NOT
+# supported by PyInstaller — hence separate per-OS jobs.
+#
+# Output artifact names (Tauri sidecar convention):
+#   aurora-sidecar-x86_64-pc-windows-msvc.exe   (Windows 2022)
+#   aurora-sidecar-x86_64-unknown-linux-gnu      (Ubuntu 22.04)
+#   aurora-sidecar-aarch64-apple-darwin           (macOS 14 / Apple Silicon)
+#   aurora-sidecar-x86_64-apple-darwin            (macOS 13 / Intel — retained
+#                                                  for completeness + x86 Macs)
+#
 # Mini-audit fixes:
 # - HIGH-1: permissions explicitly contents:read (no token write needed)
 # - HIGH-4: install runtime deps only (NO [dev]) into PyInstaller env
@@ -78,7 +90,7 @@ jobs:
         # dev tools (pytest/hypothesis/ruff/mypy) before bundling.
         run: |
           pip uninstall -y pytest pytest-cov hypothesis ruff mypy || true
-          pip install pyinstaller
+          pip install "pyinstaller>=6.0"
 
       - name: Build sidecar binary
         run: pyinstaller packaging/aurora-sidecar.spec --distpath dist --clean

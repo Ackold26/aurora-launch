@@ -357,9 +357,13 @@ class LaunchOrchestrator:
         n = min(len(recipient_y), len(forecast.points))
         observed_mean = sum(recipient_y[:n]) / n
         predicted_mean = sum(p.point_forecast for p in forecast.points[:n]) / n
-        if predicted_mean == 0:
+        # R-11 audit fix: ε threshold вместо exact-zero check.
+        # Previous `if predicted_mean == 0` missed near-zero values (e.g. 1e-10
+        # from float64 underflow) which then produced 30000000% bias spike.
+        # Threshold 1e-6 chosen relative к minimal realistic sales value.
+        if abs(predicted_mean) < 1e-6:
             return 0.0, [
-                "Bias check inconclusive: predicted_mean = 0 (degenerate forecast). "
+                "Bias check inconclusive: predicted_mean ≈ 0 (degenerate forecast). "
                 f"Observed mean = {observed_mean:.4g}. Review anchors + proxy similarity."
             ]
         return 100.0 * (observed_mean - predicted_mean) / predicted_mean, []

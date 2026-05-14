@@ -1,0 +1,66 @@
+# Aurora Launch — performance regression gate.
+# Triggered on PR to main. Measures pilot flow cold start.
+#
+# Gate: aurora_launch module cold start < 2s (import + minimal corpus init).
+# This is a smoke threshold only — not a full forecast/MCMC benchmark.
+# Full forecast bench (3-5 min) is deferred to POST_PILOT_BACKLOG.
+#
+# Runs on ubuntu-22.04 only: cold start is OS-independent for Python
+# import timing; runner-to-runner variance (~50ms) is within acceptable
+# margin vs 2s gate. Windows runner overhead would add ~200ms baseline
+# noise without signalling real regressions.
+#
+# If tools/bench_pilot_flow.py does not exist, the job fails explicitly
+# (не silent skip) to prevent silently missing the gate.
+
+name: Bench
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cold-start:
+    name: Pilot flow cold start (<2s gate)
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install deps (runtime only — no dev tooling)
+        # Runtime-only install mirrors production import environment.
+        # Dev tools (pytest/ruff/mypy) increase import graph и skew timing.
+        run: |
+          pip install --upgrade pip
+          pip install -e .
+
+      - name: Verify bench script exists
+        shell: bash
+        run: |
+          if [ ! -f "tools/bench_pilot_flow.py" ]; then
+            echo "ERROR: tools/bench_pilot_flow.py not found."
+            echo "The performance gate requires this file. See docs/CI_CD.md."
+            exit 1
+          fi
+
+      - name: Run cold start benchmark
+        id: bench
+        run: python tools/bench_pilot_flow.py --limit 2.0 --json
+
+      - name: Annotate PR if threshold exceeded
+        if: failure() && github.event_name == 'pull_request'
+        run: |
+          echo "::error title=Performance regression::Cold start exceeded 2s gate."
+          echo "::error::Review recent imports added to aurora_launch.__init__ or"
+          echo "::error::heavy module-level side-effects in engines/. Run locally:"
+          echo "::error::  python tools/bench_pilot_flow.py --limit 2.0"

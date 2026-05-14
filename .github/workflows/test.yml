@@ -14,6 +14,14 @@
 # Mini-audit fixes (earlier):
 # - HIGH-1: explicit per-job permissions:read
 # - HIGH-2: SHA-pin community Rust toolchain action
+#
+# Cross-platform expansion (2026-05-14):
+# - Rust: Ubuntu-22.04 only — requires libwebkit2gtk-4.1-dev + GTK stack
+#   (apt-only). macOS/Windows Tauri GTK не нужен; cargo check там запускается
+#   в release.yml build-app. Документировано как intentional scope split.
+# - Frontend: матрица ubuntu-22.04 + macos-14 + windows-2022 (Node.js
+#   platform-agnostic; npm ci может вести себя по-разному на разных ОС).
+# - Cloud: ubuntu-22.04 only (Deno/Edge Functions platform-independent).
 
 name: Integrations
 
@@ -30,6 +38,8 @@ permissions:
 jobs:
   rust:
     name: Rust cargo test
+    # Ubuntu only: libwebkit2gtk-4.1-dev + GTK stack available only via apt.
+    # macOS/Windows Rust validation covered in release.yml build-app matrix.
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -53,10 +63,14 @@ jobs:
         run: cargo test --lib
 
   frontend:
-    name: Frontend (vitest + svelte-check)
-    runs-on: ubuntu-22.04
+    name: Frontend (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-14, windows-2022]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -75,6 +89,8 @@ jobs:
 
   cloud:
     name: Aurora Cloud (Edge Functions)
+    # Cloud/Edge Functions are Deno/TS — platform-independent logic.
+    # Ubuntu runner is sufficient; no OS-specific behaviour expected.
     runs-on: ubuntu-22.04
     permissions:
       contents: read
