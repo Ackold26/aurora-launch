@@ -79,7 +79,18 @@
 	function toggleTooltip() {
 		tooltipOpen = !tooltipOpen;
 	}
+
+	// PI-RESCUE-05 audit fix: Escape key dismisses tooltip when open.
+	// Improves accessibility — keyboard users can close без mouse.
+	function handleKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape' && tooltipOpen) {
+			e.preventDefault();
+			tooltipOpen = false;
+		}
+	}
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 <div class="mode-badge-wrapper">
 	<button

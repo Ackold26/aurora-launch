@@ -165,11 +165,18 @@ class AutosaveManager:
         # (SIGTERM, SIGINT). Triggered atexit too. Without these, daemon
         # timer threads get killed mid-flight and session marker remains
         # as if crashed.
+        self._signal_handlers_installed = False
         if register_signal_handlers:
             self._install_signal_handlers()
 
     def _install_signal_handlers(self) -> None:
-        """Register SIGTERM/SIGINT/atexit handlers для graceful flush."""
+        """Register SIGTERM/SIGINT/atexit handlers для graceful flush.
+
+        PI-RESCUE-09 audit fix: guard against double registration via
+        `_signal_handlers_installed` flag (prevents atexit firing shutdown twice).
+        """
+        if self._signal_handlers_installed:
+            return
         import atexit
         import signal
 
@@ -184,6 +191,7 @@ class AutosaveManager:
                     pass  # atexit covers это
             except (ValueError, OSError) as exc:
                 _log.warning("Cannot install signal handlers: %s", exc)
+        self._signal_handlers_installed = True
 
     # ---- session lifecycle -------------------------------------------------
 

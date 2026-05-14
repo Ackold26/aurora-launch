@@ -301,13 +301,15 @@ def derive_synthetic_posterior(
 
     # R-12 audit fix: intercept + control_betas keys present in posterior
     # (decomposer expects these from real PyMC output; absence → KeyError).
+    # PI-RESCUE-02 audit fix: cast intercept к float32 to match bayesian_engine
+    # real output (line 903 of bayesian_engine.py).
     intercept_samples = _generate_samples_normal(
         mean=0.0,  # normalised intercept around zero baseline
         std=DEFAULT_INTERCEPT_STD,
         n_samples=n_samples,
         clip_negative=False,  # intercept can be negative in normalised space
         rng=rng,
-    )
+    ).astype(np.float32)
     # No control variables в synthetic case — shape (0, n_samples) empty array
     control_betas_samples = np.zeros((0, n_samples), dtype=np.float32)
 

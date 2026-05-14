@@ -82,13 +82,13 @@ class ProcessLock:
             self._acquired = True
             return True
         except OSError as exc:
-            # errno 13 = EACCES (lock held)
-            if not blocking:
-                self._close_handle()
-                raise ProcessLockError(
-                    f"Lock {self.lock_path} held by another process: {exc}"
-                ) from exc
-            return False
+            # PI-RESCUE-08 audit fix: both blocking + non-blocking paths raise on OSError.
+            # Previously blocking=True silently returned False, masking real failures
+            # (permission denied, ENFILE, etc.) as innocent "lock contended."
+            self._close_handle()
+            raise ProcessLockError(
+                f"Lock {self.lock_path} acquisition failed (blocking={blocking}): {exc}"
+            ) from exc
 
     def _acquire_posix(self, *, blocking: bool) -> bool:
         import fcntl
@@ -98,12 +98,11 @@ class ProcessLock:
             self._acquired = True
             return True
         except OSError as exc:
-            if not blocking:
-                self._close_handle()
-                raise ProcessLockError(
-                    f"Lock {self.lock_path} held by another process: {exc}"
-                ) from exc
-            return False
+            # PI-RESCUE-08 audit fix: same as Windows — both paths raise.
+            self._close_handle()
+            raise ProcessLockError(
+                f"Lock {self.lock_path} acquisition failed (blocking={blocking}): {exc}"
+            ) from exc
 
     def release(self) -> None:
         if not self._acquired or self._handle is None:

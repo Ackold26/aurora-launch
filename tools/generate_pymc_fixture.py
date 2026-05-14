@@ -87,18 +87,13 @@ def generate_fixture(output_path: Path, *, seed: int = 42) -> None:
 
     print(f"Sampling complete. R̂ max: {float(az.rhat(trace).max().to_array().max()):.4f}")
 
-    # Extract в bayesian_engine output schema dict
+    # Extract в bayesian_engine output schema dict.
+    # PI-RESCUE-06 audit fix: removed dead if/else branch — both paths assigned identically.
     samples_dict: dict[str, np.ndarray] = {}
     for key in ["media_betas", "alphas", "gammas", "adstock_decay"]:
-        # shape: (chain, draw, channel) → (channel, chain*draw)
+        # shape: (chain, draw, channel) → (channel, chain*draw) after stack
         stacked = trace.posterior[key].stack(sample=("chain", "draw"))
-        # Reorder dims: (channel, sample)
-        if stacked.dims[0] != "media_betas_dim_0":  # PyMC dim naming
-            # PyMC uses var_dim_0 для shape param
-            arr = stacked.values  # (channel, sample) due к natural axis order
-        else:
-            arr = stacked.values
-        samples_dict[key] = np.asarray(arr, dtype=np.float32)
+        samples_dict[key] = np.asarray(stacked.values, dtype=np.float32)
         print(f"  {key}: shape {samples_dict[key].shape}")
 
     # Add intercept + control_betas keys per R-12 (real PyMC also produces these)

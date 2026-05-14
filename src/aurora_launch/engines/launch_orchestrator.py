@@ -352,11 +352,21 @@ class LaunchOrchestrator:
         warning rather than silently returning 0.0 (which would suppress
         any user-visible bias signal).
         """
+        import math  # noqa: PLC0415 — local import к keep top-level light
+
         if not forecast.points or not recipient_y:
             return 0.0, []
         n = min(len(recipient_y), len(forecast.points))
         observed_mean = sum(recipient_y[:n]) / n
         predicted_mean = sum(p.point_forecast for p in forecast.points[:n]) / n
+        # PI-RESCUE-07 audit fix: NaN/inf bypass detection — previously `abs(NaN) < 1e-6`
+        # evaluated False, falling through к division by NaN → bias_pct = NaN, then
+        # `abs(NaN) > 30.0` also False → bias warning silently suppressed.
+        if not math.isfinite(predicted_mean):
+            return 0.0, [
+                "Bias check inconclusive: predicted_mean is NaN or inf (degenerate forecast). "
+                "Review anchors, proxy similarity, и spend plan для invalid values."
+            ]
         # R-11 audit fix: ε threshold вместо exact-zero check.
         # Previous `if predicted_mean == 0` missed near-zero values (e.g. 1e-10
         # from float64 underflow) which then produced 30000000% bias spike.
