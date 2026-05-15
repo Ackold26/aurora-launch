@@ -368,7 +368,7 @@ def _compute_baseline_for_ols(anchors: RecipientAnchors, horizon: int) -> np.nda
 _handle_ols_with_proxy_priors_stub = _handle_ols_with_proxy_priors
 
 
-def _handle_bayesian_with_proxy_priors_stub(
+def _handle_bayesian_with_proxy_priors(
     channels: list[ChannelTransferParams],
     anchors: RecipientAnchors,
     spend_plan: dict[str, list[float]],
@@ -380,29 +380,150 @@ def _handle_bayesian_with_proxy_priors_stub(
     warnings: list[str],
     **kwargs: Any,
 ) -> tuple[TransferForecast, str]:
-    """Mode 4 — BAYESIAN_WITH_PROXY_PRIORS (Phase Magic M-02 stub).
+    """Mode 4 — BAYESIAN_WITH_PROXY_PRIORS (Phase Magic M-02 real impl).
 
-    Full implementation pending Phase Magic M-02 (bayesian_engine informative
-    β priors injection refactor).  Current fallback: pure_transfer.
+    Closed-form Bayesian linear regression с Gaussian priors + likelihood.
+    Returns posterior samples drawn from analytical Gaussian Σ̂.
 
-    Replace this function with the real Bayesian implementation in Phase Magic
-    M-02.  See module OQ-2, OQ-3 for interface questions to resolve first.
-    INV-04: when M-02 is wired, import PyMC lazily inside the handler.
+    Falls back к pure_transfer (с warning) if:
+      - recipient_y missing / shorter than MIN_OBSERVATIONS (5)
+      - historical_spend not provided
+
+    Required kwargs:
+      - historical_spend: dict[str, list[float]] — per-channel spend для
+        same period as recipient_y
+      - shrinkage: float (optional, default 0.3) — proxy weight ∈ [0,1]
+      - n_samples: int (optional, default 500) — posterior sample count
+
+    INV-04: lazy imports inside.
     """
-    warnings.append(
-        "Bayesian+priors fallback к pure_transfer (Phase Π.2.6 will "
-        "fully wire informative-prior Bayesian path)."
+    from aurora_launch.engines.bayesian_with_priors import (
+        DEFAULT_POSTERIOR_SAMPLES,
+        fit_bayesian_with_priors,
     )
+    from aurora_launch.engines.ols_with_priors import (
+        DEFAULT_SHRINKAGE,
+        MIN_OBSERVATIONS,
+    )
+
+    historical_spend = kwargs.get("historical_spend")
+    shrinkage = float(kwargs.get("shrinkage", DEFAULT_SHRINKAGE))
+    n_samples = int(kwargs.get("n_samples", DEFAULT_POSTERIOR_SAMPLES))
+
+    # Fallback path: insufficient input
+    if (
+        recipient_y is None
+        or len(recipient_y) < MIN_OBSERVATIONS
+        or historical_spend is None
+    ):
+        reason = (
+            "missing recipient_y" if recipient_y is None
+            else f"recipient_y too short ({len(recipient_y)} < {MIN_OBSERVATIONS})"
+            if len(recipient_y) < MIN_OBSERVATIONS
+            else "missing historical_spend"
+        )
+        warnings.append(
+            f"Bayesian+priors: {reason} — falling back к pure_transfer."
+        )
+        forecast = _run_pure_transfer(
+            channels=channels, anchors=anchors, spend_plan=spend_plan,
+            horizon_periods=horizon_periods, granularity=granularity,
+            proxy_baseline=proxy_baseline, coverage_target=coverage_target,
+        )
+        return forecast, "bayesian_with_proxy_priors_fallback_v1"
+
+    # Real Bayesian path
+    channel_ids = [c.channel_id for c in channels]
+    recipient_baseline_mean = float(
+        np.mean(_compute_baseline_for_ols(anchors, horizon_periods))
+    )
+    if proxy_baseline <= 0:
+        warnings.append(
+            "Bayesian+priors: proxy_baseline <= 0 — falling back к pure_transfer."
+        )
+        forecast = _run_pure_transfer(
+            channels=channels, anchors=anchors, spend_plan=spend_plan,
+            horizon_periods=horizon_periods, granularity=granularity,
+            proxy_baseline=1.0, coverage_target=coverage_target,
+        )
+        return forecast, "bayesian_with_proxy_priors_fallback_v1"
+    scale_ratio = recipient_baseline_mean / proxy_baseline
+
+    proxy_beta_means_scaled = {
+        c.channel_id: c.proxy_beta_mean * scale_ratio * c.similarity_factor
+        for c in channels
+    }
+    proxy_beta_stds_scaled = {
+        c.channel_id: c.proxy_beta_std * scale_ratio + c.similarity_inflation
+        for c in channels
+    }
+    adstock_decays = {c.channel_id: c.adstock_decay for c in channels}
+    hill_params = {c.channel_id: (c.hill_alpha, c.hill_half_saturation) for c in channels}
+
+    try:
+        result = fit_bayesian_with_priors(
+            recipient_y=recipient_y,
+            historical_spend=historical_spend,
+            channel_ids=channel_ids,
+            adstock_decays=adstock_decays,
+            hill_params=hill_params,
+            proxy_beta_means=proxy_beta_means_scaled,
+            proxy_beta_stds=proxy_beta_stds_scaled,
+            shrinkage=shrinkage,
+            n_samples=n_samples,
+            seed=42,
+        )
+    except (ValueError, np.linalg.LinAlgError) as exc:
+        warnings.append(
+            f"Bayesian+priors fit failed ({exc}) — falling back к pure_transfer."
+        )
+        forecast = _run_pure_transfer(
+            channels=channels, anchors=anchors, spend_plan=spend_plan,
+            horizon_periods=horizon_periods, granularity=granularity,
+            proxy_baseline=proxy_baseline, coverage_target=coverage_target,
+        )
+        return forecast, "bayesian_with_proxy_priors_fallback_v1"
+
+    # Build forecast using posterior mean (same approach as M-01).
+    # CI bands come из engine's variance computation; posterior_samples
+    # available downstream через result для decomposer / sensitivity.
+    updated_channels = []
+    for i, c in enumerate(channels):
+        new_proxy_mean = float(result.beta_mean[i]) / (
+            scale_ratio * c.similarity_factor if (scale_ratio * c.similarity_factor) != 0 else 1.0
+        )
+        # σ from diagonal of posterior covariance
+        sigma_i = float(np.sqrt(result.beta_cov[i, i]))
+        new_proxy_std = sigma_i / (scale_ratio if scale_ratio != 0 else 1.0)
+        updated_channels.append(
+            ChannelTransferParams(
+                channel_id=c.channel_id,
+                proxy_beta_mean=new_proxy_mean,
+                proxy_beta_std=new_proxy_std,
+                adstock_decay=c.adstock_decay,
+                hill_alpha=c.hill_alpha,
+                hill_half_saturation=c.hill_half_saturation,
+                similarity_factor=c.similarity_factor,
+                similarity_inflation=0.0,
+            )
+        )
+
     forecast = _run_pure_transfer(
-        channels=channels,
-        anchors=anchors,
-        spend_plan=spend_plan,
-        horizon_periods=horizon_periods,
-        granularity=granularity,
-        proxy_baseline=proxy_baseline,
-        coverage_target=coverage_target,
+        channels=updated_channels, anchors=anchors, spend_plan=spend_plan,
+        horizon_periods=horizon_periods, granularity=granularity,
+        proxy_baseline=proxy_baseline, coverage_target=coverage_target,
     )
-    return forecast, "bayesian_with_proxy_priors_fallback_v1"
+
+    warnings.append(
+        f"Bayesian+priors fit converged (N={result.n_observations}, "
+        f"samples={result.n_samples}, R̂={result.r_hat:.3f}, "
+        f"shrinkage={result.shrinkage_used:.2f})."
+    )
+    return forecast, "bayesian_with_proxy_priors_v1"
+
+
+# Backward-compat alias (test imports the stub name)
+_handle_bayesian_with_proxy_priors_stub = _handle_bayesian_with_proxy_priors
 
 
 # ---------------------------------------------------------------------------
@@ -440,7 +561,7 @@ _MODE_DISPATCH: dict[EngineMode, DispatchHandler] = {
     EngineMode.PURE_TRANSFER: _handle_pure_transfer,
     EngineMode.TRANSFER_WITH_BIAS_CHECK: _handle_transfer_with_bias_check,
     EngineMode.OLS_WITH_PROXY_PRIORS: _handle_ols_with_proxy_priors,
-    EngineMode.BAYESIAN_WITH_PROXY_PRIORS: _handle_bayesian_with_proxy_priors_stub,
+    EngineMode.BAYESIAN_WITH_PROXY_PRIORS: _handle_bayesian_with_proxy_priors,
 }
 
 

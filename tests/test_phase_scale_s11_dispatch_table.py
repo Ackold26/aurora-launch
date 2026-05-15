@@ -232,7 +232,11 @@ class TestFallbackWarnings:
             **self._COMMON,
         )
         assert len(warnings) >= 1
-        assert any("Bayesian+priors fallback" in w for w in warnings)
+        # Post-M-02: accept both "Bayesian+priors fallback" and "Bayesian+priors: <reason> — falling back"
+        assert any(
+            ("Bayesian+priors" in w and ("fallback" in w or "falling back" in w))
+            for w in warnings
+        )
 
     def test_mode1_no_warnings(self) -> None:
         """Pure transfer should produce no warnings under normal conditions."""
@@ -438,7 +442,10 @@ class TestOrchestratorUsesDispatchTable:
         )
         assert result.forecast is not None
         assert result.methodology_signature == "bayesian_with_proxy_priors_fallback_v1"
-        assert any("Bayesian+priors fallback" in w for w in result.warnings)
+        assert any(
+            ("Bayesian+priors" in w and ("fallback" in w or "falling back" in w))
+            for w in result.warnings
+        )
 
     def test_dispatch_engine_called_during_orchestration(self) -> None:
         """dispatch_engine should be invoked (not the old if/elif) during orchestration."""
