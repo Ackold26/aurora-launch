@@ -95,8 +95,10 @@ export function detectSmartDefaults(): SmartDefaults {
       timezone = tz;
       source.timezone = 'Intl.DateTimeFormat';
     }
-  } catch {
-    // jsdom may not implement — fallback to Moscow as Aurora primary market
+  } catch (e) {
+    // Audit M-4 (этап 1.7): не silent — log fallback в DevTools.
+    // jsdom может не имплементировать Intl → Moscow fallback as Aurora primary market.
+    console.warn('[smart-defaults] Intl.DateTimeFormat unavailable, defaulting к Europe/Moscow:', e);
   }
 
   // Locale via navigator.language
@@ -107,8 +109,9 @@ export function detectSmartDefaults(): SmartDefaults {
       locale = navLang;
       source.locale = 'navigator.language';
     }
-  } catch {
-    // navigator absent in non-browser context
+  } catch (e) {
+    // Audit M-4 (этап 1.7): не silent.
+    console.warn('[smart-defaults] navigator.language unavailable, defaulting к ru-RU:', e);
   }
 
   const language = locale.split('-')[0] ?? 'ru';

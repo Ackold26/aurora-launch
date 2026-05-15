@@ -22,7 +22,7 @@ export interface BundleManifest {
   files?: Record<string, BundleFileEntry>;
   integrity_check?: "strict" | "warn" | "disabled";
   compression?: "store" | "deflate";
-  aurora_launch_schema_version?: unknown;
+  aurora_launch_schema_version?: string | null;
   aurora_launch_migration_history?: Record<string, string>[];
 }
 
@@ -30,7 +30,7 @@ export interface BundleManifest {
 export interface BundleFileEntry {
   sha256: string;
   size_bytes: number;
-  schema_version?: unknown;
+  schema_version?: string | null;
 }
 
 /** Канонический формат forecast.json — v1. */
@@ -43,11 +43,11 @@ export interface ForecastJsonV1 {
   n_recipient?: number;
   weekly_points: ForecastPoint[];
   warnings?: string[];
-  anchors?: unknown;
-  spend_plan?: unknown;
+  anchors?: RecipientAnchorsPayload | null;
+  spend_plan?: Record<string, number[]> | null;
   coverage_target?: number;
   seed?: number;
-  produced_at?: unknown;
+  produced_at?: string | null;
 }
 
 /** Одна точка прогноза. `week_index` — period-index (для monthly granularity */
@@ -66,7 +66,7 @@ export interface RecipientAnchorsPayload {
   distribution_trajectory: number[];
   pricing_index: number;
   elasticity: number;
-  seasonality?: unknown;
+  seasonality?: number[] | null;
 }
 
 /** Aggregates Aurora Launch–specific bundle metadata. */

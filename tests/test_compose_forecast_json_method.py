@@ -127,6 +127,28 @@ class TestComposeForecastJsonMethod:
         loaded_b = load_forecast_json(blob_b)
         assert loaded_a.to_canonical_bytes() == loaded_b.to_canonical_bytes()
 
+    def test_audit_a3_missing_horizon_weeks_raises_value_error(self) -> None:
+        """Audit A-3: missing required key → ValueError с понятным сообщением,
+        не KeyError (последний даёт generic 500 на sidecar protocol уровне)."""
+        from aurora_launch.sidecar.methods import dispatch
+
+        with pytest.raises(ValueError) as exc:
+            dispatch(
+                "compose_forecast_json",
+                {"weekly_points": _points(1)},  # нет horizon_weeks
+            )
+        assert "horizon_weeks" in str(exc.value)
+
+    def test_audit_a3_missing_weekly_points_raises_value_error(self) -> None:
+        from aurora_launch.sidecar.methods import dispatch
+
+        with pytest.raises(ValueError) as exc:
+            dispatch(
+                "compose_forecast_json",
+                {"horizon_weeks": 1},  # нет weekly_points
+            )
+        assert "weekly_points" in str(exc.value)
+
     def test_b64_decodes_to_valid_json(self) -> None:
         from aurora_launch.sidecar.methods import dispatch
 

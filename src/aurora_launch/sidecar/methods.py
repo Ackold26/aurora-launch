@@ -479,6 +479,15 @@ def _compose_forecast_json(params: dict[str, Any]) -> dict[str, Any]:
 
     from aurora_launch.schemas.forecast_bundle import compose_forecast_json_bytes
 
+    # Audit A-3 (этап 1.7): graceful missing-key error вместо KeyError
+    # (который превратился бы в 500 на sidecar protocol уровне).
+    for required in ("horizon_weeks", "weekly_points"):
+        if required not in params:
+            raise ValueError(
+                f"compose_forecast_json: обязательный параметр {required!r} отсутствует. "
+                f"Передавайте {{horizon_weeks, weekly_points, ...optional}}"
+            )
+
     forecast_bytes = compose_forecast_json_bytes(
         horizon_weeks=int(params["horizon_weeks"]),
         weekly_points=list(params["weekly_points"]),
