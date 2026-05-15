@@ -178,29 +178,28 @@ def _get_project_db() -> Any:
             #   "auto"  → keychain-backed (default production)
             #   hex64   → explicit key (advanced ops)
             #
-            # Audit A-04 fix: "none" requires explicit dev/test mode flag.
-            # Production binary must never silently bypass encryption from env.
+            # QW1 hardening: PRODUCTION binary REFUSES к start если "none"
+            # set без explicit dev/test marker. Previously: silent downgrade
+            # к "auto" с warning log (which nobody reads → potential plaintext
+            # data leak on dev's machine misconfigured). Now: loud SystemExit.
             key_env = os.environ.get("AURORA_PROJECT_DB_KEY", "auto").strip().lower()
             if key_env == "none":
-                # Guard: dev/test profile OR explicit testing env var.
-                # Tauri build embeds AURORA_BUILD_PROFILE; tests set
-                # AURORA_LAUNCH_TESTING=1; sidecar standalone в dev может set
-                # either. Production builds use "production" profile и do NOT
-                # set the testing env var → "none" silently downgrades к "auto".
                 is_dev_profile = (
                     os.environ.get("AURORA_BUILD_PROFILE", "").lower() == "dev"
                 )
                 is_testing = bool(os.environ.get("AURORA_LAUNCH_TESTING"))
                 if not (is_dev_profile or is_testing):
-                    import logging as _logging
-                    _logging.getLogger(__name__).warning(
-                        "AURORA_PROJECT_DB_KEY=none ignored in production "
-                        "(no AURORA_BUILD_PROFILE=dev or AURORA_LAUNCH_TESTING=1); "
-                        "falling back к keychain-backed key"
+                    import sys as _sys
+                    msg = (
+                        "FATAL: AURORA_PROJECT_DB_KEY=none requires explicit "
+                        "AURORA_BUILD_PROFILE=dev OR AURORA_LAUNCH_TESTING=1. "
+                        "Refusing к boot с unencrypted DB в production context. "
+                        "Unset AURORA_PROJECT_DB_KEY or set к 'auto' (keychain) "
+                        "or 64-char hex."
                     )
-                    encryption_key: str | None = "auto"
-                else:
-                    encryption_key = None
+                    print(f"[aurora-sidecar] {msg}", file=_sys.stderr, flush=True)
+                    raise SidecarStorageError(msg)
+                encryption_key: str | None = None
             elif key_env == "auto":
                 encryption_key = "auto"
             else:
@@ -223,51 +222,52 @@ def _get_project_db() -> Any:
 def _gc_thread_body() -> None:
     """Periodic GC worker. Runs while sidecar is alive (daemon thread).
 
-    S-07: checks every GC_POLL_INTERVAL_S whether 7 days have elapsed since
-    last gc_orphan_blobs run. If so, runs GC via ProjectDB and updates metadata.
-    Exits cleanly when _GC_STOP_EVENT is set (shutdown path).
+    QW8 refactor (was 1h poll with 60s slices = 10080 wakes/week burning
+    laptop battery): now computes next_gc_at and sleeps single time until
+    then. Wakes from sleep ONLY on stop event OR scheduled GC time.
 
-    Sleeps in 60-second slices so the thread wakes promptly on stop event even
-    when GC_POLL_INTERVAL_S is large. This avoids a 1-hour join delay during
-    shutdown without using threading.Timer (which is harder to cancel cleanly).
+    Per INV-14 no-lying-progress: silent in idle, log only on actual GC run.
     """
     import logging as _logging
     _gc_log = _logging.getLogger(__name__ + ".gc_thread")
-    _gc_log.info("GC background thread started (poll_interval=%ss)", GC_POLL_INTERVAL_S)
-
-    _SLICE_S = 60.0  # wake every 60s to check stop event
-    elapsed_since_check: float = 0.0
+    _gc_log.info("GC background thread started (interval=%ss)", GC_INTERVAL_S)
 
     while not _GC_STOP_EVENT.is_set():
-        _GC_STOP_EVENT.wait(timeout=min(_SLICE_S, GC_POLL_INTERVAL_S))
-        if _GC_STOP_EVENT.is_set():
-            break
-        elapsed_since_check += _SLICE_S
-        if elapsed_since_check < GC_POLL_INTERVAL_S:
-            continue
-        elapsed_since_check = 0.0
+        # Compute next gc time. If never ran → run immediately.
+        sleep_for = 0.0
+        if _PROJECT_DB is not None:
+            try:
+                from datetime import datetime, timezone
 
-        # Time to check — only run GC if ProjectDB is initialised.
+                last_ran_at, _ = _PROJECT_DB.get_gc_metadata()
+                if last_ran_at:
+                    last_dt = datetime.fromisoformat(
+                        last_ran_at.replace("Z", "+00:00")
+                    )
+                    elapsed_s = (
+                        datetime.now(timezone.utc) - last_dt
+                    ).total_seconds()
+                    sleep_for = max(0.0, GC_INTERVAL_S - elapsed_s)
+            except (ValueError, TypeError) as exc:
+                _gc_log.warning("GC thread: metadata parse error: %s", exc)
+                sleep_for = GC_INTERVAL_S  # back off full interval
+
+        # Single sleep. Returns True if stop event set; False on timeout.
+        if _GC_STOP_EVENT.wait(timeout=sleep_for):
+            break
+
+        # Time to run. Only execute if ProjectDB still alive.
         if _PROJECT_DB is None:
+            # Re-loop с short sleep чтобы wait для DB init
+            if _GC_STOP_EVENT.wait(timeout=60.0):
+                break
             continue
 
         try:
-            from datetime import datetime, timezone
-
-            last_ran_at, _ = _PROJECT_DB.get_gc_metadata()
-            run_gc = last_ran_at is None
-            if not run_gc and last_ran_at is not None:
-                last_dt = datetime.fromisoformat(last_ran_at.replace("Z", "+00:00"))
-                elapsed_s = (datetime.now(timezone.utc) - last_dt).total_seconds()
-                run_gc = elapsed_s >= GC_INTERVAL_S
-
-            if run_gc:
-                _gc_log.info("Periodic GC: running gc_orphan_blobs")
-                collected = _PROJECT_DB.gc_orphan_blobs()
-                _PROJECT_DB._update_gc_metadata(collected)  # noqa: SLF001
-                _gc_log.info("Periodic GC: collected %d orphan(s)", collected)
-        except (ValueError, TypeError) as exc:
-            _gc_log.warning("GC thread: metadata parse error: %s", exc)
+            _gc_log.info("Periodic GC: running gc_orphan_blobs")
+            collected = _PROJECT_DB.gc_orphan_blobs()
+            _PROJECT_DB._update_gc_metadata(collected)  # noqa: SLF001
+            _gc_log.info("Periodic GC: collected %d orphan(s)", collected)
         except Exception as exc:  # noqa: BLE001
             _gc_log.warning("GC thread: unexpected error (non-fatal): %s", exc)
 

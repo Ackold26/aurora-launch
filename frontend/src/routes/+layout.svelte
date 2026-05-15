@@ -35,61 +35,69 @@
     return 'unsaved';
   });
 
-  // PA-A04 fix: CommandPalette mounted с registry of universal actions
+  // PA-A04 + QW4 i18n: CommandPalette commands reactive к locale.
+  // $_ subscription makes commands re-derive when language switches.
   const commands = $derived([
     {
       id: 'nav-welcome',
-      label: 'К списку проектов',
-      description: 'Главный экран — выбор сценария',
-      category: 'Навигация',
+      label: $_('palette.nav.welcome'),
+      description: $_('palette.nav.welcome.desc'),
+      category: $_('palette.category.nav'),
       action: () => goto('/'),
     },
     {
       id: 'nav-wizard',
-      label: 'Открыть мастер',
-      description: 'Пошаговое создание прогноза',
-      category: 'Навигация',
+      label: $_('palette.nav.wizard'),
+      description: $_('palette.nav.wizard.desc'),
+      category: $_('palette.category.nav'),
       action: () => goto('/wizard'),
     },
     {
       id: 'nav-inspector',
-      label: 'Инспектор',
-      description: 'Просмотр содержимого .aurora bundle',
-      category: 'Навигация',
+      label: $_('palette.nav.inspector'),
+      description: $_('palette.nav.inspector.desc'),
+      category: $_('palette.category.nav'),
       action: () => goto('/inspector'),
     },
     {
       id: 'nav-history',
-      label: 'История',
-      description: 'Журнал действий + телеметрия',
-      category: 'Навигация',
+      label: $_('palette.nav.history'),
+      description: $_('palette.nav.history.desc'),
+      category: $_('palette.category.nav'),
       action: () => goto('/history'),
     },
     {
       id: 'nav-settings',
-      label: 'Настройки',
-      description: 'Тема, локаль, телеметрия',
-      category: 'Настройки',
+      label: $_('palette.nav.settings'),
+      description: $_('palette.nav.settings.desc'),
+      category: $_('palette.category.settings'),
       action: () => goto('/settings'),
     },
     {
       id: 'nav-onboarding',
-      label: 'Снова показать обучение',
-      description: '5-слайдовый тур с примерами',
-      category: 'Помощь',
+      label: $_('palette.nav.onboarding'),
+      description: $_('palette.nav.onboarding.desc'),
+      category: $_('palette.category.help'),
       action: () => goto('/onboarding'),
     },
     {
       id: 'feedback-open',
-      label: 'Отправить обратную связь',
-      description: 'Открыть форму обратной связи (Cmd+Shift+F)',
+      label: $_('palette.feedback'),
+      description: $_('palette.feedback.desc'),
       shortcut: 'Cmd+Shift+F',
-      category: 'Помощь',
+      category: $_('palette.category.help'),
       action: () => {
         feedbackOpen = true;
       },
     },
   ]);
+
+  // QW7: detect platform for shortcut hint label
+  const shortcutLabel = $derived(
+    typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac')
+      ? '⌘K'
+      : 'Ctrl+K'
+  );
 
   initI18n();
 
@@ -123,7 +131,8 @@
       // localStorage may be disabled (private browsing, Tauri restrictions) — skip gate
     }
 
-    // Keyboard shortcuts: Cmd/Ctrl+K (palette), Cmd/Ctrl+Shift+F (feedback).
+    // Keyboard shortcuts: Cmd/Ctrl+K (palette), Cmd/Ctrl+Shift+F (feedback),
+    // Cmd/Ctrl+S (save active bundle).
     function onKey(e: KeyboardEvent) {
       const isMod = e.metaKey || e.ctrlKey;
       // Cmd+Shift+F → in-app feedback (PREMIUM P10)
@@ -138,6 +147,14 @@
         commandPaletteOpen = !commandPaletteOpen;
         return;
       }
+      // QW9: Cmd/Ctrl+S → trigger save если active bundle exists и dirty
+      if (isMod && !e.shiftKey && (e.key === 's' || e.key === 'S' || e.code === 'KeyS')) {
+        if ($activeBundle && $isDirty && !saving) {
+          e.preventDefault();
+          void triggerSave();
+        }
+        return;
+      }
       if (e.key === 'Escape' && feedbackOpen) {
         feedbackOpen = false;
       }
@@ -148,6 +165,45 @@
 
   function closeCommandPalette() {
     commandPaletteOpen = false;
+  }
+
+  // QW9: triggerSave wraps saveBundleTo с current bundle path resolution.
+  // saveBundleTo saves IN-PLACE if bundle already has a known path (open-then-
+  // save semantic); if bundle was created в memory only, prompts Save As dialog.
+  async function triggerSave() {
+    if (!$activeBundle || saving) return;
+    saving = true;
+    try {
+      // If activeBundle has path → save in place; else Save As dialog.
+      let targetPath = $activeBundle.path;
+      if (!targetPath) {
+        const { save } = await import('@tauri-apps/plugin-dialog');
+        const picked = await save({
+          title: 'Сохранить Aurora bundle',
+          defaultPath: 'project.aurora',
+          filters: [{ name: 'Aurora bundle', extensions: ['aurora'] }],
+        });
+        if (!picked) {
+          saving = false;
+          return;
+        }
+        targetPath = picked;
+      }
+      await saveBundleTo(targetPath);
+      pushToast({
+        level: 'success',
+        title: 'Сохранено',
+        body: targetPath,
+      });
+    } catch (e) {
+      pushToast({
+        level: 'danger',
+        title: 'Не удалось сохранить',
+        body: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      saving = false;
+    }
   }
 
   async function submitFeedback() {
@@ -195,6 +251,18 @@
         <Badge variant="info" size="sm">
           {#snippet children()}r{$activeBundle.revision}{/snippet}
         </Badge>
+        <!-- QW9 audit fix: manual Save button + Cmd+S keybind. Без этого
+             saveBundleTo() existed but был unreachable through UI. -->
+        <button
+          type="button"
+          class="save-btn"
+          onclick={triggerSave}
+          disabled={saving || !$isDirty}
+          aria-label="Сохранить bundle (Ctrl+S)"
+          title="Ctrl+S"
+        >
+          {saving ? 'Сохранение…' : 'Сохранить'}
+        </button>
       {/if}
     </div>
   </header>
@@ -211,8 +279,18 @@
   </main>
 
   <!-- PA-A02 fix: SaveIndicator state derived from bundle stores. -->
+  <!-- QW7: footer Cmd+K hint for discoverability. -->
   <div class="app-footer">
     <SaveIndicator state={saveState} lastSavedAt={$lastSavedAt} />
+    <button
+      type="button"
+      class="palette-hint"
+      onclick={() => (commandPaletteOpen = true)}
+      aria-label={$_('app.footer.shortcut_hint', { values: { shortcut: shortcutLabel } })}
+    >
+      <kbd>{shortcutLabel}</kbd>
+      <span class="palette-hint-label">{$_('app.footer.shortcut_hint', { values: { shortcut: '' } }).replace(' —', '').trim()}</span>
+    </button>
     <PerfFooter />
   </div>
   <Toaster />
@@ -275,6 +353,56 @@
     :global(.perf-footer) {
       border-top: none;
     }
+  }
+
+  /* QW9 save button в header-meta */
+  .save-btn {
+    padding: 4px 12px;
+    border-radius: 4px;
+    border: 1px solid var(--color-info, #1D4ED8);
+    background: var(--color-info, #1D4ED8);
+    color: white;
+    cursor: pointer;
+    font-size: var(--typography-fontSize-ui-sm, 0.875rem);
+    font-weight: 500;
+    transition: background-color 120ms ease, opacity 120ms ease;
+  }
+  .save-btn:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+  .save-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* QW7 palette discoverability hint в footer center */
+  .palette-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-2, 0.5rem);
+    background: transparent;
+    border: none;
+    color: var(--text-muted, #6b7280);
+    cursor: pointer;
+    font-size: var(--typography-fontSize-ui-xs, 0.75rem);
+    padding: var(--spacing-1, 0.25rem) var(--spacing-2, 0.5rem);
+    border-radius: 4px;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  .palette-hint:hover {
+    background: var(--surface-hover, #f9fafb);
+    color: var(--text-primary, #111827);
+  }
+  .palette-hint kbd {
+    font-family: var(--font-mono, monospace);
+    font-size: 0.85em;
+    padding: 2px 6px;
+    border: 1px solid var(--border-default, #d1d5db);
+    border-radius: 3px;
+    background: var(--bg-surface, white);
+  }
+  .palette-hint-label {
+    user-select: none;
   }
 
   .app-header {

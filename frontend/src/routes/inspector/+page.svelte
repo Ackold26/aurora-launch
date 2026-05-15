@@ -41,8 +41,13 @@
   // PA-A03 fix: trust score derived from similarity score when no real
   // compute_trust_score IPC integration yet. Falls back gracefully if
   // sidecar doesn't have handler registered (Tauri command not bridged).
+  // QW3 audit fix: trustIsRealCompute tracks whether result came from
+  // actual sidecar IPC (true) vs similarity-only fallback (false). UI
+  // shows badge "Предварительная оценка" в fallback case so customer не
+  // получает lying signal.
   let trustResult = $state<TrustScoreResult | null>(null);
   let trustError = $state<string | null>(null);
+  let trustIsRealCompute = $state<boolean>(false);
 
   $effect(() => {
     if (activeTab === 'similarity' && $activeBundle && !similarityData && !loadingSimilarity) {
@@ -79,21 +84,29 @@
         data_sufficiency: 1.0,
         uncertainty_pct_inverse: uncertaintyInverse,
       });
+      trustIsRealCompute = true;
     } catch (e) {
       // IPC handler may not be reachable (Rust bridge not wired) — degrade
-      // gracefully с similarity-only score
+      // gracefully с similarity-only score. QW3 audit: track что это
+      // preview, не real compute. UI shows clear warning badge.
       trustError = e instanceof Error ? e.message : String(e);
       trustResult = {
         score: Math.round(similarityData.score * 100),
-        tier: 'Из similarity score',
+        tier: 'Предварительная оценка',
         diagnostics: [
           {
             label: 'Источник',
-            value: 'similarity score (IPC недоступен)',
+            value: 'только similarity score',
             status: 'info',
+          },
+          {
+            label: 'Внимание',
+            value: 'Полная диагностика появится после Bayesian fit',
+            status: 'warn',
           },
         ],
       };
+      trustIsRealCompute = false;
     }
   }
 
@@ -266,14 +279,23 @@
                   title="Forecast cone (saved)"
                 />
                 {#if trustResult}
-                  <!-- PA-A03 fix: TrustScore mounted, fed by computeTrustScore
-                       IPC or similarity fallback. -->
+                  <!-- PA-A03 + QW3: TrustScore с explicit preview badge когда
+                       fallback (real compute_trust_score IPC unavailable). -->
                   <div class="trust-mount">
+                    {#if !trustIsRealCompute}
+                      <div class="trust-preview-badge" role="note">
+                        <span class="badge-icon" aria-hidden="true">📊</span>
+                        <span class="badge-text">
+                          Предварительная оценка — рассчитано только из similarity.
+                          Полная диагностика появится после Bayesian fit.
+                        </span>
+                      </div>
+                    {/if}
                     <TrustScore
                       score={trustResult.score}
                       verdict={trustResult.tier}
                       diagnostics={trustResult.diagnostics}
-                      expertMode={false}
+                      expertMode={!trustIsRealCompute}
                     />
                   </div>
                 {/if}
@@ -317,6 +339,25 @@
 <style>
   .trust-mount {
     margin-top: var(--spacing-4, 1rem);
+  }
+  .trust-preview-badge {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2, 0.5rem);
+    padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
+    background: color-mix(in srgb, var(--color-warning, #B45309) 8%, transparent);
+    border-left: 3px solid var(--color-warning, #B45309);
+    border-radius: 4px;
+    margin-bottom: var(--spacing-2, 0.5rem);
+    font-size: var(--typography-fontSize-ui-sm, 0.875rem);
+    color: var(--text-secondary, #4A4D57);
+  }
+  .badge-icon {
+    flex-shrink: 0;
+    font-size: 1.2em;
+  }
+  .badge-text {
+    line-height: 1.4;
   }
   .empty {
     display: flex;

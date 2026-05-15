@@ -84,6 +84,36 @@ minversion = "8.0"
 addopts = "-ra --strict-markers --strict-config"
 testpaths = ["tests"]
 pythonpath = ["src"]
+# QW6 audit hardening: treat warnings as errors by default so new
+# DeprecationWarning surfaces immediately. Known tech-debt warnings
+# explicitly allowlisted (ProxyBundle flat-field shim from S-12,
+# RuntimeWarnings from numpy hill_saturation extreme alpha, etc.).
+# Migration к structured API planned для v0.2.0 sweep.
+filterwarnings = [
+    "error",
+    # S-12 ProxyBundle backward-compat shim — emit warnings via stacklevel=2
+    # which attributes to caller. Match by message text instead of module.
+    "ignore:ProxyBundle.*deprecated:DeprecationWarning",
+    "ignore:ProxyBundle.* is deprecated:DeprecationWarning",
+    # numpy hill_saturation extreme alpha — guarded fallback path
+    "ignore::RuntimeWarning:aurora_launch.engines.pure_transfer_engine",
+    # Test-only deprecation от dependency stack
+    "ignore::PendingDeprecationWarning",
+    # 3rd-party libraries — out of our control
+    "ignore::DeprecationWarning:numpy.*",
+    "ignore::DeprecationWarning:pandas.*",
+    "ignore::DeprecationWarning:pydantic.*",
+    "ignore::DeprecationWarning:openpyxl.*",
+    # File handle leak от XLSX sample bundle reader (openpyxl streaming).
+    # Out of our control — closing handles fixed at adapter level.
+    "ignore::pytest.PytestUnraisableExceptionWarning",
+    # Resource warnings — typically openpyxl или Windows file handle quirks
+    "ignore::ResourceWarning",
+    # zipfile.UserWarning("Duplicate name: ...") emitted before our duplicate-
+    # entry rejection — our code raises после warning. Tests verify rejection;
+    # warning is noise.
+    "ignore:Duplicate name:UserWarning",
+]
 
 [tool.ruff]
 line-length = 100

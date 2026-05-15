@@ -93,6 +93,15 @@ pub async fn init_local_storage(app_handle: &AppHandle) -> AuroraResult<()> {
         [],
     )?;
 
+    // QW2 audit: index on timestamp DESC so /history list_audit_entries
+    // ORDER BY timestamp DESC LIMIT N stays O(N log K) instead of O(K) full
+    // table scan. Without this, customer who works для год → 50k rows →
+    // 200ms blocking query на each /history open.
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_audit_timestamp_desc ON audit_log(timestamp DESC)",
+        [],
+    )?;
+
     // Schema for feedback queue (Cmd+Shift+F)
     conn.execute(
         "CREATE TABLE IF NOT EXISTS feedback_queue (

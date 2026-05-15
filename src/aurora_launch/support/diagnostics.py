@@ -110,6 +110,37 @@ _RE_GENERIC_TOKEN_ASSIGN = _re.compile(
     flags=_re.IGNORECASE,
 )
 
+# QW5 audit findings: missing patterns for cloud + Russian compliance.
+
+# ⑨ Yandex Cloud API key (AQV...) — РФ-priority key recognition.
+#    Format: AQVN[A-Za-z0-9_\-]{32,}+ (length varies; conservative match).
+_RE_YANDEX_CLOUD_KEY = _re.compile(r"\bAQV[A-Z0-9][A-Za-z0-9_\-]{20,}\b")
+
+# ⑩ Anthropic Claude API key (sk-ant-...) — для M-03 AI explanations integration.
+_RE_ANTHROPIC_KEY = _re.compile(r"\bsk-ant-[A-Za-z0-9_\-]{20,}\b")
+
+# ⑪ Google API key (AIza...) — standard format.
+_RE_GOOGLE_API_KEY = _re.compile(r"\bAIza[0-9A-Za-z_\-]{35}\b")
+
+# ⑫ OpenAI API key (sk-...). Conservative: require ≥40 chars after prefix.
+_RE_OPENAI_KEY = _re.compile(r"\bsk-[A-Za-z0-9]{40,}\b")
+
+# ⑬ Private SSH key block — multiline header. We redact only the header
+#    line; body lines are base64 and look random — caller can mask whole
+#    block если нужно (set multiline_redact=True).
+_RE_SSH_PRIVATE_KEY_HEADER = _re.compile(
+    r"-----BEGIN (?:RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]+?"
+    r"-----END (?:RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----",
+)
+
+# ⑭ Russian INN (taxpayer ID) — 10 digits (legal entities) или 12 (individuals).
+#    PII per ФЗ-152. Conservative: word boundaries to skip phone numbers / dates.
+_RE_RUSSIAN_INN = _re.compile(r"\b(?<!\d)\d{10}(?!\d)\b|\b(?<!\d)\d{12}(?!\d)\b")
+
+# ⑮ Russian OGRN — 13 digits (legal entity registration). Disambiguate from INN-12
+#    via length only.
+_RE_RUSSIAN_OGRN = _re.compile(r"\b(?<!\d)\d{13}(?!\d)\b")
+
 
 @dataclass(frozen=True)
 class DiagnosticsBundle:
@@ -191,6 +222,21 @@ def _redact_sensitive_text(text: str) -> str:
 
     # ⑧ Generic token assignment lines (after JSON/URL to avoid double-redact)
     text = _RE_GENERIC_TOKEN_ASSIGN.sub(r"\1[REDACTED]", text)
+
+    # QW5 audit additions: cloud provider keys + Russian compliance PII.
+    # Order matters: more specific patterns first (e.g. AIza... matches before
+    # generic digit-only INN check would mis-fire).
+    text = _RE_ANTHROPIC_KEY.sub("[REDACTED-ANTHROPIC]", text)
+    text = _RE_OPENAI_KEY.sub("[REDACTED-OPENAI]", text)
+    text = _RE_GOOGLE_API_KEY.sub("[REDACTED-GOOGLE]", text)
+    text = _RE_YANDEX_CLOUD_KEY.sub("[REDACTED-YANDEX]", text)
+    text = _RE_SSH_PRIVATE_KEY_HEADER.sub("[REDACTED-SSH-PRIVATE-KEY-BLOCK]", text)
+    # Russian INN / OGRN — applied LAST so cloud keys (which may contain
+    # digit sequences) already redacted. Note: false positives risk on
+    # generic 10-13 digit numbers (timestamps, IDs). Acceptable trade-off
+    # per task spec "over-redact better than leak."
+    text = _RE_RUSSIAN_OGRN.sub("[REDACTED-OGRN]", text)
+    text = _RE_RUSSIAN_INN.sub("[REDACTED-INN]", text)
 
     return text
 
