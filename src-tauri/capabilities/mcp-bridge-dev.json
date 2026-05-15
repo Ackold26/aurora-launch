@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "mcp-bridge-dev",
+  "description": "Dev-only: MCP Bridge plugin для автоматизированных smoke тестов. Удалить перед production сборкой.",
+  "windows": ["main"],
+  "permissions": [
+    "mcp-bridge:default"
+  ]
+}

@@ -55,14 +55,21 @@ pub fn run() {
         paths::current_username()
     );
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_updater::Builder::new().build());
+
+    // Dev-only: MCP Bridge plugin для автоматизированных webview/IPC smoke
+    // tests. Включается только в debug сборке, в production не попадает.
+    #[cfg(debug_assertions)]
+    let builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+
+    builder
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             // bundle commands
