@@ -113,3 +113,33 @@ export function onForecastFailed(
 ): Promise<UnlistenFn> {
   return listen<ForecastFailedEvent>('sidecar://forecast_failed', (e) => callback(e.payload));
 }
+
+// ─── PA-A03: Trust score IPC ─────────────────────────────────────────────────
+
+export interface TrustScoreInputs {
+  proxy_similarity_score: number;  // 0..100
+  methodology_certified: 0 | 1 | 0.5;  // 0/1/partial
+  model_convergence_passed: 0 | 1 | 0.5;
+  data_sufficiency: number;  // 0..1
+  uncertainty_pct_inverse: number;  // 0..1 (1 - normalised_ci_width)
+}
+
+export interface TrustScoreDiagnostic {
+  label: string;
+  value: string;
+  status: 'good' | 'warn' | 'bad' | 'info';
+  weight?: number;
+}
+
+export interface TrustScoreResult {
+  score: number;  // 0..100 integer
+  tier: string;  // Russian tier label
+  diagnostics: TrustScoreDiagnostic[];
+}
+
+/** Compute trust score via Python sidecar (P-03 + PA-A03). */
+export async function computeTrustScore(
+  inputs: TrustScoreInputs
+): Promise<TrustScoreResult> {
+  return invoke<TrustScoreResult>('compute_trust_score', { params: inputs });
+}

@@ -10,8 +10,11 @@
   import Card from '$lib/components/Card.svelte';
   import Skeleton from '$lib/components/Skeleton.svelte';
   import TrustBadge from '$lib/components/TrustBadge.svelte';
+  import TrustScore from '$lib/components/TrustScore.svelte';
   import RadarChart from '$lib/components/RadarChart.svelte';
   import ForecastCone from '$lib/components/ForecastCone.svelte';
+  import { computeTrustScore } from '$lib/ipc/forecast';
+  import type { TrustScoreResult } from '$lib/ipc/forecast';
   import { ipc } from '$ipc/client';
   import type { VerificationResult } from '$ipc/client';
 
@@ -35,6 +38,12 @@
   let loadingSimilarity = $state(false);
   let loadingForecast = $state(false);
 
+  // PA-A03 fix: trust score derived from similarity score when no real
+  // compute_trust_score IPC integration yet. Falls back gracefully if
+  // sidecar doesn't have handler registered (Tauri command not bridged).
+  let trustResult = $state<TrustScoreResult | null>(null);
+  let trustError = $state<string | null>(null);
+
   $effect(() => {
     if (activeTab === 'similarity' && $activeBundle && !similarityData && !loadingSimilarity) {
       loadSimilarity();
@@ -42,7 +51,51 @@
     if (activeTab === 'forecast' && $activeBundle && !forecastData && !loadingForecast) {
       loadForecast();
     }
+    if (activeTab === 'forecast' && forecastData && similarityData && !trustResult && !trustError) {
+      void computeTrustForActiveBundle();
+    }
   });
+
+  async function computeTrustForActiveBundle() {
+    if (!forecastData || !similarityData) return;
+    try {
+      // Inputs derived from bundle data (similarity score + verification +
+      // forecast CI width). PA-A03: real implementation will replace these
+      // proxies с actual model convergence diagnostics from Bayesian fit.
+      const similarityPct = Math.round(similarityData.score * 100);
+
+      // Estimate normalised CI width: mean(ci_upper - ci_lower) / mean(point)
+      const widths = forecastData.points.map(p => (p.ciUpper - p.ciLower) / Math.max(p.point, 1));
+      const meanWidth = widths.reduce((a, b) => a + b, 0) / widths.length;
+      const uncertaintyInverse = Math.max(0, Math.min(1, 1 - meanWidth));
+
+      // Methodology: bundle is signed → assume cert pass (1) unless verify failed
+      const methodologyCertified = (verification?.verdict === 'verified') ? 1 : 0.5;
+
+      trustResult = await computeTrustScore({
+        proxy_similarity_score: similarityPct,
+        methodology_certified: methodologyCertified as 0 | 1 | 0.5,
+        model_convergence_passed: 1, // assume convergence для saved bundles
+        data_sufficiency: 1.0,
+        uncertainty_pct_inverse: uncertaintyInverse,
+      });
+    } catch (e) {
+      // IPC handler may not be reachable (Rust bridge not wired) — degrade
+      // gracefully с similarity-only score
+      trustError = e instanceof Error ? e.message : String(e);
+      trustResult = {
+        score: Math.round(similarityData.score * 100),
+        tier: 'Из similarity score',
+        diagnostics: [
+          {
+            label: 'Источник',
+            value: 'similarity score (IPC недоступен)',
+            status: 'info',
+          },
+        ],
+      };
+    }
+  }
 
   async function loadSimilarity() {
     loadingSimilarity = true;
@@ -212,6 +265,18 @@
                   height={300}
                   title="Forecast cone (saved)"
                 />
+                {#if trustResult}
+                  <!-- PA-A03 fix: TrustScore mounted, fed by computeTrustScore
+                       IPC or similarity fallback. -->
+                  <div class="trust-mount">
+                    <TrustScore
+                      score={trustResult.score}
+                      verdict={trustResult.tier}
+                      diagnostics={trustResult.diagnostics}
+                      expertMode={false}
+                    />
+                  </div>
+                {/if}
               {:else}
                 <p class="muted">No forecast entry в bundle (workflow not yet completed).</p>
               {/if}
@@ -250,6 +315,9 @@
 {/if}
 
 <style>
+  .trust-mount {
+    margin-top: var(--spacing-4, 1rem);
+  }
   .empty {
     display: flex;
     flex-direction: column;
