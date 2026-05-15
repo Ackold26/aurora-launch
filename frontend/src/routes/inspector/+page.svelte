@@ -19,6 +19,7 @@
     generateReproduceScript,
   } from '$lib/ipc/forecast';
   import type { Explanation, TrustScoreResult } from '$lib/ipc/forecast';
+  import { detectReproduceMode } from '$lib/utils/reproduce-mode';
   import { pushToast } from '$lib/stores/toast';
   import ModeBadge from '$lib/components/ModeBadge.svelte';
   import { ipc } from '$ipc/client';
@@ -56,6 +57,10 @@
     // а не врал «обучилась на 0 наблюдениях» для Mode 2/3/4.
     nRecipient?: number;
     granularity?: 'monthly' | 'weekly';
+    // 1.4 wiring: real anchors + spend_plan от commit fbd1c93 schema v1.
+    // null = absent (legacy bundle без новых полей → preview fallback).
+    anchors?: Record<string, unknown> | null;
+    spendPlan?: Record<string, number[]> | null;
   } | null>(null);
   let loadingSimilarity = $state(false);
   let loadingForecast = $state(false);
@@ -115,45 +120,64 @@
     }
   }
 
-  // B-6 audit closure: bundle schema пока не экспонирует real anchors +
-  // spend_plan. Generated script запустится, но прогноз будет с заглушечными
-  // anchors → не бит-в-бит совпадёт с оригиналом. Modal честно предупреждает
-  // через reproduceIsPreview флаг. Реальный wiring — Phase Cloud X-08 backlog.
+  // B-6 update (commit fbd1c93 / roadmap 1.4): bundle schema v1 уже экспонирует
+  // real anchors + spend_plan начиная с v0.1.1 bundles. Preview-режим теперь
+  // fallback только для legacy bundles без этих полей, не для всех.
+  // detectReproduceMode() (reproduce-mode.ts) определяет режим по данным.
   let reproduceIsPreview = $state<boolean>(false);
 
   async function openReproduceModal() {
     if (!$activeBundle || !forecastData) return;
     reproduceLoading = true;
     reproduceModalOpen = true;
-    // B-6: пока bundle не expose real anchors/spend — заявляем preview
-    reproduceIsPreview = true;
+
+    // 1.4 wiring: detect real vs preview mode from loaded forecastData.
+    const modeResult = detectReproduceMode({
+      anchors: forecastData.anchors,
+      spendPlan: forecastData.spendPlan,
+    });
+    const hasReal = modeResult.isReal;
+    reproduceIsPreview = !hasReal;
+
     try {
       const result = await generateReproduceScript({
         bundle_path: $activeBundle.path ?? './project.aurora',
-        anchors: {
-          market_size: 1_000_000.0,
-          market_size_cv: 0.1,
-          planned_share_trajectory: Array(forecastData.horizonWeeks).fill(0.05),
-          distribution_trajectory: Array(forecastData.horizonWeeks).fill(0.8),
-          pricing_index: 1.0,
-          elasticity: 0.0,
-          seasonality: null,
-        },
-        spend_plan: {},
+        // Real bundle: передаём anchors/spend_plan напрямую из forecast.json.
+        // Legacy bundle: hardcoded заглушки как раньше (preview fallback).
+        anchors: hasReal
+          ? (forecastData.anchors as Record<string, unknown>)
+          : {
+              market_size: 1_000_000.0,
+              market_size_cv: 0.1,
+              planned_share_trajectory: Array(forecastData.horizonWeeks).fill(0.05),
+              distribution_trajectory: Array(forecastData.horizonWeeks).fill(0.8),
+              pricing_index: 1.0,
+              elasticity: 0.0,
+              seasonality: null,
+            },
+        spend_plan: hasReal
+          ? (forecastData.spendPlan as Record<string, number[]>)
+          : {},
         horizon_periods: forecastData.horizonWeeks,
         granularity: forecastData.granularity ?? 'monthly',
         coverage_target: 0.95,
         n_recipient: forecastData.nRecipient ?? 0,
       });
-      // B-6 honest: prepend preview-предупреждение в сам сгенерированный
-      // скрипт. Customer видит и в UI badge, и в самом .py файле.
-      const previewWarning = `# ⚠️ ПРЕВЬЮ-РЕЖИМ M-09 (Aurora Launch v0.1.0)\n` +
-        `# anchors + spend_plan в этом скрипте — ЗАГЛУШКИ из UI, не реальные\n` +
-        `# параметры исходного прогноза. Запуск даст forecast, не идентичный\n` +
-        `# тому что показан в Inspector. Полный bit-exact wiring придёт\n` +
-        `# в v0.1.1 после расширения bundle schema. До этого — используйте\n` +
-        `# скрипт как шаблон, подставляя свои anchors/spend вручную.\n#\n`;
-      reproduceScript = previewWarning + result.script;
+
+      if (!hasReal) {
+        // Legacy bundle: prepend preview-предупреждение в сам скрипт.
+        // Customer видит и в UI badge, и в самом .py файле.
+        const previewWarning =
+          `# ⚠️ ПРЕВЬЮ-РЕЖИМ M-09 (Aurora Launch v0.1.0)\n` +
+          `# anchors + spend_plan в этом скрипте — ЗАГЛУШКИ из UI, не реальные\n` +
+          `# параметры исходного прогноза. Запуск даст forecast, не идентичный\n` +
+          `# тому что показан в Inspector. Bundle создан до v0.1.1 — используйте\n` +
+          `# скрипт как шаблон, подставляя свои anchors/spend вручную.\n#\n`;
+        reproduceScript = previewWarning + result.script;
+      } else {
+        // Real bundle (v0.1.1+): скрипт полностью репродуцибельный, без префикса.
+        reproduceScript = result.script;
+      }
       reproduceFilename = result.suggested_filename;
     } catch (e) {
       reproduceScript = `# Ошибка генерации скрипта:\n# ${e instanceof Error ? e.message : String(e)}\n`;
@@ -284,6 +308,9 @@
         // B-5 audit fix: optional fields из новых bundle exports
         n_recipient?: number;
         granularity?: 'monthly' | 'weekly';
+        // 1.4 wiring: schema v1 fields (fbd1c93). Absent in legacy bundles → undefined.
+        anchors?: Record<string, unknown> | null;
+        spend_plan?: Record<string, number[]> | null;
       }>('forecast.json');
       if (payload) {
         forecastData = {
@@ -301,6 +328,10 @@
           warnings: payload.warnings ?? [],
           nRecipient: payload.n_recipient,
           granularity: payload.granularity,
+          // 1.4: map snake_case → camelCase; null/undefined preserved as null
+          // so detectReproduceMode() can distinguish absent vs present-but-empty.
+          anchors: payload.anchors ?? null,
+          spendPlan: payload.spend_plan ?? null,
         };
       }
     } catch (e) {
