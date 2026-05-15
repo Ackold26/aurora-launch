@@ -64,6 +64,40 @@
   let compareError = $state<string | null>(null);
   let comparing = $state(false);
 
+  // M-05 Anticipation UX: hover-triggered preload cache.
+  // Key format: "min-max" (always lower version_id first). Value: cached
+  // Promise — awaited when user actually clicks Compare → instant result
+  // because IPC already finished during hover.
+  type CachedPair = {
+    file: Promise<VersionDiff>;
+    semantic: Promise<ForecastDiff | null>;
+  };
+  const _diffCache = new Map<string, CachedPair>();
+
+  function _cacheKey(a: number, b: number): string {
+    return a < b ? `${a}-${b}` : `${b}-${a}`;
+  }
+
+  function _kickOffPreload(a: number, b: number): void {
+    if (a === b) return;
+    const key = _cacheKey(a, b);
+    if (_diffCache.has(key)) return; // already preloaded
+    const [low, high] = a < b ? [a, b] : [b, a];
+    _diffCache.set(key, {
+      file: compareVersions(low, high),
+      // .catch keeps promise resolved even if semantic IPC fails
+      semantic: compareForecastVersions(low, high).catch(() => null),
+    });
+  }
+
+  function handleRowMouseEnter(versionId: number): void {
+    // Only preload pairing когда exactly 1 version selected and hovered != selected
+    if (selected.size !== 1) return;
+    const firstSelected = selected.values().next().value;
+    if (firstSelected === undefined || firstSelected === versionId) return;
+    _kickOffPreload(firstSelected, versionId);
+  }
+
   // Sort versions descending by created_at (newest first) для timeline display
   const sortedVersions = $derived.by(() => {
     if (!detail) return [] as VersionSummary[];
@@ -108,6 +142,7 @@
     diff = null;
     forecastDiff = null;
     compareError = null;
+    _diffCache.clear();  // M-05: invalidate preload cache
   }
 
   async function runCompare(): Promise<void> {
@@ -121,10 +156,23 @@
     try {
       // Order by version_id ASC so diff semantic = "what changed from a → b"
       const [low, high] = a < b ? [a, b] : [b, a];
-      // Run both file-level + semantic forecast diffs в parallel
+      // M-05: try cache first (populated by hover preload)
+      const key = _cacheKey(low, high);
+      const cached = _diffCache.get(key);
+      let fileDiffPromise: Promise<VersionDiff>;
+      let semanticDiffPromise: Promise<ForecastDiff | null>;
+      if (cached) {
+        // Hover preload already kicked these off — await cached promises
+        fileDiffPromise = cached.file;
+        semanticDiffPromise = cached.semantic;
+      } else {
+        // No preload (user clicked very fast OR hovered different rows)
+        fileDiffPromise = compareVersions(low, high);
+        semanticDiffPromise = compareForecastVersions(low, high).catch(() => null);
+      }
       const [fileDiff, semanticDiff] = await Promise.all([
-        compareVersions(low, high),
-        compareForecastVersions(low, high).catch(() => null),
+        fileDiffPromise,
+        semanticDiffPromise,
       ]);
       diff = fileDiff;
       forecastDiff = semanticDiff;
@@ -211,6 +259,7 @@
           class:selected={isSelected}
           role="option"
           aria-selected={isSelected}
+          onmouseenter={() => handleRowMouseEnter(v.version_id)}
         >
           <button
             type="button"

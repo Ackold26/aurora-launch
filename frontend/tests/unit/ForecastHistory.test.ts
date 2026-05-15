@@ -286,6 +286,81 @@ describe('ForecastHistory', () => {
     expect(screen.queryByText(/Что изменилось/)).toBeNull();
   });
 
+  it('M-05 hover preloads compareVersions when 1 version selected', async () => {
+    const versions = [
+      version({ version_id: 1, revision: 1 }),
+      version({ version_id: 2, revision: 2 }),
+    ];
+    mockCompareVersions.mockResolvedValueOnce({
+      files_only_in_a: [],
+      files_only_in_b: [],
+      files_changed: [],
+      files_unchanged: [],
+    });
+    mockCompareForecastVersions.mockResolvedValueOnce({ available: false });
+
+    render(ForecastHistory, { projectUuid: 't', initialDetail: detail(versions) });
+    // Select v1
+    await fireEvent.click(screen.getByRole('button', { name: /Версия 1.*выделить/ }));
+    // Hover over v2 row (not selected yet)
+    const items = screen.getAllByRole('option');
+    const v2Row = items.find((el) => el.textContent?.includes('v2'));
+    await fireEvent.mouseEnter(v2Row!);
+
+    // Hover should have triggered preload — verify IPC mocks were called
+    await waitFor(() => {
+      expect(mockCompareVersions).toHaveBeenCalledWith(1, 2);
+      expect(mockCompareForecastVersions).toHaveBeenCalledWith(1, 2);
+    });
+  });
+
+  it('M-05 hover does NOT preload when 0 or 2 selections', async () => {
+    const versions = [
+      version({ version_id: 1, revision: 1 }),
+      version({ version_id: 2, revision: 2 }),
+    ];
+    mockCompareVersions.mockClear();
+    mockCompareForecastVersions.mockClear();
+
+    render(ForecastHistory, { projectUuid: 't', initialDetail: detail(versions) });
+    // Nothing selected — hover should NOT trigger preload
+    const items = screen.getAllByRole('option');
+    await fireEvent.mouseEnter(items[0]!);
+    await fireEvent.mouseEnter(items[1]!);
+
+    expect(mockCompareVersions).not.toHaveBeenCalled();
+    expect(mockCompareForecastVersions).not.toHaveBeenCalled();
+  });
+
+  it('M-05 hover same pair twice → preload kicked off only once', async () => {
+    const versions = [
+      version({ version_id: 1, revision: 1 }),
+      version({ version_id: 2, revision: 2 }),
+    ];
+    mockCompareVersions.mockClear();
+    mockCompareForecastVersions.mockClear();
+    mockCompareVersions.mockResolvedValueOnce({
+      files_only_in_a: [],
+      files_only_in_b: [],
+      files_changed: [],
+      files_unchanged: [],
+    });
+    mockCompareForecastVersions.mockResolvedValueOnce({ available: false });
+
+    render(ForecastHistory, { projectUuid: 't', initialDetail: detail(versions) });
+    await fireEvent.click(screen.getByRole('button', { name: /Версия 1.*выделить/ }));
+
+    const items = screen.getAllByRole('option');
+    const v2Row = items.find((el) => el.textContent?.includes('v2'));
+    // Hover twice — second should hit cache, no second IPC
+    await fireEvent.mouseEnter(v2Row!);
+    await fireEvent.mouseLeave(v2Row!);
+    await fireEvent.mouseEnter(v2Row!);
+
+    expect(mockCompareVersions).toHaveBeenCalledTimes(1);
+    expect(mockCompareForecastVersions).toHaveBeenCalledTimes(1);
+  });
+
   it('selection limits к max 2 (FIFO replacement)', async () => {
     const versions = [
       version({ version_id: 1, revision: 1 }),
