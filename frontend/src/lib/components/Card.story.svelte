@@ -22,8 +22,7 @@
   </Hst.Variant>
 
   <Hst.Variant title="With actions">
-    <Card title="Settings"
-      actions={() => null}>
+    <Card title="Settings">
       {#snippet actions()}
         <Button variant="ghost" size="sm">
           {#snippet children()}Edit{/snippet}

@@ -11,8 +11,9 @@ describe('toast store', () => {
 
   it('pushToast adds toast', () => {
     pushToast({ level: 'info', title: 'Hello' });
-    expect(get(toasts)).toHaveLength(1);
-    expect(get(toasts)[0].title).toBe('Hello');
+    const items = get(toasts);
+    expect(items).toHaveLength(1);
+    expect(items[0]?.title).toBe('Hello');
   });
 
   it('auto-dismisses after ttlMs', () => {

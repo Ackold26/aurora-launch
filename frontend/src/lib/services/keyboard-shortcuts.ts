@@ -40,7 +40,8 @@ function comboMatches(combo: string, e: KeyboardEvent): boolean {
 	const key = parts[parts.length - 1];
 	const modifiers = parts.slice(0, -1);
 
-	if (e.key.toLowerCase() !== key.toLowerCase()) return false;
+	// key is always defined: parts is a non-empty split result and last element exists.
+	if (!key || e.key.toLowerCase() !== key.toLowerCase()) return false;
 
 	const requireMod = modifiers.includes('mod');
 	const requireShift = modifiers.includes('shift');

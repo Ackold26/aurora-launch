@@ -19,12 +19,12 @@ describe('license store', () => {
       is_offline_grace: false,
       valid_until: null
     });
-    const mock = (globalThis as { __auroraIpcMock: ReturnType<typeof vi.fn> }).__auroraIpcMock;
+    const mock = (globalThis as unknown as { __auroraIpcMock: ReturnType<typeof vi.fn> }).__auroraIpcMock;
     mock.mockReset();
   });
 
   it('refreshLicense calls current_license_status and updates store', async () => {
-    const mock = (globalThis as { __auroraIpcMock: ReturnType<typeof vi.fn> }).__auroraIpcMock;
+    const mock = (globalThis as unknown as { __auroraIpcMock: ReturnType<typeof vi.fn> }).__auroraIpcMock;
     mock.mockImplementationOnce(async () => ({
       state: 'active',
       tier: 'pro',

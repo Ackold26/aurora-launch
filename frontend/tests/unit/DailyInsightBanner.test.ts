@@ -96,11 +96,10 @@ describe('DailyInsightBanner', () => {
   });
 
   it('CTA without href omits CTA button', () => {
-    const noCta: DailyInsight = {
-      ...sampleInsight,
-      cta: undefined,
-      ctaHref: undefined,
-    };
+    // exactOptionalPropertyTypes: use Omit to drop optional fields instead of
+    // setting them to undefined (which is disallowed for optional properties).
+    const { cta: _cta, ctaHref: _ctaHref, ...rest } = sampleInsight;
+    const noCta: DailyInsight = rest;
     render(DailyInsightBanner, { forceInsight: noCta });
     expect(screen.queryByText('Открыть проект')).toBeNull();
   });

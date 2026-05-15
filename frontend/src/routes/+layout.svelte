@@ -101,35 +101,40 @@
 
   initI18n();
 
-  onMount(async () => {
+  onMount(() => {
     document.documentElement.dataset.theme = $resolvedTheme;
-    try {
-      await refreshLicense();
-    } catch (e) {
-      console.warn('License refresh failed', e);
-    }
 
-    // TELEMETRY-P16: app_open — resolve opt-in, then track launch.
-    try {
-      await initTelemetryInternal();
-      const buildInfo = await ipc.getBuildInfo().catch(() => null);
-      track('app_open', { build_profile: buildInfo?.build_profile ?? 'unknown' });
-    } catch (e) {
-      console.debug('[telemetry] app_open failed', e);
-    }
-
-    // PA-A14 fix: First-run onboarding gate. Redirect к /onboarding если
-    // user never seen it. /onboarding sets localStorage `aurora.onboarded`=1.
-    try {
-      const onboarded = window.localStorage.getItem('aurora.onboarded');
-      const currentPath = page.url.pathname;
-      // Only redirect from welcome page (/) — preserve direct deep-links.
-      if (!onboarded && currentPath === '/') {
-        await goto('/onboarding');
+    // Async init: license, telemetry, onboarding gate. Fire-and-forget so
+    // onMount can return its cleanup synchronously (fixes TS onMount return type).
+    void (async () => {
+      try {
+        await refreshLicense();
+      } catch (e) {
+        console.warn('License refresh failed', e);
       }
-    } catch {
-      // localStorage may be disabled (private browsing, Tauri restrictions) — skip gate
-    }
+
+      // TELEMETRY-P16: app_open — resolve opt-in, then track launch.
+      try {
+        await initTelemetryInternal();
+        const buildInfo = await ipc.getBuildInfo().catch(() => null);
+        track('app_open', { build_profile: buildInfo?.build_profile ?? 'unknown' });
+      } catch (e) {
+        console.debug('[telemetry] app_open failed', e);
+      }
+
+      // PA-A14 fix: First-run onboarding gate. Redirect к /onboarding если
+      // user never seen it. /onboarding sets localStorage `aurora.onboarded`=1.
+      try {
+        const onboarded = window.localStorage.getItem('aurora.onboarded');
+        const currentPath = page.url.pathname;
+        // Only redirect from welcome page (/) — preserve direct deep-links.
+        if (!onboarded && currentPath === '/') {
+          await goto('/onboarding');
+        }
+      } catch {
+        // localStorage may be disabled (private browsing, Tauri restrictions) — skip gate
+      }
+    })();
 
     // Keyboard shortcuts: Cmd/Ctrl+K (palette), Cmd/Ctrl+Shift+F (feedback),
     // Cmd/Ctrl+S (save active bundle).
