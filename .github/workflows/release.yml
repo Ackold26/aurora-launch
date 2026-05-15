@@ -83,7 +83,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-22.04, macos-14, windows-2022]
-        python-version: ['3.12']
+        python-version: ['3.11', '3.12']
+        # A-4 fix: pyproject.toml requires-python = ">=3.11,<3.13".
+        # Release must verify BOTH supported versions, not only 3.12.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -117,13 +119,58 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-      # HIGH-4 fix mirror: install only runtime deps (NO [dev]) into PyInstaller
-      # build env to keep production binary lean.
-      - run: |
+      # A-2 fix (DRY alignment): mirrored full install sequence from
+      # sidecar-build.yml to ensure parity. Previously missing the dev-dep
+      # uninstall step, risking pytest/hypothesis/ruff bundling into production
+      # binary. Now: install runtime only → uninstall dev tooling → PyInstaller.
+      - name: Install runtime deps
+        run: |
           pip install --upgrade pip
           pip install -e .
-          pip install pyinstaller
-      - run: pyinstaller packaging/aurora-sidecar.spec --distpath dist --clean
+      - name: Uninstall dev tooling before PyInstaller (HIGH-4 parity)
+        # Prevents dev packages from being bundled into production binary.
+        # Belt-and-suspenders alongside spec excludes[] in aurora-sidecar.spec.
+        shell: bash
+        run: |
+          pip uninstall -y pytest pytest-cov hypothesis ruff mypy || true
+          pip install "pyinstaller>=6.0"
+      - name: Build sidecar binary
+        run: pyinstaller packaging/aurora-sidecar.spec --distpath dist --clean
+      # A-1 fix: smoke test — mirrors sidecar-build.yml lines 98-133.
+      # Validates the production binary before upload. A broken binary that
+      # passes pyinstaller but fails at runtime would otherwise reach GitHub
+      # Release silently.
+      - name: Smoke test built binary (release gate)
+        shell: bash
+        env:
+          AURORA_SIDECAR_AUTH_TOKEN: '${{ secrets.SIDECAR_SMOKE_TOKEN }}'
+        run: |
+          set -euo pipefail
+          if [ -z "${AURORA_SIDECAR_AUTH_TOKEN:-}" ]; then
+            AURORA_SIDECAR_AUTH_TOKEN="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+            export AURORA_SIDECAR_AUTH_TOKEN
+          fi
+          if [ "${{ matrix.os }}" = "windows-2022" ]; then
+            BINARY="dist/aurora-sidecar.exe"
+          else
+            BINARY="./dist/aurora-sidecar"
+          fi
+          REQUEST="{\"id\":1,\"method\":\"ping\",\"params\":{},\"auth\":\"$AURORA_SIDECAR_AUTH_TOKEN\"}"
+          set +e
+          RESPONSE=$(printf '%s\n' "$REQUEST" | "$BINARY" 2>err.log | grep -m1 '"pong"')
+          GREP_RC=$?
+          set -e
+          if [ "$GREP_RC" -gt 1 ]; then
+            echo "Sidecar smoke pipeline error (grep rc=$GREP_RC). stderr:"
+            cat err.log
+            exit 1
+          fi
+          if [ -z "$RESPONSE" ]; then
+            echo "Sidecar smoke FAILED — no pong. stderr:"
+            cat err.log
+            exit 1
+          fi
+          echo "Sidecar smoke OK: $RESPONSE"
       - name: Rename binary
         shell: bash
         run: |
@@ -188,9 +235,21 @@ jobs:
         # Gatekeeper prompt for internal/pilot distribution. For public
         # distribution, replace with APPLE_CERTIFICATE + notarytool.
         # "--deep" signs all embedded helpers including the sidecar binary.
+        #
+        # A-3 fix: removed `|| true`. Codesign failures now fail the step.
+        # If the sidecar binary is missing or corrupt, we WANT the build to
+        # fail here rather than produce an unsigned/broken DMG.
+        # FUTURE: replace `- ` (ad-hoc) with $APPLE_CERTIFICATE when Aurora
+        # obtains Apple Developer Program membership.
         if: startsWith(matrix.os, 'macos')
         run: |
-          codesign --force --deep --sign - src-tauri/binaries/aurora-sidecar-${{ matrix.target }} || true
+          SIDECAR="src-tauri/binaries/aurora-sidecar-${{ matrix.target }}"
+          if [ ! -f "$SIDECAR" ]; then
+            echo "ERROR: sidecar binary not found at $SIDECAR"
+            exit 1
+          fi
+          codesign --force --deep --sign - "$SIDECAR"
+          echo "codesign OK: $(codesign -dv --verbose=4 "$SIDECAR" 2>&1 | head -3)"
 
       - name: Build Tauri app (production)
         working-directory: frontend
