@@ -71,7 +71,7 @@ def _make_dataset_synthetic(
 
 def _make_proxy_bundle(n_channels: int = 2, n_samples: int = 500, n_obs: int = 36):
     """Minimal synthetic ProxyBundle for orchestrator tests."""
-    from aurora_launch.engines.launch_orchestrator import ProxyBundle
+    from aurora_launch.engines.launch_orchestrator import ProxyBundle, make_proxy_bundle
 
     rng = np.random.default_rng(99)
     beta_means = [0.2, 0.1][:n_channels]
@@ -81,7 +81,7 @@ def _make_proxy_bundle(n_channels: int = 2, n_samples: int = 500, n_obs: int = 3
     decay_values = [0.5, 0.2][:n_channels]
     media_cols = ["tv", "digital"][:n_channels]
 
-    return ProxyBundle(
+    return make_proxy_bundle(
         posterior_samples={
             "media_betas": np.array([
                 rng.normal(loc=beta_means[i], scale=beta_stds[i], size=n_samples)
@@ -134,11 +134,11 @@ def _serialize_proxy(proxy_bundle) -> bytes:
     from aurora_launch.persistence.safe_serializer import serialize
 
     payload: dict[str, Any] = {
-        "posterior_samples": proxy_bundle.posterior_samples,
-        "normalization": proxy_bundle.normalization,
-        "config": proxy_bundle.config,
-        "media_cols": proxy_bundle.media_cols,
-        "n_proxy_observations": proxy_bundle.n_proxy_observations,
+        "posterior_samples": proxy_bundle.posterior.posterior_samples,
+        "normalization": proxy_bundle.posterior.normalization,
+        "config": proxy_bundle.config_obj.config,
+        "media_cols": proxy_bundle.posterior.media_cols,
+        "n_proxy_observations": proxy_bundle.metadata.n_proxy_observations,
     }
     return serialize(payload)
 
@@ -555,12 +555,12 @@ class TestPureTransferModeZeroRecipient:
     def test_pure_transfer_synthetic_posterior_via_orchestrator(self):
         """Full pipeline: synthetic dataset -> posterior -> ProxyBundle -> orchestrator."""
         from aurora_launch.sample_bundles.synthetic_posterior import derive_synthetic_posterior
-        from aurora_launch.engines.launch_orchestrator import LaunchOrchestrator, ProxyBundle
+        from aurora_launch.engines.launch_orchestrator import LaunchOrchestrator, ProxyBundle, make_proxy_bundle
 
         ds = _make_dataset_synthetic(n_periods=36, n_channels=2)
         synth = derive_synthetic_posterior(ds, n_samples=500)
 
-        bundle = ProxyBundle(
+        bundle = make_proxy_bundle(
             posterior_samples=synth.posterior_samples,
             media_cols=synth.media_cols,
             normalization=synth.normalization,

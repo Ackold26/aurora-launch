@@ -23,6 +23,7 @@ from aurora_launch.engines.launch_orchestrator import (
     ForecastBudgetExceededError,
     LaunchOrchestrator,
     ProxyBundle,
+    make_proxy_bundle,
     _cancel_event,
     _start_watchdog,
 )
@@ -37,7 +38,7 @@ from aurora_launch.engines.router import EngineMode
 
 def _make_proxy_bundle(n_channels: int = 2, n_samples: int = 500) -> ProxyBundle:
     rng = np.random.default_rng(7)
-    return ProxyBundle(
+    return make_proxy_bundle(
         posterior_samples={
             "media_betas": np.array(
                 [rng.normal(loc=0.2, scale=0.05, size=n_samples) for _ in range(n_channels)]

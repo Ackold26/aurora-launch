@@ -273,13 +273,14 @@ class TestEndToEndIntegration:
         from aurora_launch.engines.launch_orchestrator import (
             LaunchOrchestrator,
             ProxyBundle,
+    make_proxy_bundle,
         )
         from aurora_launch.engines.pure_transfer_engine import RecipientAnchors
 
         ds = _make_dataset_synthetic(n_periods=36, n_channels=2)
         synth = derive_synthetic_posterior(ds, n_samples=1000)
 
-        bundle = ProxyBundle(
+        bundle = make_proxy_bundle(
             posterior_samples=synth.posterior_samples,
             media_cols=synth.media_cols,
             normalization=synth.normalization,

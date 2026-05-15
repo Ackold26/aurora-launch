@@ -79,22 +79,27 @@ def _make_new_bundle(
     )
 
 
-def _make_legacy_bundle(
+def _make_via_helper(
     media_cols: list[str] | None = None,
     n_obs: int = 104,
 ) -> ProxyBundle:
-    """Construct a ProxyBundle using the deprecated legacy flat API."""
+    """Construct ProxyBundle via the make_proxy_bundle factory helper.
+
+    Phase 1 hard cut: legacy flat ProxyBundle(posterior_samples=, ...)
+    constructor removed. make_proxy_bundle() factory packages flat args
+    into structured sub-objects.
+    """
+    from aurora_launch.engines.launch_orchestrator import make_proxy_bundle
+
     cols = media_cols or ["tv", "digital"]
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        return ProxyBundle(
-            posterior_samples=_make_posterior_samples(len(cols)),
-            media_cols=cols,
-            normalization={"y_mean": 500_000.0, "y_std": 50_000.0},
-            config={"mode": "sales"},
-            proxy_brand_id="brand-42",
-            n_proxy_observations=n_obs,
-        )
+    return make_proxy_bundle(
+        posterior_samples=_make_posterior_samples(len(cols)),
+        media_cols=cols,
+        normalization={"y_mean": 500_000.0, "y_std": 50_000.0},
+        config={"mode": "sales"},
+        proxy_brand_id="brand-42",
+        n_proxy_observations=n_obs,
+    )
 
 
 def _make_anchors(horizon: int = 12) -> RecipientAnchors:
@@ -153,38 +158,47 @@ class TestNewConstructor:
 # ---------------------------------------------------------------------------
 
 
-class TestLegacyConstructor:
-    def test_legacy_constructor_issues_deprecation_warning(self) -> None:
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            ProxyBundle(
+class TestHardCutMigration:
+    """Phase 1 hard cut: legacy ProxyBundle(posterior_samples=...) constructor
+    removed. make_proxy_bundle() factory replaces it. These tests verify the
+    cut и helper behaviour."""
+
+    def test_legacy_constructor_raises_type_error(self) -> None:
+        """ProxyBundle() с flat kwargs must raise — no backward-compat shim."""
+        with pytest.raises(TypeError):
+            ProxyBundle(  # type: ignore[call-arg]
                 posterior_samples=_make_posterior_samples(),
                 media_cols=["tv", "digital"],
                 normalization={"y_mean": 500_000.0, "y_std": 50_000.0},
             )
-            dep_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
-        assert len(dep_warnings) >= 1
-        assert "deprecated" in str(dep_warnings[0].message).lower()
-        assert "v0.2.0" in str(dep_warnings[0].message)
 
-    def test_legacy_flat_fields_accessible_with_warning(self) -> None:
-        bundle = _make_legacy_bundle()
+    def test_make_proxy_bundle_helper_packages_flat_args(self) -> None:
+        """make_proxy_bundle factory packages flat keyword args в sub-objects."""
+        bundle = _make_via_helper()
+        # Structured fields accessible
+        assert isinstance(bundle.metadata, ProxyMetadata)
+        assert isinstance(bundle.posterior, ProxyPosteriorPayload)
+        assert isinstance(bundle.config_obj, ProxyConfig)
+        # Forward via convenience properties (no DeprecationWarning)
+        assert bundle.posterior.media_cols == ["tv", "digital"]
+        assert bundle.metadata.origin_brand_id == "brand-42"
+        assert bundle.metadata.n_proxy_observations == 104
+        assert bundle.config_obj.config["mode"] == "sales"
+
+    def test_make_proxy_bundle_no_deprecation_warning(self) -> None:
+        """make_proxy_bundle factory emits NO DeprecationWarning."""
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            ps = bundle.posterior_samples
-            mc = bundle.media_cols
-            nm = bundle.normalization
-            cfg = bundle.config
-            bid = bundle.proxy_brand_id
-            nobs = bundle.n_proxy_observations
-            dep = [x for x in w if issubclass(x.category, DeprecationWarning)]
-        assert len(dep) == 6, f"Expected 6 DeprecationWarnings (one per field), got {len(dep)}"
-        assert ps is not None
-        assert mc == ["tv", "digital"]
-        assert "y_mean" in nm
-        assert cfg["mode"] == "sales"
-        assert bid == "brand-42"
-        assert nobs == 104
+            _make_via_helper()
+            dep_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+        assert len(dep_warnings) == 0
+
+    def test_convenience_properties_match_sub_object_paths(self) -> None:
+        """bundle.samples == bundle.posterior.posterior_samples (read-only)."""
+        bundle = _make_via_helper()
+        assert bundle.samples is bundle.posterior.posterior_samples
+        assert bundle.media_cols is bundle.posterior.media_cols
+        assert bundle.n_proxy_observations == bundle.metadata.n_proxy_observations
 
 
 # ---------------------------------------------------------------------------
@@ -333,28 +347,23 @@ class TestOrchestratorWithNewBundle:
 
 
 # ---------------------------------------------------------------------------
-# S-12-7: Orchestrator end-to-end smoke (legacy API, backward compat)
+# S-12-7: Orchestrator end-to-end smoke (factory-built bundle, post hard-cut)
 # ---------------------------------------------------------------------------
 
 
-class TestOrchestratorWithLegacyBundle:
-    def test_forecast_with_legacy_bundle_completes(self) -> None:
-        bundle = _make_legacy_bundle()
+class TestOrchestratorWithFactoryBundle:
+    def test_forecast_with_factory_bundle_completes(self) -> None:
+        bundle = _make_via_helper()
         anchors = _make_anchors(horizon=12)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            media_cols = bundle.media_cols
-
+        media_cols = bundle.posterior.media_cols
         spend_plan = {col: [50_000.0] * 12 for col in media_cols}
 
         orchestrator = LaunchOrchestrator()
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            result = orchestrator.forecast_recipient(
-                proxy=bundle,
-                anchors=anchors,
-                spend_plan=spend_plan,
-                horizon_periods=12,
-            )
+        result = orchestrator.forecast_recipient(
+            proxy=bundle,
+            anchors=anchors,
+            spend_plan=spend_plan,
+            horizon_periods=12,
+        )
         assert result.forecast is not None
         assert len(result.forecast.points) == 12

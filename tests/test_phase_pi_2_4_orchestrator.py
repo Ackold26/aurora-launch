@@ -18,6 +18,7 @@ from aurora_launch.engines.launch_orchestrator import (
     OrchestrationResult,
     OrchestratorError,
     ProxyBundle,
+    make_proxy_bundle,
 )
 from aurora_launch.engines.pure_transfer_engine import RecipientAnchors
 from aurora_launch.engines.router import EngineMode
@@ -39,7 +40,7 @@ def _make_proxy_bundle(
     decay_values = [0.5, 0.2][:n_channels]
     media_cols = ["tv", "digital"][:n_channels]
 
-    return ProxyBundle(
+    return make_proxy_bundle(
         posterior_samples={
             "media_betas": np.array(
                 [
@@ -299,11 +300,11 @@ class TestProxyExtractionErrors:
         orch = LaunchOrchestrator()
         bundle = _make_proxy_bundle()
         # Corrupt
-        bad_bundle = ProxyBundle(
-            posterior_samples={"media_betas": bundle.posterior_samples["media_betas"]},
-            media_cols=bundle.media_cols,
-            normalization=bundle.normalization,
-            n_proxy_observations=bundle.n_proxy_observations,
+        bad_bundle = make_proxy_bundle(
+            posterior_samples={"media_betas": bundle.posterior.posterior_samples["media_betas"]},
+            media_cols=bundle.posterior.media_cols,
+            normalization=bundle.posterior.normalization,
+            n_proxy_observations=bundle.metadata.n_proxy_observations,
         )
         with pytest.raises(OrchestratorError, match="proxy priors"):
             orch.forecast_recipient(
@@ -318,11 +319,11 @@ class TestProxyExtractionErrors:
     def test_missing_y_mean_in_normalization(self) -> None:
         orch = LaunchOrchestrator()
         bundle = _make_proxy_bundle()
-        bad_bundle = ProxyBundle(
-            posterior_samples=bundle.posterior_samples,
-            media_cols=bundle.media_cols,
+        bad_bundle = make_proxy_bundle(
+            posterior_samples=bundle.posterior.posterior_samples,
+            media_cols=bundle.posterior.media_cols,
             normalization={"y_std": 50000.0},  # missing y_mean
-            n_proxy_observations=bundle.n_proxy_observations,
+            n_proxy_observations=bundle.metadata.n_proxy_observations,
         )
         with pytest.raises(OrchestratorError, match="proxy baseline"):
             orch.forecast_recipient(

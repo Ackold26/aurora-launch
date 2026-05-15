@@ -30,6 +30,7 @@ from aurora_launch.engines.dispatch_table import (
 from aurora_launch.engines.launch_orchestrator import (
     LaunchOrchestrator,
     ProxyBundle,
+    make_proxy_bundle,
 )
 from aurora_launch.engines.pure_transfer_engine import (
     ChannelTransferParams,
@@ -79,7 +80,7 @@ def _make_spend_plan(horizon: int = 6, channel_ids: list[str] | None = None) -> 
 
 def _make_proxy_bundle(n_channels: int = 2, n_samples: int = 200) -> ProxyBundle:
     rng = np.random.default_rng(42)
-    return ProxyBundle(
+    return make_proxy_bundle(
         posterior_samples={
             "media_betas": np.array(
                 [rng.normal(loc=0.2, scale=0.05, size=n_samples) for _ in range(n_channels)]

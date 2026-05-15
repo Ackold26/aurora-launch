@@ -81,147 +81,72 @@ class ProxyConfig:
     config: Mapping[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
 class ProxyBundle:
-    __slots__ = (
-        "metadata", "posterior", "config_obj",
-        "_legacy_posterior_samples", "_legacy_media_cols",
-        "_legacy_normalization", "_legacy_config",
-        "_legacy_proxy_brand_id", "_legacy_n_proxy_observations",
+    """Structured proxy bundle (Phase 1 hard cut — was S-12 shim).
+
+    Three sub-objects:
+      - metadata: provenance + brand identity
+      - posterior: samples + normalization + media_cols
+      - config_obj: model config dict
+    """
+    metadata: ProxyMetadata
+    posterior: ProxyPosteriorPayload
+    config_obj: ProxyConfig
+
+    # Convenience properties для read-only forward access (no warnings).
+    # Common dotted paths: bundle.posterior.posterior_samples → bundle.samples
+    @property
+    def samples(self) -> Mapping[str, Any]:
+        return self.posterior.posterior_samples
+
+    @property
+    def media_cols(self) -> list:
+        return self.posterior.media_cols
+
+    @property
+    def n_proxy_observations(self) -> int:
+        return self.metadata.n_proxy_observations
+
+
+def make_proxy_bundle(
+    *,
+    posterior_samples: Mapping[str, Any],
+    media_cols: list,
+    normalization: Mapping[str, Any] | None = None,
+    config: Mapping[str, Any] | None = None,
+    proxy_brand_id: str | None = None,
+    proxy_app_version: str | None = None,
+    recorded_at: str | None = None,
+    n_proxy_observations: int = 0,
+    brand_category: str | None = None,
+) -> ProxyBundle:
+    """Factory for ProxyBundle from flat keyword args.
+
+    Was: ProxyBundle(posterior_samples=, media_cols=, ...) legacy constructor
+    с DeprecationWarning. Now: explicit packaging helper. Same call shape,
+    но clear что результат is structured + no warning.
+
+    Use в test fixtures + adapters/loaders that produce flat data.
+    """
+    return ProxyBundle(
+        metadata=ProxyMetadata(
+            origin_brand_id=proxy_brand_id,
+            proxy_app_version=proxy_app_version,
+            recorded_at=recorded_at,
+            n_proxy_observations=n_proxy_observations,
+            brand_category=brand_category,
+        ),
+        posterior=ProxyPosteriorPayload(
+            posterior_samples=posterior_samples,
+            normalization=normalization or {},
+            media_cols=media_cols,
+        ),
+        config_obj=ProxyConfig(config=config or {}),
     )
 
-    def __init__(
-        self,
-        *,
-        metadata: Optional[ProxyMetadata] = None,
-        posterior: Optional[ProxyPosteriorPayload] = None,
-        config_obj: Optional[ProxyConfig] = None,
-        posterior_samples: Optional[Mapping[str, Any]] = None,
-        media_cols: Optional[list] = None,
-        normalization: Optional[Mapping[str, Any]] = None,
-        config: Optional[Mapping[str, Any]] = None,
-        proxy_brand_id: Optional[str] = None,
-        n_proxy_observations: int = 0,
-    ) -> None:
-        import warnings as _w
 
-        if posterior_samples is not None or media_cols is not None or normalization is not None:
-            _w.warn(
-                "ProxyBundle flat-field constructor is deprecated. "
-                "Use ProxyBundle(metadata=ProxyMetadata(...), "
-                "posterior=ProxyPosteriorPayload(...), config_obj=ProxyConfig(...)) "
-                "instead. Flat fields will be removed in v0.2.0.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            object.__setattr__(self, "metadata", None)
-            object.__setattr__(self, "posterior", None)
-            object.__setattr__(self, "config_obj", None)
-            object.__setattr__(self, "_legacy_posterior_samples", posterior_samples)
-            object.__setattr__(self, "_legacy_media_cols",
-                               media_cols if media_cols is not None else [])
-            object.__setattr__(self, "_legacy_normalization",
-                               normalization if normalization is not None else {})
-            object.__setattr__(self, "_legacy_config",
-                               config if config is not None else {})
-            object.__setattr__(self, "_legacy_proxy_brand_id", proxy_brand_id)
-            object.__setattr__(self, "_legacy_n_proxy_observations", n_proxy_observations)
-        else:
-            object.__setattr__(self, "metadata", metadata)
-            object.__setattr__(self, "posterior", posterior)
-            object.__setattr__(self, "config_obj", config_obj)
-            object.__setattr__(self, "_legacy_posterior_samples", None)
-            object.__setattr__(self, "_legacy_media_cols", None)
-            object.__setattr__(self, "_legacy_normalization", None)
-            object.__setattr__(self, "_legacy_config", None)
-            object.__setattr__(self, "_legacy_proxy_brand_id", None)
-            object.__setattr__(self, "_legacy_n_proxy_observations", None)
-
-    def __setattr__(self, name: str, value: Any) -> None:
-        raise AttributeError(
-            "ProxyBundle is immutable (frozen). Use a new ProxyBundle instance."
-        )
-
-    def __getattr__(self, name: str) -> Any:
-        import warnings as _w
-
-        _LEGACY_MAP: dict = {
-            "posterior_samples":    ("posterior",  "posterior_samples", {}),
-            "media_cols":           ("posterior",  "media_cols",        []),
-            "normalization":        ("posterior",  "normalization",     {}),
-            "config":               ("config_obj", "config",            {}),
-            "proxy_brand_id":       ("metadata",   "origin_brand_id",   None),
-            "n_proxy_observations": ("metadata",   "n_proxy_observations", 0),
-        }
-
-        if name not in _LEGACY_MAP:
-            raise AttributeError(
-                f"'{type(self).__name__}' object has no attribute '{name}'"
-            )
-
-        sub_obj_name, sub_field, default_val = _LEGACY_MAP[name]
-
-        _w.warn(
-            f"ProxyBundle.{name} is deprecated. "
-            f"Use bundle.{sub_obj_name}.{sub_field} instead. "
-            f"Direct field access will be removed in v0.2.0.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
-        legacy_slot = f"_legacy_{name}"
-        try:
-            val = object.__getattribute__(self, legacy_slot)
-        except AttributeError:
-            val = None
-        if val is not None:
-            return val
-
-        try:
-            sub_obj = object.__getattribute__(self, sub_obj_name)
-        except AttributeError:
-            return default_val
-        if sub_obj is not None:
-            return getattr(sub_obj, sub_field)
-
-        return default_val
-
-    def __repr__(self) -> str:
-        meta = object.__getattribute__(self, "metadata")
-        post = object.__getattribute__(self, "posterior")
-        if meta is not None or post is not None:
-            cfg = object.__getattribute__(self, "config_obj")
-            return (
-                f"ProxyBundle(metadata={meta!r}, posterior={post!r}, config_obj={cfg!r})"
-            )
-        import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            return (
-                f"ProxyBundle(media_cols={self.media_cols!r}, "
-                f"n_proxy_observations={self.n_proxy_observations!r})"
-            )
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, ProxyBundle):
-            return NotImplemented
-        for slot in self.__slots__:
-            try:
-                a = object.__getattribute__(self, slot)
-                b = object.__getattribute__(other, slot)
-            except AttributeError:
-                return False
-            try:
-                if a != b:
-                    return False
-            except (ValueError, TypeError):
-                return False
-        return True
-
-    def __hash__(self) -> int:
-        return id(self)
-
-
-# End S-12
+# End S-12 + Phase 1 hard cut
 # ---------------------------------------------------------------------------
 
 

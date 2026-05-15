@@ -1141,12 +1141,15 @@ def _run_orchestrated_forecast_from_data(
     background runner thread with pure Python / numpy values only.
     Per INV-01: lazy imports inside function — no module-level PyMC.
     """
-    from aurora_launch.engines.launch_orchestrator import LaunchOrchestrator, ProxyBundle
+    from aurora_launch.engines.launch_orchestrator import (
+        LaunchOrchestrator,
+        make_proxy_bundle,
+    )
     from aurora_launch.engines.pure_transfer_engine import RecipientAnchors
     from aurora_launch.persistence.safe_serializer import deserialize
 
     posterior_data = deserialize(data.posterior_blob)
-    proxy = ProxyBundle(
+    proxy = make_proxy_bundle(
         posterior_samples=posterior_data["posterior_samples"],
         media_cols=posterior_data["media_cols"],
         normalization=posterior_data["normalization"],

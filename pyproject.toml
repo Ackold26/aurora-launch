@@ -93,10 +93,9 @@ pythonpath = ["src"]
 # Migration к structured API planned для v0.2.0 sweep.
 filterwarnings = [
     "error",
-    # S-12 ProxyBundle backward-compat shim — emit warnings via stacklevel=2
-    # which attributes to caller. Match by message text instead of module.
-    "ignore:ProxyBundle.*deprecated:DeprecationWarning",
-    "ignore:ProxyBundle.* is deprecated:DeprecationWarning",
+    # Phase 1 hard cut: S-12 ProxyBundle backward-compat shim removed.
+    # make_proxy_bundle() factory replaces legacy flat-args constructor.
+    # 99 warnings/run eliminated.
     # numpy hill_saturation extreme alpha — guarded fallback path
     "ignore::RuntimeWarning:aurora_launch.engines.pure_transfer_engine",
     # Test-only deprecation от dependency stack
