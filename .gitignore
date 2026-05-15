@@ -29,7 +29,9 @@ build/
 # Tauri build artefacts (CI-produced, never commit locally)
 src-tauri/binaries/
 src-tauri/gen/
-src-tauri/icons/
+# Иконки (1.8): tracked в repo, регенерируются из мастер-лого Aurora
+# через `python tools/generate_icons.py`. Раньше всё подряд игнорилось,
+# из-за чего CI собирал app без бренда (placeholder 187 байт).
 
 # Future: secrets / local configs (do not commit)
 .env
