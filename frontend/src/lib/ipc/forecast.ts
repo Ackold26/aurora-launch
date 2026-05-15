@@ -202,5 +202,7 @@ export interface Explanation {
 export async function explainForecast(
   inputs: ExplainerInputs
 ): Promise<Explanation> {
-  return invoke<Explanation>('explain_forecast', inputs);
+  // B-3 fix: Rust команда explain_forecast объявляет `params: serde_json::Value`
+  // → Tauri ожидает `{ params: {...} }` wrapper. Без wrapper deserialize error.
+  return invoke<Explanation>('explain_forecast', { params: inputs });
 }

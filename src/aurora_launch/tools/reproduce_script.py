@@ -73,6 +73,13 @@ def generate_reproduce_script(
     # Pretty-print params для readability в generated script
     anchors_repr = json.dumps(anchors, ensure_ascii=False, indent=8)
     spend_plan_repr = json.dumps(spend_plan, ensure_ascii=False, indent=8)
+    # B-1 security: bundle_path как Python string literal, не raw insertion.
+    # json.dumps даёт valid Python-совместимый string literal с escaped
+    # quotes/backslashes/newlines. Защита от injection вида:
+    #   bundle_path='x"); import os; os.system("..."); Path("y'
+    # которая иначе вышла бы за пределы строки и стала executable Python.
+    bundle_path_literal = json.dumps(bundle_path)
+    version_literal = json.dumps(__version__)
 
     return f'''#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
@@ -108,7 +115,7 @@ except ImportError:
     print("ERROR: aurora-launch not installed. Run: pip install aurora-launch")
     sys.exit(1)
 
-EXPECTED_VERSION = "{__version__}"
+EXPECTED_VERSION = {version_literal}
 if _av != EXPECTED_VERSION:
     print(
         f"WARNING: Aurora Launch version mismatch. "
@@ -130,7 +137,7 @@ from aurora_launch.persistence.safe_serializer import deserialize
 # Bundle path — edit if your file is elsewhere
 # ---------------------------------------------------------------------------
 
-BUNDLE_PATH = Path("{bundle_path}")
+BUNDLE_PATH = Path({bundle_path_literal})
 
 if not BUNDLE_PATH.exists():
     print(f"ERROR: bundle file not found: {{BUNDLE_PATH}}")

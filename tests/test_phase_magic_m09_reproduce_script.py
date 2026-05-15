@@ -196,6 +196,55 @@ class TestSecurity:
         ast.parse(script)
         assert "BUNDLE_PATH = Path(" in script
 
+    def test_bundle_path_quote_break_injection_blocked(self) -> None:
+        """B-1 audit closure: bundle_path с Python-quote-break payload must NOT
+        produce executable code. Pre-fix attack:
+            bundle_path = 'x"); import os; os.system("PWNED"); Path("y'
+        Output: BUNDLE_PATH = Path("x"); import os; os.system("PWNED"); Path("y")
+        Это валидный Python — `import os` и `os.system("PWNED")` исполняются
+        при `python aurora_reproduce_*.py`. После фикса (json.dumps на literal)
+        payload остаётся внутри одной escape'нутой строки, ничего не
+        исполняется кроме legitimate Path().
+        """
+        attack_payload = 'x"); import os; os.system("echo PWNED"); Path("y'
+        script = generate_reproduce_script(
+            bundle_path=attack_payload,
+            anchors={
+                "market_size": 1_000_000.0,
+                "market_size_cv": 0.1,
+                "planned_share_trajectory": [0.05] * 6,
+                "distribution_trajectory": [0.8] * 6,
+                "pricing_index": 1.0,
+                "elasticity": 0.0,
+                "seasonality": None,
+            },
+            spend_plan={"tv": [100.0] * 6},
+            horizon_periods=6,
+        )
+        # ast.parse must pass — script syntactically valid
+        tree = ast.parse(script)
+        # Critically: no top-level `import os` или `os.system(...)` calls
+        # должны появиться из-за payload. Single legitimate `import sys` ok.
+        import_modules = {
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        }
+        assert "os" not in import_modules, (
+            f"Injection leaked `import os` в generated script: {import_modules}"
+        )
+        # And no Call к os.system anywhere
+        call_attrs = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                call_attrs.append(node.func.attr)
+        assert "system" not in call_attrs, "os.system call leaked в script"
+        # Payload should appear как escaped string literal внутри Path()
+        # ('os.system' substring present как data в строковом литерале — это
+        # OK; main check выше — что нет actual AST-level call к os.system).
+        assert 'echo PWNED' in script
+
     def test_anchors_with_string_injection_attempt(self) -> None:
         """Anchors containing quote chars produce valid JSON-encoded literals."""
         # market_size as malicious string instead of number

@@ -50,6 +50,12 @@
     engineMode?: EngineMode;
     methodologySignature?: string;
     warnings?: string[];
+    // B-5 audit fix: real n_recipient + granularity from forecast.json
+    // (fallback к defaults if legacy bundle без полей). Используется
+    // loadExplanation чтобы M-03 narrative ссылался на реальные числа,
+    // а не врал «обучилась на 0 наблюдениях» для Mode 2/3/4.
+    nRecipient?: number;
+    granularity?: 'monthly' | 'weekly';
   } | null>(null);
   let loadingSimilarity = $state(false);
   let loadingForecast = $state(false);
@@ -84,15 +90,19 @@
       const pointMean = forecastData.points.reduce((s, p) => s + p.point, 0) / forecastData.points.length;
       const ciLowMean = forecastData.points.reduce((s, p) => s + p.ciLower, 0) / forecastData.points.length;
       const ciHighMean = forecastData.points.reduce((s, p) => s + p.ciUpper, 0) / forecastData.points.length;
+      // B-5 fix: real values из forecast.json (legacy bundles → 0/'monthly'
+      // defaults, чтобы _para_why/_para_risks не врали о Mode 2/3/4 brand data).
+      const effGranularity = forecastData.granularity ?? 'monthly';
+      const effNRecipient = forecastData.nRecipient ?? 0;
       explanation = await explainForecast({
         point_forecast_mean: pointMean,
         ci_lower_mean: ciLowMean,
         ci_upper_mean: ciHighMean,
         horizon_periods: forecastData.horizonWeeks,
-        granularity: 'monthly',
+        granularity: effGranularity,
         engine_mode: forecastData.engineMode,
         methodology_signature: forecastData.methodologySignature ?? '',
-        n_recipient: 0,
+        n_recipient: effNRecipient,
         trust_score: trustResult?.score ?? null,
         warnings: forecastData.warnings ?? [],
         currency: 'RUB',
@@ -105,10 +115,18 @@
     }
   }
 
+  // B-6 audit closure: bundle schema пока не экспонирует real anchors +
+  // spend_plan. Generated script запустится, но прогноз будет с заглушечными
+  // anchors → не бит-в-бит совпадёт с оригиналом. Modal честно предупреждает
+  // через reproduceIsPreview флаг. Реальный wiring — Phase Cloud X-08 backlog.
+  let reproduceIsPreview = $state<boolean>(false);
+
   async function openReproduceModal() {
     if (!$activeBundle || !forecastData) return;
     reproduceLoading = true;
     reproduceModalOpen = true;
+    // B-6: пока bundle не expose real anchors/spend — заявляем preview
+    reproduceIsPreview = true;
     try {
       const result = await generateReproduceScript({
         bundle_path: $activeBundle.path ?? './project.aurora',
@@ -121,12 +139,21 @@
           elasticity: 0.0,
           seasonality: null,
         },
-        spend_plan: {},  // TODO wire from bundle metadata когда schema expanded
+        spend_plan: {},
         horizon_periods: forecastData.horizonWeeks,
-        granularity: 'monthly',
+        granularity: forecastData.granularity ?? 'monthly',
         coverage_target: 0.95,
+        n_recipient: forecastData.nRecipient ?? 0,
       });
-      reproduceScript = result.script;
+      // B-6 honest: prepend preview-предупреждение в сам сгенерированный
+      // скрипт. Customer видит и в UI badge, и в самом .py файле.
+      const previewWarning = `# ⚠️ ПРЕВЬЮ-РЕЖИМ M-09 (Aurora Launch v0.1.0)\n` +
+        `# anchors + spend_plan в этом скрипте — ЗАГЛУШКИ из UI, не реальные\n` +
+        `# параметры исходного прогноза. Запуск даст forecast, не идентичный\n` +
+        `# тому что показан в Inspector. Полный bit-exact wiring придёт\n` +
+        `# в v0.1.1 после расширения bundle schema. До этого — используйте\n` +
+        `# скрипт как шаблон, подставляя свои anchors/spend вручную.\n#\n`;
+      reproduceScript = previewWarning + result.script;
       reproduceFilename = result.suggested_filename;
     } catch (e) {
       reproduceScript = `# Ошибка генерации скрипта:\n# ${e instanceof Error ? e.message : String(e)}\n`;
@@ -254,6 +281,9 @@
         engine_mode?: EngineMode;
         methodology_signature?: string;
         warnings?: string[];
+        // B-5 audit fix: optional fields из новых bundle exports
+        n_recipient?: number;
+        granularity?: 'monthly' | 'weekly';
       }>('forecast.json');
       if (payload) {
         forecastData = {
@@ -269,6 +299,8 @@
           engineMode: payload.engine_mode ?? _inferEngineMode(payload.methodology_signature),
           methodologySignature: payload.methodology_signature,
           warnings: payload.warnings ?? [],
+          nRecipient: payload.n_recipient,
+          granularity: payload.granularity,
         };
       }
     } catch (e) {
@@ -546,7 +578,6 @@
       role="document"
       onclick={(e) => e.stopPropagation()}
       onkeydown={(e) => e.stopPropagation()}
-      role="document"
     >
       <header class="reproduce-modal-header">
         <h2 id="reproduce-modal-title">🐍 Воспроизвести прогноз в Python</h2>
@@ -561,8 +592,14 @@
       </header>
       <p class="reproduce-modal-intro">
         Сохраните этот скрипт как <code>{reproduceFilename}</code> + .aurora bundle.
-        Запустите <code>python {reproduceFilename}</code>. Прогноз будет
-        идентичным до бита.
+        Запустите <code>python {reproduceFilename}</code>.
+        {#if reproduceIsPreview}
+          <strong class="reproduce-preview-badge">⚠️ Превью v0.1.0:</strong>
+          anchors и план затрат пока заглушки — для точного воспроизведения
+          подставьте свои значения. Bit-exact wiring придёт в v0.1.1.
+        {:else}
+          Прогноз будет идентичным до бита.
+        {/if}
       </p>
       <div class="reproduce-actions">
         <button
@@ -736,6 +773,10 @@
   .reproduce-modal-intro {
     color: var(--text-secondary, #4A4D57);
     line-height: 1.5;
+  }
+  .reproduce-preview-badge {
+    color: var(--color-warning, #B45309);
+    margin-right: 0.25rem;
   }
   .reproduce-actions {
     display: flex;

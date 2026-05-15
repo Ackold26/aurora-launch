@@ -140,9 +140,15 @@ export async function compareForecastVersions(
   versionIdA: number,
   versionIdB: number
 ): Promise<ForecastDiff> {
+  // B-2 fix: Rust команда compare_forecast_versions объявляет
+  // `input: ForecastVersionDiffInput` → Tauri ожидает `{ input: {...} }`
+  // wrapper. Без wrapper deserialize error в production webview (vitest
+  // mocks invoke напрямую, поэтому unit-tests не ловят).
   return invoke<ForecastDiff>('compare_forecast_versions', {
-    version_id_a: versionIdA,
-    version_id_b: versionIdB,
+    input: {
+      version_id_a: versionIdA,
+      version_id_b: versionIdB,
+    },
   });
 }
 

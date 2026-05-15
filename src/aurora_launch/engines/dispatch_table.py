@@ -18,9 +18,14 @@ Every handler in _MODE_DISPATCH must have the following signature:
         coverage_target: float,
         recipient_y: list[float] | None,
         warnings: list[str],
-        **kwargs: Any,
+        extras: DispatchExtras,
     ) -> tuple[TransferForecast, str]:
         ...
+
+Where DispatchExtras — frozen dataclass с typed optional fields
+(historical_spend, shrinkage, n_samples) вместо raw `**kwargs: Any`.
+Typo `historical_spnd` теперь TypeError при construction, не silent
+ignore (Phase 1 audit closure 1.2).
 
 Return value: (forecast, methodology_signature_str).
 
@@ -49,8 +54,9 @@ OQ-1: Should Mode 3 handler accept recipient_y directly or a pre-built
       (here vs inside ols_engine).
 
 OQ-2: Mode 4 Bayesian handler needs shrinkage_factor to build informative
-      priors. Currently propagated via **kwargs. Make it explicit once
-      bayesian_engine.train_model signature is updated.
+      priors. Propagated via DispatchExtras.shrinkage field. When
+      bayesian_engine.train_model accepts informative priors directly,
+      this можно убрать из extras.
 
 OQ-3: Both real implementations need the proxy posterior priors directly
       (not just the already-tightened ChannelTransferParams). Consider
@@ -136,7 +142,7 @@ DispatchHandler = Callable[
         float,                        # coverage_target
         "list[float] | None",         # recipient_y
         list[str],                    # warnings (mutated in place)
-        Any,                          # **kwargs
+        "DispatchExtras",             # extras (typed dataclass)
     ],
     "tuple[TransferForecast, str]",
 ]
@@ -236,9 +242,9 @@ def _handle_ols_with_proxy_priors(
 
     Falls back к pure_transfer (с warning) if:
       - recipient_y missing / shorter than MIN_OBSERVATIONS (5)
-      - historical_spend not passed в kwargs OR misaligned
+      - historical_spend missing в extras OR misaligned
 
-    Required kwargs:
+    Required в extras (DispatchExtras):
       - historical_spend: dict[str, list[float]] — per-channel spend для
         same period as recipient_y. Same channel_ids as in `channels` arg.
       - shrinkage: float = 0.3 (optional override). High → trust proxy more.
@@ -421,9 +427,9 @@ def _handle_bayesian_with_proxy_priors(
 
     Falls back к pure_transfer (с warning) if:
       - recipient_y missing / shorter than MIN_OBSERVATIONS (5)
-      - historical_spend not provided
+      - historical_spend not provided в extras
 
-    Required kwargs:
+    Required в extras (DispatchExtras):
       - historical_spend: dict[str, list[float]] — per-channel spend для
         same period as recipient_y
       - shrinkage: float (optional, default 0.3) — proxy weight ∈ [0,1]
@@ -631,7 +637,9 @@ def dispatch_engine(
         coverage_target: CI coverage probability (0.80/0.90/0.95/0.99).
         recipient_y: observed recipient y (for modes 2-4, may be None).
         warnings: mutable list; handlers append user-visible warnings here.
-        **kwargs: forwarded to handler (shrinkage_factor etc. for future modes).
+        extras: typed DispatchExtras dataclass (historical_spend / shrinkage /
+            n_samples). Заменяет raw **kwargs (Phase 1 audit closure 1.2):
+            typo на field теперь TypeError, не silent fallback.
 
     Returns:
         Tuple of (TransferForecast, methodology_signature_str).
