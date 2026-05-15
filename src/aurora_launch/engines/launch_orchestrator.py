@@ -1,61 +1,3 @@
-"""LaunchOrchestrator — proxy → recipient forecast pipeline coordinator (Phase Π.2.4).
-
-Integration glue across Phase Π.2 components:
-
-    proxy posterior bundle  ─┐
-                             ├──► proxy_posterior_extractor ──► priors
-    recipient anchors       ─┤                                     │
-    spend plan              ─┤                                     ▼
-    n_recipient (+ y if)  ─┴──► router ──► EngineConfig ──► engine dispatch
-                                                                   │
-                                                                   ▼
-                                                        TransferForecast OR
-                                                        OLS+priors forecast OR
-                                                        Bayesian+priors forecast
-                                                                   │
-                                                                   ▼
-                                                        ProjectDB.save_version
-
-This module does NOT train proxy Bayesian models — that's expensive (minutes)
-and orthogonal к routing logic. Caller pre-trains (or loads cached) proxy
-posterior, then orchestrator handles transfer + recipient forecast.
-
-Engine wiring per mode (Phase Π.2.1 + Π.2.2 + future Π.2.5/2.6):
-
-    PURE_TRANSFER             → pure_transfer_engine.forecast_pure_transfer
-    TRANSFER_WITH_BIAS_CHECK  → pure_transfer + bias check vs observed y
-    OLS_WITH_PROXY_PRIORS     → ols_engine.train_ols + SE inflation (Phase Π.2.5)
-    BAYESIAN_WITH_PROXY_PRIORS→ bayesian_engine.train_model с informative priors
-                                                                 (Phase Π.2.6)
-
-For modes OLS/Bayesian, current implementation falls back к pure_transfer
-с conservative similarity inflation, because OLS+priors / Bayesian+priors
-require recipient y vector AND the proxy posterior priors injection
-которое is a separate refactor of bayesian_engine.py (currently uses
-HalfNormal defaults, not arbitrary mean/std).
-
-Phase Π.2.4 ship: orchestrator pure_transfer paths working end-to-end.
-Phase Π.2.5/2.6 ship: OLS+priors and Bayesian+priors paths fully wired.
-
-S-17: Forecast budget enforcement (Phase Scale)
------------------------------------------------
-``forecast_recipient`` accepts ``forecast_budget_seconds: float = 30.0``.
-A watchdog daemon thread fires ``_cancel_event`` when wall-clock budget is
-exceeded.  The forecast pipeline (particularly the Bayesian sampler loop)
-already checks ``_cancel_event.is_set()`` at iteration boundaries, so the
-shutdown is cooperative.
-
-Trade-offs:
-  - Budget is enforced cooperatively; the sampler may finish the current
-    MCMC draw before honoring the cancel signal.  Observed overhead is
-    typically < 2 s on supported hardware.
-  - For pure-transfer paths (modes 1-2) the computation is O(ms), so the
-    watchdog fires only in pathological edge cases (e.g., extremely long
-    spend plans).  Budget=0 → immediate cancel on the very first check.
-  - The watchdog thread is daemon=True so it does not prevent process exit.
-  - Pure stdlib: threading.Event + time.monotonic — no extra dependencies.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -64,6 +6,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional
 
+from aurora_launch.engines.dispatch_table import dispatch_engine
 from aurora_launch.engines.proxy_posterior_extractor import (
     ProxyChannelPrior,
     ProxyExtractionError,
@@ -76,8 +19,6 @@ from aurora_launch.engines.pure_transfer_engine import (
     ChannelTransferParams,
     RecipientAnchors,
     TransferForecast,
-    TransferInputs,
-    forecast_pure_transfer,
 )
 from aurora_launch.engines.router import (
     EngineConfig,
@@ -88,22 +29,10 @@ from aurora_launch.engines.router import (
 
 _log = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# S-17: Module-level cancel event — set by watchdog thread on budget exceeded.
-# The sampler loop checks this at each iteration boundary.
-# Callers that bypass the orchestrator can import and check this directly.
-# ---------------------------------------------------------------------------
 _cancel_event: threading.Event = threading.Event()
 
 
 class ForecastBudgetExceededError(RuntimeError):
-    """Raised when forecast_recipient exceeds its wall-clock budget.
-
-    Attributes:
-        elapsed_s: actual elapsed time in seconds at the moment of cancellation.
-        budget_s: the budget that was set.
-    """
-
     def __init__(self, elapsed_s: float, budget_s: float) -> None:
         self.elapsed_s = elapsed_s
         self.budget_s = budget_s
@@ -114,17 +43,10 @@ class ForecastBudgetExceededError(RuntimeError):
 
 
 def _start_watchdog(budget_s: float, cancel: threading.Event) -> threading.Timer:
-    """Spawn a daemon thread that sets *cancel* after *budget_s* seconds.
-
-    Returns the Timer so the caller can cancel it if the forecast finishes
-    before the budget expires.
-    """
     def _fire() -> None:
         _log.warning(
-            "Forecast budget watchdog fired after %.2f s (budget=%.2f s). "
-            "Setting cancel flag.",
-            budget_s,
-            budget_s,
+            "Forecast budget watchdog fired after %.2f s (budget=%.2f s). Setting cancel flag.",
+            budget_s, budget_s,
         )
         cancel.set()
 
@@ -134,55 +56,189 @@ def _start_watchdog(budget_s: float, cancel: threading.Event) -> threading.Timer
     return timer
 
 
+# ---------------------------------------------------------------------------
+# S-12: ProxyBundle decomposed into 3 focused dataclasses + lightweight aggregator
+# ---------------------------------------------------------------------------
+
 @dataclass(frozen=True)
-class ProxyBundle:
-    """Pre-trained proxy state ready for transfer.
-
-    Caller obtains this by:
-      (a) Running bayesian_engine.train_model and extracting from its result
-      (b) Loading cached proxy from .aurora bundle (via loader.py)
-      (c) Loading from ProjectDB (Phase Π.3.1 forecast versioning)
-
-    Fields:
-        posterior_samples — bayesian_engine output {media_betas, alphas, ...}
-        media_cols — channel IDs ordered to match posterior axis 0
-        normalization — bayesian_engine output (contains y_mean for baseline)
-        config — bayesian_engine config used (for traceability + audit cert)
-    """
-
-    posterior_samples: Mapping[str, Any]
-    media_cols: list[str]
-    normalization: Mapping[str, Any]
-    config: Mapping[str, Any] = field(default_factory=dict)
-    proxy_brand_id: str | None = None  # opaque identifier (anonymized code OK)
+class ProxyMetadata:
+    origin_brand_id: Optional[str] = None
+    proxy_app_version: Optional[str] = None
+    recorded_at: Optional[str] = None
     n_proxy_observations: int = 0
+    brand_category: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class ProxyPosteriorPayload:
+    posterior_samples: Mapping[str, Any]
+    normalization: Mapping[str, Any]
+    media_cols: list
+
+
+@dataclass(frozen=True)
+class ProxyConfig:
+    config: Mapping[str, Any] = field(default_factory=dict)
+
+
+class ProxyBundle:
+    __slots__ = (
+        "metadata", "posterior", "config_obj",
+        "_legacy_posterior_samples", "_legacy_media_cols",
+        "_legacy_normalization", "_legacy_config",
+        "_legacy_proxy_brand_id", "_legacy_n_proxy_observations",
+    )
+
+    def __init__(
+        self,
+        *,
+        metadata: Optional[ProxyMetadata] = None,
+        posterior: Optional[ProxyPosteriorPayload] = None,
+        config_obj: Optional[ProxyConfig] = None,
+        posterior_samples: Optional[Mapping[str, Any]] = None,
+        media_cols: Optional[list] = None,
+        normalization: Optional[Mapping[str, Any]] = None,
+        config: Optional[Mapping[str, Any]] = None,
+        proxy_brand_id: Optional[str] = None,
+        n_proxy_observations: int = 0,
+    ) -> None:
+        import warnings as _w
+
+        if posterior_samples is not None or media_cols is not None or normalization is not None:
+            _w.warn(
+                "ProxyBundle flat-field constructor is deprecated. "
+                "Use ProxyBundle(metadata=ProxyMetadata(...), "
+                "posterior=ProxyPosteriorPayload(...), config_obj=ProxyConfig(...)) "
+                "instead. Flat fields will be removed in v0.2.0.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            object.__setattr__(self, "metadata", None)
+            object.__setattr__(self, "posterior", None)
+            object.__setattr__(self, "config_obj", None)
+            object.__setattr__(self, "_legacy_posterior_samples", posterior_samples)
+            object.__setattr__(self, "_legacy_media_cols",
+                               media_cols if media_cols is not None else [])
+            object.__setattr__(self, "_legacy_normalization",
+                               normalization if normalization is not None else {})
+            object.__setattr__(self, "_legacy_config",
+                               config if config is not None else {})
+            object.__setattr__(self, "_legacy_proxy_brand_id", proxy_brand_id)
+            object.__setattr__(self, "_legacy_n_proxy_observations", n_proxy_observations)
+        else:
+            object.__setattr__(self, "metadata", metadata)
+            object.__setattr__(self, "posterior", posterior)
+            object.__setattr__(self, "config_obj", config_obj)
+            object.__setattr__(self, "_legacy_posterior_samples", None)
+            object.__setattr__(self, "_legacy_media_cols", None)
+            object.__setattr__(self, "_legacy_normalization", None)
+            object.__setattr__(self, "_legacy_config", None)
+            object.__setattr__(self, "_legacy_proxy_brand_id", None)
+            object.__setattr__(self, "_legacy_n_proxy_observations", None)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        raise AttributeError(
+            "ProxyBundle is immutable (frozen). Use a new ProxyBundle instance."
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        import warnings as _w
+
+        _LEGACY_MAP: dict = {
+            "posterior_samples":    ("posterior",  "posterior_samples", {}),
+            "media_cols":           ("posterior",  "media_cols",        []),
+            "normalization":        ("posterior",  "normalization",     {}),
+            "config":               ("config_obj", "config",            {}),
+            "proxy_brand_id":       ("metadata",   "origin_brand_id",   None),
+            "n_proxy_observations": ("metadata",   "n_proxy_observations", 0),
+        }
+
+        if name not in _LEGACY_MAP:
+            raise AttributeError(
+                f"'{type(self).__name__}' object has no attribute '{name}'"
+            )
+
+        sub_obj_name, sub_field, default_val = _LEGACY_MAP[name]
+
+        _w.warn(
+            f"ProxyBundle.{name} is deprecated. "
+            f"Use bundle.{sub_obj_name}.{sub_field} instead. "
+            f"Direct field access will be removed in v0.2.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
+        legacy_slot = f"_legacy_{name}"
+        try:
+            val = object.__getattribute__(self, legacy_slot)
+        except AttributeError:
+            val = None
+        if val is not None:
+            return val
+
+        try:
+            sub_obj = object.__getattribute__(self, sub_obj_name)
+        except AttributeError:
+            return default_val
+        if sub_obj is not None:
+            return getattr(sub_obj, sub_field)
+
+        return default_val
+
+    def __repr__(self) -> str:
+        meta = object.__getattribute__(self, "metadata")
+        post = object.__getattribute__(self, "posterior")
+        if meta is not None or post is not None:
+            cfg = object.__getattribute__(self, "config_obj")
+            return (
+                f"ProxyBundle(metadata={meta!r}, posterior={post!r}, config_obj={cfg!r})"
+            )
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            return (
+                f"ProxyBundle(media_cols={self.media_cols!r}, "
+                f"n_proxy_observations={self.n_proxy_observations!r})"
+            )
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, ProxyBundle):
+            return NotImplemented
+        for slot in self.__slots__:
+            try:
+                a = object.__getattribute__(self, slot)
+                b = object.__getattribute__(other, slot)
+            except AttributeError:
+                return False
+            try:
+                if a != b:
+                    return False
+            except (ValueError, TypeError):
+                return False
+        return True
+
+    def __hash__(self) -> int:
+        return id(self)
+
+
+# End S-12
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class OrchestrationResult:
-    """Full orchestration output: routing decision + forecast + diagnostics."""
-
     engine_config: EngineConfig
-    forecast: TransferForecast | None  # None if bias check failed hard
+    forecast: TransferForecast | None
     proxy_priors_used: dict[str, ProxyChannelPrior]
     methodology_signature: str
     warnings: list[str] = field(default_factory=list)
 
 
 class OrchestratorError(RuntimeError):
-    """Raised for orchestration-level failures (e.g., engine selection mismatch)."""
+    pass
 
 
 class LaunchOrchestrator:
-    """Coordinates proxy → recipient forecast pipeline.
-
-    Stateless по design — каждый forecast_recipient is independent. Caller
-    persists results via ProjectDB.
-
-    Per Plan v3.0 §A.2 + D-07: orchestrator delegates routing к router.py,
-    routing к engines, persistence к ProjectDB. No business logic baked here.
-    """
-
     def __init__(self) -> None:
         pass
 
@@ -195,47 +251,14 @@ class LaunchOrchestrator:
         horizon_periods: int,
         granularity: Granularity = "monthly",
         n_recipient: int = 0,
-        recipient_y: list[float] | None = None,
-        similarity_factors: Mapping[str, float] | None = None,
-        similarity_inflations: Mapping[str, float] | None = None,
+        recipient_y: Optional[list[float]] = None,
+        similarity_factors: Optional[Mapping[str, float]] = None,
+        similarity_inflations: Optional[Mapping[str, float]] = None,
         coverage_target: float = 0.95,
         shrinkage_factor: float = 0.5,
-        user_override_mode: EngineMode | None = None,
+        user_override_mode: Optional[EngineMode] = None,
         forecast_budget_seconds: float = 30.0,
     ) -> OrchestrationResult:
-        """Run full pipeline: extract priors → route → forecast.
-
-        Args:
-            proxy: pre-trained ProxyBundle (Bayesian on proxy brand history)
-            anchors: RecipientAnchors validated by caller
-            spend_plan: per-channel spend by period (length = horizon_periods)
-            horizon_periods: number of forecast periods
-            granularity: 'monthly' or 'weekly' (D-06)
-            n_recipient: number of recipient observations available
-            recipient_y: optional recipient observed y (for modes 2-4)
-            similarity_factors / similarity_inflations: per-channel overrides
-            coverage_target: CI coverage (0.80 / 0.90 / 0.95 / 0.99)
-            shrinkage_factor: how strongly informative priors compress σ ([0,1])
-            user_override_mode: optional explicit mode override (only when allowed)
-            forecast_budget_seconds: wall-clock budget in seconds (default 30.0).
-                A watchdog daemon thread sets the module-level cancel event if
-                the budget is exceeded.  The forecast pipeline checks the cancel
-                flag cooperatively at iteration boundaries; actual teardown may
-                take up to ~2 s more than the stated budget.
-                Pass 0 (or any value ≤ 0) to trigger an immediate cancel on the
-                very next pipeline check.
-
-        Returns:
-            OrchestrationResult с engine decision + forecast + diagnostics.
-
-        Raises:
-            OrchestratorError: orchestration-level failure.
-            ProxyExtractionError: cannot extract priors from proxy bundle.
-            ValueError: bad inputs.
-            ForecastBudgetExceededError: wall-clock budget exceeded during
-                forecast pipeline execution.
-        """
-        # S-17: reset cancel flag and arm watchdog before pipeline starts.
         _cancel_event.clear()
         t_start = time.monotonic()
         effective_budget = max(0.0, forecast_budget_seconds)
@@ -260,7 +283,7 @@ class LaunchOrchestrator:
                 budget_s=effective_budget,
             )
         finally:
-            watchdog.cancel()  # disarm if forecast completed within budget
+            watchdog.cancel()
 
     def _forecast_recipient_impl(
         self,
@@ -271,32 +294,50 @@ class LaunchOrchestrator:
         horizon_periods: int,
         granularity: Granularity,
         n_recipient: int,
-        recipient_y: list[float] | None,
-        similarity_factors: Mapping[str, float] | None,
-        similarity_inflations: Mapping[str, float] | None,
+        recipient_y: Optional[list[float]],
+        similarity_factors: Optional[Mapping[str, float]],
+        similarity_inflations: Optional[Mapping[str, float]],
         coverage_target: float,
         shrinkage_factor: float,
-        user_override_mode: EngineMode | None,
+        user_override_mode: Optional[EngineMode],
         cancel_event: threading.Event,
         t_start: float,
         budget_s: float,
     ) -> OrchestrationResult:
-        """Internal implementation — separated so watchdog wraps cleanly."""
         warnings: list[str] = []
 
         def _check_cancel() -> None:
-            """Raise ForecastBudgetExceededError if cancel event is set."""
             if cancel_event.is_set():
                 elapsed = time.monotonic() - t_start
                 raise ForecastBudgetExceededError(elapsed_s=elapsed, budget_s=budget_s)
 
-        # S-17: check cancel at pipeline entry (handles budget=0 case).
         _check_cancel()
 
-        # 1. Engine routing decision
+        import warnings as _w
+
+        _post = object.__getattribute__(proxy, "posterior")
+        if _post is not None:
+            _posterior_samples = _post.posterior_samples
+            _media_cols = _post.media_cols
+            _normalization = _post.normalization
+        else:
+            with _w.catch_warnings():
+                _w.simplefilter("ignore", DeprecationWarning)
+                _posterior_samples = proxy.posterior_samples
+                _media_cols = proxy.media_cols
+                _normalization = proxy.normalization
+
+        _meta = object.__getattribute__(proxy, "metadata")
+        if _meta is not None:
+            _n_proxy_obs = _meta.n_proxy_observations
+        else:
+            with _w.catch_warnings():
+                _w.simplefilter("ignore", DeprecationWarning)
+                _n_proxy_obs = proxy.n_proxy_observations
+
         engine_config = select_engine(
             n_recipient=n_recipient,
-            n_proxy=proxy.n_proxy_observations or len(proxy.media_cols) * 24,
+            n_proxy=_n_proxy_obs or len(_media_cols) * 24,
             granularity=granularity,
             user_override=user_override_mode,
             shrinkage_factor=shrinkage_factor,
@@ -310,12 +351,9 @@ class LaunchOrchestrator:
             granularity,
         )
 
-        # 2. Extract priors (always needed for all 4 modes)
-        _check_cancel()  # S-17: cooperative boundary before expensive step
+        _check_cancel()
         try:
-            raw_priors = extract_proxy_priors(
-                proxy.posterior_samples, proxy.media_cols
-            )
+            raw_priors = extract_proxy_priors(_posterior_samples, _media_cols)
         except ProxyExtractionError as exc:
             raise OrchestratorError(
                 f"Cannot extract proxy priors: {exc}"
@@ -323,16 +361,14 @@ class LaunchOrchestrator:
 
         shrunk_priors = shrink_proxy_priors(raw_priors, shrinkage_factor)
 
-        # 3. Proxy baseline for scale ratio
-        _check_cancel()  # S-17: cooperative boundary before normalization read
+        _check_cancel()
         try:
-            proxy_baseline = proxy_baseline_from_normalization(proxy.normalization)
+            proxy_baseline = proxy_baseline_from_normalization(_normalization)
         except ProxyExtractionError as exc:
             raise OrchestratorError(
                 f"Cannot read proxy baseline: {exc}"
             ) from exc
 
-        # 4. Build pure_transfer ChannelTransferParams (used by modes 1+2+fallback)
         channel_dicts = to_channel_transfer_params(
             shrunk_priors,
             similarity_factors=similarity_factors,
@@ -340,109 +376,37 @@ class LaunchOrchestrator:
         )
         channels = [ChannelTransferParams.model_validate(d) for d in channel_dicts]
 
-        # 5. Engine dispatch
-        _check_cancel()  # S-17: cooperative boundary before engine computation
-        forecast: TransferForecast | None = None
-        signature = "unknown"
+        _check_cancel()
+        forecast, signature = dispatch_engine(
+            mode=engine_config.mode,
+            channels=channels,
+            anchors=anchors,
+            spend_plan=spend_plan,
+            horizon_periods=horizon_periods,
+            granularity=granularity,
+            proxy_baseline=proxy_baseline,
+            coverage_target=coverage_target,
+            recipient_y=recipient_y,
+            warnings=warnings,
+            shrinkage_factor=shrinkage_factor,
+        )
 
-        if engine_config.mode == EngineMode.PURE_TRANSFER:
-            forecast = self._run_pure_transfer(
-                channels=channels,
-                anchors=anchors,
-                spend_plan=spend_plan,
-                horizon_periods=horizon_periods,
-                granularity=granularity,
-                proxy_baseline=proxy_baseline,
-                coverage_target=coverage_target,
+        if (
+            engine_config.mode == EngineMode.TRANSFER_WITH_BIAS_CHECK
+            and recipient_y is not None
+            and len(recipient_y) > 0
+        ):
+            bias_pct, bias_diagnostics = self._compute_bias_check(
+                forecast=forecast, recipient_y=recipient_y
             )
-            signature = "pure_transfer_v1"
-
-        elif engine_config.mode == EngineMode.TRANSFER_WITH_BIAS_CHECK:
-            # Mode 2: pure transfer + bias check vs observed y
-            forecast = self._run_pure_transfer(
-                channels=channels,
-                anchors=anchors,
-                spend_plan=spend_plan,
-                horizon_periods=horizon_periods,
-                granularity=granularity,
-                proxy_baseline=proxy_baseline,
-                coverage_target=coverage_target,
-            )
-            if recipient_y is not None and len(recipient_y) > 0:
-                bias_pct, bias_diagnostics = self._compute_bias_check(
-                    forecast=forecast, recipient_y=recipient_y
-                )
-                if bias_diagnostics:
-                    warnings.extend(bias_diagnostics)
-                elif abs(bias_pct) > 30.0:
-                    warnings.append(
-                        f"Bias check: observed baseline deviates {bias_pct:.1f}% "
-                        f"from proxy expectation (>30% threshold). "
-                        f"Recipient may differ from proxy materially."
-                    )
-            else:
-                # PI2-M3 audit fix: explicit warning when Mode 2 selected but
-                # no recipient_y available for bias check.
+            if bias_diagnostics:
+                warnings.extend(bias_diagnostics)
+            elif abs(bias_pct) > 30.0:
                 warnings.append(
-                    "Mode 2 (TRANSFER_WITH_BIAS_CHECK) selected but recipient_y "
-                    "not provided — bias check skipped, falling back к pure transfer."
+                    f"Bias check: observed baseline deviates {bias_pct:.1f}% "
+                    f"from proxy expectation (>30% threshold). "
+                    f"Recipient may differ from proxy materially."
                 )
-            signature = "transfer_with_bias_check_v1"
-
-        elif engine_config.mode == EngineMode.OLS_WITH_PROXY_PRIORS:
-            # Mode 3: OLS+priors. Full impl в Phase Π.2.5. Current fallback:
-            # pure_transfer с tighter similarity_inflation (because we have
-            # observed y to anchor variance — reduces uncertainty conservatively).
-            warnings.append(
-                "OLS+priors fallback к pure_transfer с tighter inflation "
-                "(full OLS-with-proxy-priors will be wired в Phase Π.2.5)."
-            )
-            tighter_inflations = {
-                ch.channel_id: ch.similarity_inflation * 0.7
-                for ch in channels
-            }
-            tightened_channels = [
-                ChannelTransferParams(
-                    channel_id=c.channel_id,
-                    proxy_beta_mean=c.proxy_beta_mean,
-                    proxy_beta_std=c.proxy_beta_std,
-                    adstock_decay=c.adstock_decay,
-                    hill_alpha=c.hill_alpha,
-                    hill_half_saturation=c.hill_half_saturation,
-                    similarity_factor=c.similarity_factor,
-                    similarity_inflation=tighter_inflations[c.channel_id],
-                )
-                for c in channels
-            ]
-            forecast = self._run_pure_transfer(
-                channels=tightened_channels,
-                anchors=anchors,
-                spend_plan=spend_plan,
-                horizon_periods=horizon_periods,
-                granularity=granularity,
-                proxy_baseline=proxy_baseline,
-                coverage_target=coverage_target,
-            )
-            signature = "ols_with_proxy_priors_fallback_v1"
-
-        elif engine_config.mode == EngineMode.BAYESIAN_WITH_PROXY_PRIORS:
-            # Mode 4: Bayesian+priors. Full impl в Phase Π.2.6 (refactor
-            # bayesian_engine to accept informative β priors from caller).
-            # Current fallback: pure_transfer.
-            warnings.append(
-                "Bayesian+priors fallback к pure_transfer (Phase Π.2.6 will "
-                "fully wire informative-prior Bayesian path)."
-            )
-            forecast = self._run_pure_transfer(
-                channels=channels,
-                anchors=anchors,
-                spend_plan=spend_plan,
-                horizon_periods=horizon_periods,
-                granularity=granularity,
-                proxy_baseline=proxy_baseline,
-                coverage_target=coverage_target,
-            )
-            signature = "bayesian_with_proxy_priors_fallback_v1"
 
         return OrchestrationResult(
             engine_config=engine_config,
@@ -453,63 +417,24 @@ class LaunchOrchestrator:
         )
 
     @staticmethod
-    def _run_pure_transfer(
-        *,
-        channels: list[ChannelTransferParams],
-        anchors: RecipientAnchors,
-        spend_plan: dict[str, list[float]],
-        horizon_periods: int,
-        granularity: Granularity,
-        proxy_baseline: float,
-        coverage_target: float,
-    ) -> TransferForecast:
-        inputs = TransferInputs(
-            granularity=granularity,
-            horizon_periods=horizon_periods,
-            channels=channels,
-            anchors=anchors,
-            spend_plan=spend_plan,
-            proxy_baseline_mean=proxy_baseline,
-            coverage_target=coverage_target,
-        )
-        return forecast_pure_transfer(inputs)
-
-    @staticmethod
     def _compute_bias_check(
         forecast: TransferForecast, recipient_y: list[float]
     ) -> tuple[float, list[str]]:
-        """Compare observed y mean vs predicted point forecast mean.
-
-        Returns: (bias_pct, diagnostics). bias_pct = relative bias в % (positive
-        = observed > predicted). diagnostics — non-empty if bias check could
-        not be performed cleanly (e.g., degenerate predicted_mean=0).
-
-        PI2-B4 audit fix: degenerate predicted_mean=0 now returns diagnostic
-        warning rather than silently returning 0.0 (which would suppress
-        any user-visible bias signal).
-        """
-        import math  # noqa: PLC0415 — local import к keep top-level light
+        import math
 
         if not forecast.points or not recipient_y:
             return 0.0, []
         n = min(len(recipient_y), len(forecast.points))
         observed_mean = sum(recipient_y[:n]) / n
         predicted_mean = sum(p.point_forecast for p in forecast.points[:n]) / n
-        # PI-RESCUE-07 audit fix: NaN/inf bypass detection — previously `abs(NaN) < 1e-6`
-        # evaluated False, falling through к division by NaN → bias_pct = NaN, then
-        # `abs(NaN) > 30.0` also False → bias warning silently suppressed.
         if not math.isfinite(predicted_mean):
             return 0.0, [
                 "Bias check inconclusive: predicted_mean is NaN or inf (degenerate forecast). "
-                "Review anchors, proxy similarity, и spend plan for invalid values."
+                "Review anchors, proxy similarity, and spend plan for invalid values."
             ]
-        # R-11 audit fix: ε threshold вместо exact-zero check.
-        # Previous `if predicted_mean == 0` missed near-zero values (e.g. 1e-10
-        # from float64 underflow) which then produced 30000000% bias spike.
-        # Threshold 1e-6 chosen relative к minimal realistic sales value.
         if abs(predicted_mean) < 1e-6:
             return 0.0, [
-                "Bias check inconclusive: predicted_mean ≈ 0 (degenerate forecast). "
+                "Bias check inconclusive: predicted_mean approx 0 (degenerate forecast). "
                 f"Observed mean = {observed_mean:.4g}. Review anchors + proxy similarity."
             ]
         return 100.0 * (observed_mean - predicted_mean) / predicted_mean, []

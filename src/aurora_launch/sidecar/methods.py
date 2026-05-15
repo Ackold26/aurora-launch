@@ -39,6 +39,11 @@ from typing import Any, Callable
 
 from aurora_launch import __version__
 from aurora_launch.sidecar import events
+from aurora_launch.sidecar.protocol_version import (
+    MIN_COMPATIBLE_RUST,
+    PROTOCOL_VERSION,
+    negotiate as _protocol_negotiate,
+)
 
 # ─── Method registry ──────────────────────────────────────────────────────────
 
@@ -322,7 +327,37 @@ class MethodNotFoundError(LookupError):
 
 @register("ping")
 def _ping(_params: dict[str, Any]) -> dict[str, Any]:
-    return {"pong": True, "version": __version__, "methods": list_methods()}
+    return {
+        "pong": True,
+        "version": __version__,
+        "protocol_version": list(PROTOCOL_VERSION),
+        "min_compatible_rust": list(MIN_COMPATIBLE_RUST),
+        "methods": list_methods(),
+    }
+
+
+@register("negotiate")
+def _negotiate(params: dict[str, Any]) -> dict[str, Any]:
+    """Version negotiation handshake.
+
+    Rust shell calls this at startup to confirm compatibility before issuing
+    any other methods.  See protocol_version.negotiate() for contract details.
+
+    Params:
+      - rust_version: str — Rust Tauri shell semver (e.g. "0.1.0")
+    Returns:
+      - compatible: bool
+      - reason: str | None
+      - advice: str | None
+    """
+    rust_version = str(params.get("rust_version", "")).strip()
+    if not rust_version:
+        return {
+            "compatible": False,
+            "reason": "rust_version param missing or empty",
+            "advice": "Pass rust_version as the Tauri shell semver string.",
+        }
+    return _protocol_negotiate(rust_version)
 
 
 # ─── Phase Π.3b: ProjectDB handlers ─────────────────────────────────────────
