@@ -3,11 +3,13 @@
   import { onMount } from 'svelte';
   import { _, isLoading } from 'svelte-i18n';
   import { fly } from 'svelte/transition';
+  import { goto } from '$app/navigation';
+  import { page } from '$app/state';
 
   import { initI18n } from '$lib/i18n';
   import { themeMode, resolvedTheme } from '$lib/stores/theme';
   import { refreshLicense, licenseStatus } from '$lib/stores/license';
-  import { activeBundle } from '$lib/stores/bundle';
+  import { activeBundle, isDirty, lastSavedAt, saveBundleTo } from '$lib/stores/bundle';
   import { ipc } from '$ipc/client';
   import { pushToast } from '$lib/stores/toast';
   import { track, initTelemetryInternal } from '$lib/services/telemetry';
@@ -16,11 +18,78 @@
   import PerfFooter from '$lib/components/PerfFooter.svelte';
   import Badge from '$lib/components/Badge.svelte';
   import SaveIndicator from '$lib/components/SaveIndicator.svelte';
+  import CommandPalette from '$lib/components/CommandPalette.svelte';
 
   let { children } = $props();
 
   let feedbackOpen = $state(false);
   let feedbackText = $state('');
+  let commandPaletteOpen = $state(false);
+  let saving = $state(false);
+
+  // PA-A02 fix: derive SaveIndicator state from bundle stores (was hardcoded "unsaved")
+  const saveState = $derived.by<'saved' | 'saving' | 'unsaved'>(() => {
+    if (saving) return 'saving';
+    if ($isDirty) return 'unsaved';
+    if ($lastSavedAt) return 'saved';
+    return 'unsaved';
+  });
+
+  // PA-A04 fix: CommandPalette mounted с registry of universal actions
+  const commands = $derived([
+    {
+      id: 'nav-welcome',
+      label: 'К списку проектов',
+      description: 'Главный экран — выбор сценария',
+      category: 'Навигация',
+      action: () => goto('/'),
+    },
+    {
+      id: 'nav-wizard',
+      label: 'Открыть мастер',
+      description: 'Пошаговое создание прогноза',
+      category: 'Навигация',
+      action: () => goto('/wizard'),
+    },
+    {
+      id: 'nav-inspector',
+      label: 'Инспектор',
+      description: 'Просмотр содержимого .aurora bundle',
+      category: 'Навигация',
+      action: () => goto('/inspector'),
+    },
+    {
+      id: 'nav-history',
+      label: 'История',
+      description: 'Журнал действий + телеметрия',
+      category: 'Навигация',
+      action: () => goto('/history'),
+    },
+    {
+      id: 'nav-settings',
+      label: 'Настройки',
+      description: 'Тема, локаль, телеметрия',
+      category: 'Настройки',
+      action: () => goto('/settings'),
+    },
+    {
+      id: 'nav-onboarding',
+      label: 'Снова показать обучение',
+      description: '5-слайдовый тур с примерами',
+      category: 'Помощь',
+      action: () => goto('/onboarding'),
+    },
+    {
+      id: 'feedback-open',
+      label: 'Отправить обратную связь',
+      description: 'Открыть форму обратной связи (Cmd+Shift+F)',
+      shortcut: 'Cmd+Shift+F',
+      category: 'Помощь',
+      action: () => {
+        feedbackOpen = true;
+      },
+    },
+  ]);
 
   initI18n();
 
@@ -41,12 +110,33 @@
       console.debug('[telemetry] app_open failed', e);
     }
 
-    // Cmd+Shift+F → in-app feedback (PREMIUM P10)
+    // PA-A14 fix: First-run onboarding gate. Redirect к /onboarding если
+    // user never seen it. /onboarding sets localStorage `aurora.onboarded`=1.
+    try {
+      const onboarded = window.localStorage.getItem('aurora.onboarded');
+      const currentPath = page.url.pathname;
+      // Only redirect from welcome page (/) — preserve direct deep-links.
+      if (!onboarded && currentPath === '/') {
+        await goto('/onboarding');
+      }
+    } catch {
+      // localStorage may be disabled (private browsing, Tauri restrictions) — skip gate
+    }
+
+    // Keyboard shortcuts: Cmd/Ctrl+K (palette), Cmd/Ctrl+Shift+F (feedback).
     function onKey(e: KeyboardEvent) {
       const isMod = e.metaKey || e.ctrlKey;
+      // Cmd+Shift+F → in-app feedback (PREMIUM P10)
       if (isMod && e.shiftKey && (e.key === 'F' || e.key === 'f' || e.code === 'KeyF')) {
         e.preventDefault();
         feedbackOpen = true;
+        return;
+      }
+      // PA-A04 fix: Cmd+K → command palette toggle (do not block Cmd+Shift+K)
+      if (isMod && !e.shiftKey && (e.key === 'k' || e.key === 'K' || e.code === 'KeyK')) {
+        e.preventDefault();
+        commandPaletteOpen = !commandPaletteOpen;
+        return;
       }
       if (e.key === 'Escape' && feedbackOpen) {
         feedbackOpen = false;
@@ -55,6 +145,10 @@
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   });
+
+  function closeCommandPalette() {
+    commandPaletteOpen = false;
+  }
 
   async function submitFeedback() {
     if (!feedbackText.trim()) return;
@@ -116,12 +210,15 @@
     {/if}
   </main>
 
-  <!-- TODO: wire to wizard save state in Phase Premium P-02 follow-up -->
+  <!-- PA-A02 fix: SaveIndicator state derived from bundle stores. -->
   <div class="app-footer">
-    <SaveIndicator state="unsaved" lastSavedAt={null} />
+    <SaveIndicator state={saveState} lastSavedAt={$lastSavedAt} />
     <PerfFooter />
   </div>
   <Toaster />
+
+  <!-- PA-A04 fix: CommandPalette mounted globally; Cmd+K toggle wired в onKey. -->
+  <CommandPalette {commands} open={commandPaletteOpen} onClose={closeCommandPalette} />
 
   {#if feedbackOpen}
     <div

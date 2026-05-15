@@ -123,35 +123,37 @@
           <li class="palette-empty" role="presentation">Ничего не найдено</li>
         {:else}
           {#each filteredCommands as cmd, i (cmd.id)}
+            <!--
+              PA-A05 fix: WAI-ARIA 1.2 §6.6.11 — <li role="option"> must not
+              contain interactive children (button) because that breaks
+              activedescendant focus model. Click + mouseenter handlers attach
+              directly to the <li>. Keyboard activation drives через combobox
+              input + aria-activedescendant pointing here.
+            -->
             <li
               id={optionId(cmd.id)}
               class="palette-item"
               class:selected={i === selectedIndex}
               role="option"
               aria-selected={i === selectedIndex}
+              onclick={() => {
+                void cmd.action();
+                onClose();
+              }}
+              onmouseenter={() => (selectedIndex = i)}
             >
-              <button
-                type="button"
-                class="palette-item-button"
-                onclick={() => {
-                  void cmd.action();
-                  onClose();
-                }}
-                onmouseenter={() => (selectedIndex = i)}
-              >
-                {#if cmd.icon}
-                  <span class="palette-item-icon" aria-hidden="true">{cmd.icon}</span>
+              {#if cmd.icon}
+                <span class="palette-item-icon" aria-hidden="true">{cmd.icon}</span>
+              {/if}
+              <div class="palette-item-content">
+                <div class="palette-item-label">{cmd.label}</div>
+                {#if cmd.description}
+                  <div class="palette-item-description">{cmd.description}</div>
                 {/if}
-                <div class="palette-item-content">
-                  <div class="palette-item-label">{cmd.label}</div>
-                  {#if cmd.description}
-                    <div class="palette-item-description">{cmd.description}</div>
-                  {/if}
-                </div>
-                {#if cmd.shortcut}
-                  <kbd class="palette-item-shortcut">{cmd.shortcut}</kbd>
-                {/if}
-              </button>
+              </div>
+              {#if cmd.shortcut}
+                <kbd class="palette-item-shortcut">{cmd.shortcut}</kbd>
+              {/if}
             </li>
           {/each}
         {/if}

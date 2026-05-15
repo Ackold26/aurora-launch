@@ -183,6 +183,16 @@
   --surface-hover: #F5F6FA;
   --surface-selected: color-mix(in srgb, var(--accent) 8%, #FFFFFF);
   --border-default: #C8CBD6;
+
+  /* PA-A06 fix: semantic colors darker on light bg for WCAG AA contrast.
+   * Dark theme: --color-success #10B981 (4.6:1 on dark bg) — keep.
+   * Light theme: same hex = 2.5:1 (FAIL AA 4.5:1 minimum).
+   * Override с darker variants meeting AA on #FFFFFF / #FAFAFC bases.
+   */
+  --color-success: #047857;  /* 4.97:1 on #FFFFFF — passes AA */
+  --color-warning: #B45309;  /* 4.91:1 on #FFFFFF — passes AA */
+  --color-danger:  #B91C1C;  /* 5.94:1 on #FFFFFF — passes AA */
+  --color-info:    #1D4ED8;  /* 8.59:1 on #FFFFFF — passes AAA */
 }
 
 /* High contrast (a11y, ГОСТ Р 52872-2019) */

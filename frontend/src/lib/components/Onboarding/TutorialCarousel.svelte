@@ -17,6 +17,7 @@
 
 <script lang="ts">
   import { _ } from 'svelte-i18n';
+  import { fadeIn } from '$lib/services/motion';
 
   interface Slide {
     title: string;
@@ -109,13 +110,17 @@
     </button>
   </header>
 
-  <article class="slide" role="tabpanel" aria-live="polite">
-    {#if currentSlide?.icon}
-      <div class="slide-icon" aria-hidden="true">{currentSlide.icon}</div>
-    {/if}
-    <h2 class="slide-title">{currentSlide?.title}</h2>
-    <p class="slide-body">{currentSlide?.body}</p>
-  </article>
+  <!-- PA-A01 fix: {#key} + in:fadeIn так slide-change triggers transition.
+       Svelte 5 transitions fire on mount/unmount; #key remounts on slide change. -->
+  {#key currentIndex}
+    <article in:fadeIn={{ duration: 180 }} class="slide" role="tabpanel" aria-live="polite">
+      {#if currentSlide?.icon}
+        <div class="slide-icon" aria-hidden="true">{currentSlide.icon}</div>
+      {/if}
+      <h2 class="slide-title">{currentSlide?.title}</h2>
+      <p class="slide-body">{currentSlide?.body}</p>
+    </article>
+  {/key}
 
   <footer class="tutorial-footer">
     <button

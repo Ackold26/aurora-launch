@@ -3,6 +3,44 @@ import { vi } from 'vitest';
 
 import { __setInvokeForTesting } from '../../src/lib/ipc/client';
 
+// jsdom polyfills.
+// 1) matchMedia: motion service prefersReducedMotion() relies on it. Mock к
+//    return reduced=true so Svelte transitions short-circuit к no-op (avoids
+//    element.animate() call which jsdom does not implement).
+if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: (query: string) => ({
+      matches: query.includes('prefers-reduced-motion: reduce'),
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }),
+  });
+}
+
+// 2) Element.prototype.animate: Svelte 5 transitions invoke it for CSS
+//    keyframes. jsdom lacks Web Animations API. Stub returns an Animation-
+//    like object с finished/cancel methods so transitions complete без error.
+if (typeof Element !== 'undefined' && typeof Element.prototype.animate !== 'function') {
+  (Element.prototype as unknown as { animate: () => unknown }).animate = function () {
+    return {
+      cancel: () => {},
+      finish: () => {},
+      finished: Promise.resolve(),
+      onfinish: null,
+      pause: () => {},
+      play: () => {},
+      currentTime: 0,
+      playState: 'finished',
+    };
+  };
+}
+
 // Initialise i18n with Russian locale so $_ works in component tests.
 // Force 'ru' directly — jsdom navigator.language is 'en', which would
 // otherwise pick English and break Russian-text assertions.

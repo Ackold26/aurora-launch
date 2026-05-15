@@ -19,6 +19,8 @@
 -->
 
 <script lang="ts">
+  import { fadeIn } from '$lib/services/motion';
+
   interface Action {
     label: string;
     onClick: () => void;
@@ -45,7 +47,9 @@
   }: Props = $props();
 </script>
 
+<!-- PA-A01 fix: motion service wired — fadeIn used here (was zero usage) -->
 <section
+  in:fadeIn={{ duration: 220 }}
   class="empty-state"
   class:compact
   role="status"

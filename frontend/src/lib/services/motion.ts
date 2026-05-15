@@ -52,7 +52,14 @@ export interface TransitionResult {
  */
 export function prefersReducedMotion(): boolean {
   if (typeof window === 'undefined') return false;
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // jsdom (Vitest) may not implement matchMedia. Defensive guard so
+  // motion service usage doesn't crash test suites.
+  if (typeof window.matchMedia !== 'function') return false;
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------

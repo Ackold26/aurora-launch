@@ -46,9 +46,9 @@
       {:else if entries.length === 0}
         <EmptyState
           icon="📂"
-          title="Журнал пока пуст"
-          body="История действий в приложении появится здесь — открытие проектов, сохранения, экспорт. Это хранится локально и никуда не отправляется."
-          primaryAction={{ label: 'К списку проектов', onClick: () => goto('/') }}
+          title={$_('history.audit.empty.title')}
+          body={$_('history.audit.empty.body')}
+          primaryAction={{ label: $_('history.audit.empty.action'), onClick: () => goto('/') }}
         />
       {:else}
         <ol class="timeline">
@@ -78,9 +78,9 @@
         <EmptyState
           compact
           icon="📊"
-          title="Метрик пока нет"
-          body="Чтобы начать собирать — включите телеметрию в Настройках."
-          primaryAction={{ label: 'Открыть Настройки', onClick: () => goto('/settings') }}
+          title={$_('history.telemetry.empty.title')}
+          body={$_('history.telemetry.empty.body')}
+          primaryAction={{ label: $_('history.telemetry.empty.action'), onClick: () => goto('/settings') }}
         />
       {:else}
         <ul class="events">

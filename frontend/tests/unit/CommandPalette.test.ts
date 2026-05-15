@@ -168,12 +168,14 @@ describe('CommandPalette', () => {
 
   // ---------- item click ----------
 
-  it('click item button → action executed + onClose called', async () => {
+  it('click item → action executed + onClose called', async () => {
+    // PA-A05 refactor: items are <li role="option"> directly (no inner button)
+    // per WAI-ARIA 1.2 §6.6.11. Click handler attaches to li.
     const onClose = vi.fn();
     const commands = freshCommands();
     render(CommandPalette, { commands, open: true, onClose });
-    const itemButtons = screen.getAllByRole('button');
-    await fireEvent.click(itemButtons[0]);
+    const items = screen.getAllByRole('option');
+    await fireEvent.click(items[0]);
     expect(commands[0].action).toHaveBeenCalledOnce();
     expect(onClose).toHaveBeenCalledOnce();
   });
@@ -251,11 +253,11 @@ describe('CommandPalette', () => {
   // ---------- mouse hover ----------
 
   it('mouseenter on item → that item becomes selected', async () => {
+    // PA-A05: mouseenter handler now on <li role="option"> directly
     render(CommandPalette, defaultProps());
     const items = screen.getAllByRole('option');
     // Hover over the third item (index 2)
-    const thirdItemBtn = items[2].querySelector('button')!;
-    await fireEvent.mouseEnter(thirdItemBtn);
+    await fireEvent.mouseEnter(items[2]);
     expect(items[2].getAttribute('aria-selected')).toBe('true');
     expect(items[0].getAttribute('aria-selected')).toBe('false');
   });
