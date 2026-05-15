@@ -209,25 +209,31 @@ class TestApplyPendingMigrations:
 
 class TestProjectDBIntegration:
     def test_real_v001_initial_applies(self, tmp_path: Path) -> None:
-        """Verify real Aurora Launch v001_initial.sql applies cleanly through migrator."""
+        """Verify real Aurora Launch migrations apply cleanly through ProjectDB.
+
+        Updated for v002 (S-07 gc_metadata): version is now 2 after open.
+        """
         from aurora_launch.persistence.blob_store import BlobStore
-        from aurora_launch.persistence.project_db import ProjectDB
+        from aurora_launch.persistence.project_db import CURRENT_SCHEMA_VERSION, ProjectDB
 
         bs_dir = tmp_path / "blobs"
         bs_dir.mkdir()
         bs = BlobStore(bs_dir)
         db = ProjectDB(tmp_path / "projects.db", bs)
         try:
-            # Migrator ran in __init__. Version should be 1.
+            # Migrator ran in __init__. Version should match CURRENT_SCHEMA_VERSION.
             row = db._conn.execute("SELECT MAX(version) AS v FROM schema_version").fetchone()
-            assert row["v"] == 1
-            # Tables exist
+            assert row["v"] == CURRENT_SCHEMA_VERSION
+            # Core tables exist (v001) + gc_metadata (v002)
             tables = {
                 r["name"]
                 for r in db._conn.execute(
                     "SELECT name FROM sqlite_master WHERE type='table'"
                 ).fetchall()
             }
-            assert {"projects", "versions", "version_files", "blobs", "schema_version"} <= tables
+            assert {
+                "projects", "versions", "version_files", "blobs",
+                "schema_version", "gc_metadata",
+            } <= tables
         finally:
             db.close()

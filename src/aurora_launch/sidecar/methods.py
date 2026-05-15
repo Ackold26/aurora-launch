@@ -46,6 +46,8 @@ from aurora_launch.sidecar import events
 _METHODS: dict[str, Callable[[dict[str, Any]], Any]] = {}
 _cancel_flags: dict[str, threading.Event] = {}
 _forecast_threads: dict[str, threading.Thread] = {}
+_integrity_threads: dict[str, threading.Thread] = {}
+_integrity_cancel_flags: dict[str, threading.Event] = {}
 
 
 # ─── ProjectDB singleton ──────────────────────────────────────────────────────
@@ -65,6 +67,22 @@ _PROJECT_DB_LOCK = threading.Lock()
 # wired в Phase Premium) will call start_autosave/stop_autosave per project.
 _AUTOSAVE: Any = None  # AutosaveManager | None
 _AUTOSAVE_LOCK = threading.Lock()
+
+# ─── Periodic GC thread singleton (S-07) ─────────────────────────────────────
+# Daemon thread that wakes every GC_POLL_INTERVAL_S to check whether 7 days
+# have passed since the last gc run. ProjectDB._maybe_gc_on_open() handles the
+# startup-time trigger; this thread covers the "sidecar stays alive > 7 days"
+# case. Thread is daemon so it exits with the process without explicit join.
+_GC_THREAD: threading.Thread | None = None
+_GC_THREAD_LOCK = threading.Lock()
+_GC_STOP_EVENT: threading.Event = threading.Event()
+
+# How often the GC thread wakes to check. 1 hour is fine — 7-day window means
+# worst-case skew is 1 hour, which is acceptable. Sleeping in short intervals
+# (rather than one 7-day sleep) allows clean daemon shutdown without blocking.
+GC_POLL_INTERVAL_S: float = 3600.0  # 1 hour
+# GC threshold in seconds, mirrors ProjectDB.GC_INTERVAL_SECONDS.
+GC_INTERVAL_S: float = 7 * 24 * 3600.0  # 7 days
 
 
 def _get_autosave_manager() -> Any:
@@ -188,11 +206,91 @@ def _get_project_db() -> Any:
                 encryption_key=encryption_key,
             )
             _PROJECT_DB = db
+            # S-07: spawn periodic GC thread lazily alongside ProjectDB init.
+            _start_gc_thread()
             return _PROJECT_DB
         except Exception as exc:
             raise SidecarStorageError(
                 f"Cannot initialize ProjectDB: {exc}"
             ) from exc
+
+
+def _gc_thread_body() -> None:
+    """Periodic GC worker. Runs while sidecar is alive (daemon thread).
+
+    S-07: checks every GC_POLL_INTERVAL_S whether 7 days have elapsed since
+    last gc_orphan_blobs run. If so, runs GC via ProjectDB and updates metadata.
+    Exits cleanly when _GC_STOP_EVENT is set (shutdown path).
+
+    Sleeps in 60-second slices so the thread wakes promptly on stop event even
+    when GC_POLL_INTERVAL_S is large. This avoids a 1-hour join delay during
+    shutdown without using threading.Timer (which is harder to cancel cleanly).
+    """
+    import logging as _logging
+    _gc_log = _logging.getLogger(__name__ + ".gc_thread")
+    _gc_log.info("GC background thread started (poll_interval=%ss)", GC_POLL_INTERVAL_S)
+
+    _SLICE_S = 60.0  # wake every 60s to check stop event
+    elapsed_since_check: float = 0.0
+
+    while not _GC_STOP_EVENT.is_set():
+        _GC_STOP_EVENT.wait(timeout=min(_SLICE_S, GC_POLL_INTERVAL_S))
+        if _GC_STOP_EVENT.is_set():
+            break
+        elapsed_since_check += _SLICE_S
+        if elapsed_since_check < GC_POLL_INTERVAL_S:
+            continue
+        elapsed_since_check = 0.0
+
+        # Time to check — only run GC if ProjectDB is initialised.
+        if _PROJECT_DB is None:
+            continue
+
+        try:
+            from datetime import datetime, timezone
+
+            last_ran_at, _ = _PROJECT_DB.get_gc_metadata()
+            run_gc = last_ran_at is None
+            if not run_gc and last_ran_at is not None:
+                last_dt = datetime.fromisoformat(last_ran_at.replace("Z", "+00:00"))
+                elapsed_s = (datetime.now(timezone.utc) - last_dt).total_seconds()
+                run_gc = elapsed_s >= GC_INTERVAL_S
+
+            if run_gc:
+                _gc_log.info("Periodic GC: running gc_orphan_blobs")
+                collected = _PROJECT_DB.gc_orphan_blobs()
+                _PROJECT_DB._update_gc_metadata(collected)  # noqa: SLF001
+                _gc_log.info("Periodic GC: collected %d orphan(s)", collected)
+        except (ValueError, TypeError) as exc:
+            _gc_log.warning("GC thread: metadata parse error: %s", exc)
+        except Exception as exc:  # noqa: BLE001
+            _gc_log.warning("GC thread: unexpected error (non-fatal): %s", exc)
+
+    _gc_log.info("GC background thread stopped")
+
+
+def _start_gc_thread() -> None:
+    """Spawn the periodic GC daemon thread if not already running (S-07).
+
+    Per INV-04 lazy thread spawn: called once from _get_project_db() after
+    ProjectDB is initialised. Idempotent (double-checked locking).
+    """
+    global _GC_THREAD  # noqa: PLW0603
+
+    if _GC_THREAD is not None and _GC_THREAD.is_alive():
+        return
+
+    with _GC_THREAD_LOCK:
+        if _GC_THREAD is not None and _GC_THREAD.is_alive():
+            return
+        _GC_STOP_EVENT.clear()
+        t = threading.Thread(
+            target=_gc_thread_body,
+            name="aurora-gc-periodic",
+            daemon=True,
+        )
+        _GC_THREAD = t
+        t.start()
 
 
 def register(name: str):
@@ -1174,6 +1272,128 @@ def _compute_trust_score(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# ─── S-08: async integrity check ─────────────────────────────────────────────
+
+
+@register("start_integrity_check")
+def _start_integrity_check(_params: dict[str, Any]) -> dict[str, Any]:
+    """Run ProjectDB.check_integrity() in a background thread. Non-blocking.
+
+    S-08: for large DBs the full integrity scan (PRAGMA integrity_check + blob
+    filesystem walk) can take seconds. Running async keeps the IPC loop free.
+
+    Emits events:
+      - integrity_check_progress: {"handle", "phase", "detail"} during scan
+      - integrity_check_completed: {"handle", "report"} on success
+      - integrity_check_failed: {"handle", "error"} on error
+
+    Returns:
+      - integrity_handle: str (UUID) — for cancel correlation
+    """
+    handle = str(uuid.uuid4())
+    cancel = threading.Event()
+    _integrity_cancel_flags[handle] = cancel
+
+    def runner() -> None:
+        try:
+            events.emit(
+                "integrity_check_progress",
+                {
+                    "integrity_handle": handle,
+                    "phase": "starting",
+                    "detail": "Acquiring ProjectDB reference",
+                },
+            )
+
+            if cancel.is_set():
+                events.emit(
+                    "integrity_check_cancelled",
+                    {"integrity_handle": handle},
+                )
+                return
+
+            # DB reads happen in the runner thread — check_integrity() is
+            # read-only (no writes) so sqlite3 check_same_thread is safe when
+            # ProjectDB was opened with isolation_level=None (autocommit WAL).
+            db = _get_project_db()
+
+            if cancel.is_set():
+                events.emit(
+                    "integrity_check_cancelled",
+                    {"integrity_handle": handle},
+                )
+                return
+
+            events.emit(
+                "integrity_check_progress",
+                {
+                    "integrity_handle": handle,
+                    "phase": "scanning",
+                    "detail": "Running blob + ref-count checks",
+                },
+            )
+
+            report = db.check_integrity()
+
+            if cancel.is_set():
+                events.emit(
+                    "integrity_check_cancelled",
+                    {"integrity_handle": handle},
+                )
+                return
+
+            events.emit(
+                "integrity_check_completed",
+                {
+                    "integrity_handle": handle,
+                    "report": report,
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            try:
+                events.emit(
+                    "integrity_check_failed",
+                    {
+                        "integrity_handle": handle,
+                        "error": str(exc),
+                        "kind": type(exc).__name__,
+                    },
+                )
+            except (OSError, ValueError):
+                pass
+        finally:
+            _integrity_cancel_flags.pop(handle, None)
+            _integrity_threads.pop(handle, None)
+
+    thread = threading.Thread(
+        target=runner,
+        name=f"aurora-integrity-{handle[:8]}",
+        daemon=True,
+    )
+    _integrity_threads[handle] = thread
+    thread.start()
+
+    return {"integrity_handle": handle}
+
+
+@register("cancel_integrity_check")
+def _cancel_integrity_check(params: dict[str, Any]) -> dict[str, Any]:
+    """Cooperative cancel of a running integrity check.
+
+    Sets the cancel flag; the runner thread exits at its next cancellation
+    boundary. Mirrors cancel_forecast (D5: no SIGINT, no terminate).
+
+    Params: integrity_handle: str
+    Returns: {"cancelled": bool}
+    """
+    handle = str(params.get("integrity_handle", ""))
+    flag = _integrity_cancel_flags.get(handle)
+    if flag is None:
+        return {"cancelled": False, "reason": "handle not found or already finished"}
+    flag.set()
+    return {"cancelled": True, "integrity_handle": handle}
+
+
 # ─── Lifecycle ────────────────────────────────────────────────────────────────
 
 
@@ -1234,6 +1454,25 @@ def _shutdown(_params: dict[str, Any]) -> dict[str, Any]:
             forecasts_timed_out.append(handle)
         else:
             forecasts_joined.append(handle)
+
+    # Cancel any in-flight async integrity checks (S-08) — same cooperative pattern.
+    integrity_handles = list(_integrity_threads.keys())
+    for ihandle in integrity_handles:
+        iflag = _integrity_cancel_flags.get(ihandle)
+        if iflag is not None:
+            iflag.set()
+    for ihandle in integrity_handles:
+        ithread = _integrity_threads.get(ihandle)
+        if ithread is not None:
+            ithread.join(timeout=_SHUTDOWN_PER_FORECAST_TIMEOUT_S)
+
+    # Stop periodic GC thread (S-07).
+    _GC_STOP_EVENT.set()
+    global _GC_THREAD  # noqa: PLW0603
+    with _GC_THREAD_LOCK:
+        if _GC_THREAD is not None and _GC_THREAD.is_alive():
+            _GC_THREAD.join(timeout=10.0)
+        _GC_THREAD = None
 
     # Close AutosaveManager singleton (cancels timers, clears session marker).
     # Audit A-05 fix: explicit shutdown path so SIGTERM handler isn't only

@@ -55,10 +55,18 @@ class TestSensitivityGrid:
         # forecast = 1M × 1.10 = 1.1M
         assert abs(point.point_forecast_total - 1_100_000.0) < 1.0
 
-    def test_lookup_closest_level(self) -> None:
+    def test_lookup_interpolates_between_levels(self) -> None:
+        # S-16: default interpolate=True — returns synthetic point at requested level.
         grid = compute_sensitivity_grid(_mock_forecast_fn)
-        # 0.07 closest к 0.05 (proxy_similarity levels: -0.20 -0.10 0 0.05 0.10)
+        # 0.07 lies between precomputed levels 0.05 and 0.10 → interpolated
         point = grid.lookup("proxy_similarity", 0.07)
+        assert abs(point.level - 0.07) < 1e-9
+
+    def test_lookup_nearest_when_interpolate_false(self) -> None:
+        # S-16: interpolate=False → legacy nearest-neighbour snap.
+        # 0.07 is closer to 0.05 than to 0.10.
+        grid = compute_sensitivity_grid(_mock_forecast_fn)
+        point = grid.lookup("proxy_similarity", 0.07, interpolate=False)
         assert abs(point.level - 0.05) < 1e-9
 
     def test_lookup_unknown_dimension_raises(self) -> None:

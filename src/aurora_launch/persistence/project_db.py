@@ -40,7 +40,10 @@ from aurora_launch.persistence.blob_store import BlobStore, BlobStoreError
 _log = logging.getLogger(__name__)
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
-CURRENT_SCHEMA_VERSION = 1  # bump as migrations are added
+CURRENT_SCHEMA_VERSION = 2  # bump as migrations are added
+
+# GC runs automatically on open if last run was more than this many seconds ago.
+GC_INTERVAL_SECONDS: int = 7 * 24 * 3600  # 7 days
 
 Granularity = str  # 'monthly' | 'weekly' — runtime check, not Literal (sqlite3 doesn't know Literal)
 ALLOWED_GRANULARITIES = frozenset({"monthly", "weekly"})
@@ -191,12 +194,14 @@ class ProjectDB:
                 str(self.db_path),
                 isolation_level=None,
                 detect_types=0,
+                check_same_thread=False,  # WAL + read-only background threads (S-08 integrity check)
             )
             self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode = WAL")
         self._conn.execute("PRAGMA synchronous = NORMAL")
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._apply_schema()
+        self._maybe_gc_on_open()
 
     def _apply_schema(self) -> None:
         """Apply pending schema migrations via simple monotonic migrator (S-01).
@@ -692,6 +697,74 @@ class ProjectDB:
                 """,
                 (version_id, _utc_now_iso(), project_uuid),
             )
+
+    # ---- GC metadata (S-07) ------------------------------------------------
+
+    def get_gc_metadata(self) -> tuple[str | None, int]:
+        """Return (last_gc_ran_at ISO string | None, orphans_collected_total).
+
+        Reads the single row in gc_metadata (id=1). Always returns a tuple;
+        if table is empty for any reason, returns (None, 0).
+        """
+        row = self._conn.execute(
+            "SELECT last_gc_ran_at, orphans_collected_total FROM gc_metadata WHERE id = 1"
+        ).fetchone()
+        if row is None:
+            return None, 0
+        return row["last_gc_ran_at"], int(row["orphans_collected_total"] or 0)
+
+    def _update_gc_metadata(self, collected: int) -> None:
+        """Record a GC run: set last_gc_ran_at=now, increment orphans_collected_total.
+
+        Must be called OUTSIDE of an active transaction (opens its own).
+        """
+        now = _utc_now_iso()
+        with self._tx():
+            self._conn.execute(
+                """
+                UPDATE gc_metadata
+                SET last_gc_ran_at = ?,
+                    orphans_collected_total = orphans_collected_total + ?
+                WHERE id = 1
+                """,
+                (now, collected),
+            )
+
+    def _maybe_gc_on_open(self) -> None:
+        """Run gc_orphan_blobs() on open if last GC was more than GC_INTERVAL_SECONDS ago.
+
+        S-07: startup-time trigger. Safe to call during __init__ because schema
+        migration has already completed. Per INV-11: narrow except.
+        """
+        try:
+            last_ran_at, _ = self.get_gc_metadata()
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("Could not read gc_metadata on open: %s", exc)
+            return
+
+        should_run = False
+        if last_ran_at is None:
+            should_run = True
+        else:
+            try:
+                from datetime import datetime, timezone
+
+                last_dt = datetime.fromisoformat(last_ran_at.replace("Z", "+00:00"))
+                now_dt = datetime.now(timezone.utc)
+                elapsed = (now_dt - last_dt).total_seconds()
+                if elapsed >= GC_INTERVAL_SECONDS:
+                    should_run = True
+            except (ValueError, TypeError) as exc:
+                _log.warning("Cannot parse gc_metadata.last_gc_ran_at %r: %s", last_ran_at, exc)
+                should_run = True  # safe fallback: run GC
+
+        if should_run:
+            _log.info("ProjectDB open: triggering scheduled GC (last_gc_ran_at=%r)", last_ran_at)
+            try:
+                collected = self.gc_orphan_blobs()
+                self._update_gc_metadata(collected)
+            except Exception as exc:  # noqa: BLE001
+                _log.warning("Startup GC failed (non-fatal): %s", exc)
 
     # ---- Maintenance -------------------------------------------------------
 

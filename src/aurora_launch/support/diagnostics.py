@@ -38,8 +38,77 @@ class DiagnosticsError(RuntimeError):
     """Raised on diagnostics collection failure (IO error, permission)."""
 
 
-# Sensitive log markers — hash before bundling
+# ---------------------------------------------------------------------------
+# S-20: Redaction regex patterns (Phase Scale hardening)
+#
+# Strategy: conservative over-redaction is preferred to any leak.
+# Each pattern group is documented inline.  All use stdlib `re` only.
+# Patterns are applied in order; later patterns do NOT depend on earlier ones.
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+# ① Legacy marker-based redaction (kept for backward compat).
+# Matches  KEY=value  or  KEY: value  in flat log lines.
 _SENSITIVE_LOG_MARKERS = ("AURORA_SIDECAR_AUTH_TOKEN", "license_key", "password")
+
+# ② JSON key-value pairs whose values are secrets.
+#    Keys: api_key, api_secret, access_token, authorization, secret_key,
+#          client_secret, auth_token, refresh_token, private_key, x-api-key.
+#    Matches: "api_key": "abc123" and "api_key":"abc123" (optional whitespace).
+_JSON_SECRET_KEYS = (
+    r"api_key", r"api_secret", r"access_token", r"authorization",
+    r"secret_key", r"client_secret", r"auth_token", r"refresh_token",
+    r"private_key", r"x-api-key",
+)
+# JSON key (double-quoted) followed by colon + optional whitespace + quoted value.
+_RE_JSON_SECRETS = _re.compile(
+    r'("(?:' + "|".join(_JSON_SECRET_KEYS) + r')")\s*:\s*("(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\')',
+    flags=_re.IGNORECASE,
+)
+
+# ③ URL query parameters carrying secrets.
+#    Matches &api_key=VALUE or ?token=VALUE where VALUE ends at & or end-of-line.
+_URL_SECRET_PARAMS = (
+    r"api_key", r"token", r"access_token", r"secret", r"password",
+    r"auth", r"key", r"apikey",
+)
+_RE_URL_PARAMS = _re.compile(
+    r"([?&](?:" + "|".join(_URL_SECRET_PARAMS) + r")=)([^&\s\"'#]+)",
+    flags=_re.IGNORECASE,
+)
+
+# ④ HTTP Authorization header values — covers Bearer, Basic, Token schemes.
+#    Matches:  Authorization: Bearer eyJ...  (any non-whitespace after scheme).
+_RE_AUTH_HEADER = _re.compile(
+    r"(Authorization\s*:\s*(?:Bearer|Basic|Token)\s+)(\S+)",
+    flags=_re.IGNORECASE,
+)
+
+# ⑤ AWS access key IDs.  Format: AKIA[A-Z0-9]{16} (20 chars total).
+_RE_AWS_ACCESS_KEY = _re.compile(r"\bAKIA[A-Z0-9]{16}\b")
+
+# ⑥ JWT tokens — three base64url segments separated by dots.
+#    Conservative: require each segment ≥ 4 chars to avoid false positives on
+#    version strings like "1.2.3".
+_RE_JWT = _re.compile(
+    r"\beyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\b"
+)
+
+# ⑦ Email addresses — PII compliance.
+#    Standard RFC-5322-lite:  localpart@domain.tld
+#    Conservative: only redact when there is a recognisable TLD (2-6 chars).
+_RE_EMAIL = _re.compile(
+    r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,6}\b"
+)
+
+# ⑧ Generic Bearer / token assignment in plain log lines.
+#    Catches:  bearer_token = eyJ...  or  token=abc123  outside of JSON/URL context.
+#    Applied AFTER JSON + URL patterns so no double-redact in clean text.
+_RE_GENERIC_TOKEN_ASSIGN = _re.compile(
+    r"((?:bearer_token|auth_token|access_token|secret|password)\s*[:=]\s*)(\S+)",
+    flags=_re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -89,15 +158,40 @@ def _collect_system_info(app_version: str = "0.1.0") -> dict:
 
 
 def _redact_sensitive_text(text: str) -> str:
-    """Replace secret markers + значения с [REDACTED]. Phase X may use regex."""
-    import re
+    """Replace known sensitive patterns with [REDACTED] placeholders.
+
+    Applies all S-20 hardened redaction patterns in order.  Conservative
+    strategy: over-redact rather than leak.  Pure stdlib `re` only.
+    """
+    # ① Legacy marker-based redaction (KEY=value / KEY: value in flat lines)
     for marker in _SENSITIVE_LOG_MARKERS:
-        # Match `marker=value` or `marker: value` patterns and redact whole pair
-        pattern = re.compile(
-            rf"({re.escape(marker)})\s*[:=]\s*\S+",
-            flags=re.IGNORECASE,
+        pattern = _re.compile(
+            rf"({_re.escape(marker)})\s*[:=]\s*\S+",
+            flags=_re.IGNORECASE,
         )
         text = pattern.sub(f"[REDACTED:{marker[:12]}...]", text)
+
+    # ② JSON quoted key-value secrets: "api_key": "abc123" → "api_key": "[REDACTED]"
+    text = _RE_JSON_SECRETS.sub(r'\1: "[REDACTED]"', text)
+
+    # ③ URL query parameters: ?api_key=abc → ?api_key=[REDACTED]
+    text = _RE_URL_PARAMS.sub(r"\1[REDACTED]", text)
+
+    # ④ HTTP Authorization header values
+    text = _RE_AUTH_HEADER.sub(r"\1[REDACTED]", text)
+
+    # ⑤ AWS access key IDs
+    text = _RE_AWS_ACCESS_KEY.sub("[REDACTED-AWS-KEY]", text)
+
+    # ⑥ JWT tokens (eyJ header signals JWT)
+    text = _RE_JWT.sub("[REDACTED-JWT]", text)
+
+    # ⑦ Email addresses (PII)
+    text = _RE_EMAIL.sub("[REDACTED-EMAIL]", text)
+
+    # ⑧ Generic token assignment lines (after JSON/URL to avoid double-redact)
+    text = _RE_GENERIC_TOKEN_ASSIGN.sub(r"\1[REDACTED]", text)
+
     return text
 
 

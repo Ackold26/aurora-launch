@@ -20,6 +20,31 @@ Dimensions perturbed (per ADAPTATION_RULES.md):
   4. distribution      (-20% / -10% / 0 / +10% / +20% relative)
   5. adstock_decay     (0.3 / 0.4 / 0.5 / 0.6 / 0.7)
   6. hill_alpha        (1.0 / 1.5 / 2.0 / 2.5 / 3.0)
+
+S-16: Interpolation upgrade (Phase Scale)
+-----------------------------------------
+``SensitivityGrid.lookup(dimension, level, interpolate=True)`` now supports
+1D linear interpolation between adjacent pre-computed grid levels.
+
+  - ``interpolate=True`` (default): when ``level`` falls between two adjacent
+    pre-computed levels A and B, return a synthetic ``SensitivityGridPoint``
+    whose ``point_forecast_total`` and ``ci_width_total`` are linearly
+    weighted between A and B.
+
+  - ``interpolate=False``: strict nearest-neighbour behaviour (legacy).
+
+  - Out-of-range (below min level or above max level): raises ``ValueError``
+    regardless of ``interpolate`` flag — silent extrapolation is not allowed
+    because sensitivity at boundary extremes frequently exceeds the linear
+    regime.
+
+2D bilinear interpolation:
+  Not implemented in this version.  The current grid stores 1D slices
+  (one dimension perturbed at a time, others at baseline).  2D bilinear
+  requires a full grid of (dim_A × dim_B) points.  When the compute_sensitivity_grid
+  caller stores 2D cross-dimension points (future work), extend this class
+  with ``lookup_2d(dim_a, level_a, dim_b, level_b, interpolate=True)``
+  and delegate to ``_bilinear_interp``.
 """
 
 from __future__ import annotations
@@ -88,22 +113,105 @@ class SensitivityGrid:
     points: list[SensitivityGridPoint]
     dimensions: list[str] = field(default_factory=list)
 
-    def lookup(self, dimension: str, level: float) -> SensitivityGridPoint:
-        """Find closest pre-computed point in grid for (dimension, level)."""
-        matching = [p for p in self.points if p.dimension == dimension]
+    def lookup(
+        self,
+        dimension: str,
+        level: float,
+        interpolate: bool = True,
+    ) -> SensitivityGridPoint:
+        """Find (or interpolate) a grid point for ``(dimension, level)``.
+
+        Args:
+            dimension: name of the perturbation dimension.
+            level: requested level value (may be between pre-computed levels).
+            interpolate: when True (default), linearly interpolate between
+                adjacent pre-computed levels.  When False, return the strict
+                nearest neighbour (legacy behaviour, useful for exact-match
+                assertions in tests).
+
+        Returns:
+            A ``SensitivityGridPoint`` with ``level`` set to the requested
+            value (not necessarily a pre-computed anchor).
+
+        Raises:
+            ValueError: if ``dimension`` is not in the grid, or if ``level``
+                is outside the range [min_level, max_level] for the dimension.
+                Out-of-range values are rejected — extrapolation is unreliable
+                in the non-linear sensitivity regime.
+        """
+        matching = sorted(
+            [p for p in self.points if p.dimension == dimension],
+            key=lambda p: p.level,
+        )
         if not matching:
             raise ValueError(
                 f"Dimension {dimension!r} not в grid (available: {self.dimensions})"
             )
-        # Find closest level
-        closest = min(matching, key=lambda p: abs(p.level - level))
-        return closest
+
+        min_level = matching[0].level
+        max_level = matching[-1].level
+
+        # Out-of-range check (applies regardless of interpolate flag).
+        if level < min_level - 1e-10 or level > max_level + 1e-10:
+            raise ValueError(
+                f"Level {level!r} is out of range [{min_level}, {max_level}] "
+                f"for dimension {dimension!r}. "
+                f"Extrapolation beyond precomputed grid is not supported."
+            )
+
+        # Clamp tiny floating-point overshoots at exact boundaries.
+        level = max(min_level, min(max_level, level))
+
+        if not interpolate:
+            # Strict nearest-neighbour (legacy).
+            return min(matching, key=lambda p: abs(p.level - level))
+
+        # --- 1D linear interpolation ---
+        # Find the two adjacent anchors that bracket ``level``.
+        lo: SensitivityGridPoint | None = None
+        hi: SensitivityGridPoint | None = None
+        for p in matching:
+            if p.level <= level + 1e-12:
+                lo = p
+            if hi is None and p.level >= level - 1e-12:
+                hi = p
+
+        # Exact hit (or floating-point coincidence): return anchor directly.
+        if lo is not None and hi is not None and abs(lo.level - hi.level) < 1e-12:
+            return lo
+
+        if lo is None:
+            return matching[0]  # clamp to lower boundary (safety)
+        if hi is None:
+            return matching[-1]  # clamp to upper boundary (safety)
+
+        # Linear weight: t=0 → lo, t=1 → hi.
+        span = hi.level - lo.level
+        t = (level - lo.level) / span  # span > 0 guaranteed by above checks
+
+        interp_forecast = lo.point_forecast_total + t * (
+            hi.point_forecast_total - lo.point_forecast_total
+        )
+        interp_ci = lo.ci_width_total + t * (hi.ci_width_total - lo.ci_width_total)
+
+        return SensitivityGridPoint(
+            dimension=dimension,
+            level=level,
+            point_forecast_total=interp_forecast,
+            ci_width_total=interp_ci,
+        )
 
     def relative_impact_pct(
-        self, dimension: str, level: float
+        self,
+        dimension: str,
+        level: float,
+        interpolate: bool = True,
     ) -> float:
-        """Compute relative impact (%) vs baseline for UI bar chart."""
-        point = self.lookup(dimension, level)
+        """Compute relative impact (%) vs baseline for UI bar chart.
+
+        Uses ``lookup(interpolate=interpolate)`` internally.
+        """
+        point = self.lookup(dimension, level, interpolate=interpolate)
         if self.baseline_total == 0:
             return 0.0
         return 100.0 * (point.point_forecast_total - self.baseline_total) / self.baseline_total
