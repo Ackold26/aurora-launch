@@ -14,11 +14,15 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import WelcomeAnimation from '$lib/components/Onboarding/WelcomeAnimation.svelte';
+  import CategorySelector from '$lib/components/Onboarding/CategorySelector.svelte';
+  import type { BrandCategory } from '$lib/components/Onboarding/CategorySelector.svelte';
   import TutorialCarousel from '$lib/components/Onboarding/TutorialCarousel.svelte';
-  import { loadSampleBundle } from '$ipc/projects';
+  import { loadSampleBundle, type SampleScenario } from '$ipc/projects';
   import { pushToast } from '$lib/stores/toast';
 
-  let phase = $state<'animation' | 'tutorial' | 'loading'>('animation');
+  // Phase 2 personalization: category step between animation + tutorial
+  let phase = $state<'animation' | 'category' | 'tutorial' | 'loading'>('animation');
+  let selectedCategory = $state<BrandCategory | null>(null);
 
   function markOnboarded(): void {
     try {
@@ -29,19 +33,35 @@
   }
 
   function handleAnimationComplete(): void {
+    phase = 'category';
+  }
+
+  function handleCategorySelect(cat: BrandCategory): void {
+    selectedCategory = cat;
     phase = 'tutorial';
+  }
+
+  function handleCategorySkip(): void {
+    phase = 'tutorial';
+  }
+
+  /** Pick sample scenario matching selected category (pharma → kagotsel,
+   * fmcg/b2b/other → multi_proxy generic). */
+  function pickSampleScenarioForCategory(): SampleScenario {
+    if (selectedCategory === 'pharma_otc') return 'kagotsel_venarus';
+    return 'multi_proxy';
   }
 
   async function pickSample(): Promise<void> {
     markOnboarded();
     phase = 'loading';
     try {
-      // Default sample: Кагоцел РФ → Венарус (pharma OTC scenario)
-      const result = await loadSampleBundle('kagotsel_venarus');
+      const scenario = pickSampleScenarioForCategory();
+      const result = await loadSampleBundle(scenario);
       pushToast({
         level: 'success',
         title: 'Образец загружен',
-        body: `Открыт проект «Sample: kagotsel_venarus» (${result.n_periods} периодов)`,
+        body: `Открыт проект «Sample: ${scenario}» (${result.n_periods} периодов)`,
       });
       await goto(`/project/${result.project_uuid}/history`);
     } catch (e) {
@@ -68,6 +88,8 @@
 <main class="onboarding-page">
   {#if phase === 'animation'}
     <WelcomeAnimation oncomplete={handleAnimationComplete} />
+  {:else if phase === 'category'}
+    <CategorySelector onselect={handleCategorySelect} onskip={handleCategorySkip} />
   {:else if phase === 'tutorial'}
     <TutorialCarousel onsample={pickSample} onblank={pickBlank} onskip={skip} />
   {:else}
