@@ -22,7 +22,7 @@
 -->
 
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { _ } from 'svelte-i18n';
   import {
@@ -49,8 +49,9 @@
 
   let { projectUuid, expertMode = false, initialDetail }: Props = $props();
 
-  let detail = $state<ProjectDetail | null>(initialDetail ?? null);
-  let loading = $state(!initialDetail);
+  // initialDetail used только при mount для test/SSR preload — namerennoye initial capture.
+  let detail = $state<ProjectDetail | null>(untrack(() => initialDetail ?? null));
+  let loading = $state(untrack(() => !initialDetail));
   let error = $state<string | null>(null);
 
   // Selection state — Set of version_id (max 2 entries).

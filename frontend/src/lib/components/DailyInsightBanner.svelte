@@ -9,7 +9,7 @@
 -->
 
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { goto } from '$app/navigation';
   import {
     type DailyInsight,
@@ -27,8 +27,9 @@
 
   let { forceInsight }: Props = $props();
 
-  let insight = $state<DailyInsight | null>(forceInsight ?? null);
-  let visible = $state<boolean>(forceInsight !== undefined);
+  // forceInsight — test escape hatch (NEVER set in production). Initial capture намерен.
+  let insight = $state<DailyInsight | null>(untrack(() => forceInsight ?? null));
+  let visible = $state<boolean>(untrack(() => forceInsight !== undefined));
 
   onMount(async () => {
     // forceInsight uses test-only path, skip side effects

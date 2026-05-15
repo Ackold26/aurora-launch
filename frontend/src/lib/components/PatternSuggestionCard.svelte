@@ -13,7 +13,7 @@
 -->
 
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { goto } from '$app/navigation';
   import { projectsStore } from '$lib/stores/projects.svelte';
   import {
@@ -30,7 +30,8 @@
 
   let { forceMatches }: Props = $props();
 
-  let matches = $state<PatternMatch[]>(forceMatches ?? []);
+  // forceMatches — test escape hatch (NEVER set in production). Initial capture намерен.
+  let matches = $state<PatternMatch[]>(untrack(() => forceMatches ?? []));
   let dismissed = $state<boolean>(false);
 
   onMount(async () => {

@@ -113,6 +113,20 @@ impl SidecarManager {
             auth_token: token,
         });
 
+        // Protocol version handshake — fire-and-forget background task. Result
+        // logged; do not block spawn() return on Python sidecar boot. If
+        // handshake fails (timeout / mismatch) — subsequent invoke() calls
+        // surface the underlying issue naturally.
+        let manager_for_handshake = Arc::clone(&manager);
+        tokio::spawn(async move {
+            // Short delay даёт sidecar время инициализировать method registry
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            match manager_for_handshake.negotiate_protocol().await {
+                Ok(_) => {}
+                Err(e) => log::warn!("[sidecar handshake] failed: {e}"),
+            }
+        });
+
         // Reader task — receives events from CommandEvent stream
         let manager_for_reader = Arc::clone(&manager);
         let app_for_reader = app.clone();
@@ -246,6 +260,44 @@ impl SidecarManager {
         let mut guard = self.child.lock().await;
         *guard = None;
     }
+
+    /// Protocol version handshake. Calls Python sidecar `negotiate` to confirm
+    /// Rust↔Python compatibility before issuing any other methods. Logs warning
+    /// if incompatible — caller decides whether to abort или продолжать.
+    ///
+    /// Best-effort: handshake failure не valит spawn — sidecar может ещё
+    /// инициализироваться. Result returned для логирования/телеметрии.
+    pub async fn negotiate_protocol(&self) -> AuroraResult<NegotiationResult> {
+        let rust_version = env!("CARGO_PKG_VERSION").to_string();
+        let result: NegotiationResult = self
+            .invoke(
+                "negotiate",
+                serde_json::json!({ "rust_version": &rust_version }),
+            )
+            .await?;
+        if !result.compatible {
+            log::warn!(
+                "[sidecar handshake] incompatible: reason={:?} advice={:?}",
+                result.reason,
+                result.advice
+            );
+        } else {
+            log::info!(
+                "[sidecar handshake] compatible (rust={})",
+                rust_version
+            );
+        }
+        Ok(result)
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct NegotiationResult {
+    pub compatible: bool,
+    #[serde(default)]
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub advice: Option<String>,
 }
 
 async fn handle_sidecar_line<R: Runtime>(
