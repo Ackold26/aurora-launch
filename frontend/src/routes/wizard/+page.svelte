@@ -17,6 +17,7 @@
   import RadarChart from '$lib/components/RadarChart.svelte';
   import ProgressBar from '$lib/components/ProgressBar.svelte';
   import ForecastCone from '$lib/components/ForecastCone.svelte';
+  import PatternSuggestionCard from '$lib/components/PatternSuggestionCard.svelte';
   import { ipc } from '$ipc/client';
   import type {
     SimilarityDimensionScores
@@ -287,6 +288,7 @@
 
   <div class="step-body" in:fly={{ y: 12, duration: 220, easing: quintOut }}>
     {#if step === 0}
+      <PatternSuggestionCard />
       <Card title={$_('wizard.step.import')}>
         {#snippet children()}
           <p>Импортируйте DSM/Mediascope файлы или используйте Aurora Data Studio экспорт.</p>
