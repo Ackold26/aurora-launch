@@ -367,6 +367,52 @@ def _get_memory_report(_params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+@register("explain_forecast")
+def _explain_forecast(params: dict[str, Any]) -> dict[str, Any]:
+    """Phase Magic M-03: generate forecast explanation (local engine).
+
+    Params: ExplainerInputs fields (point_forecast_mean, ci_lower_mean,
+        ci_upper_mean, horizon_periods, granularity, engine_mode,
+        methodology_signature, n_recipient, trust_score?, warnings?,
+        currency?, locale?).
+    Returns: {what, why, risks, engine_used, confidence}.
+
+    No external API calls (privacy-preserving). 152-ФЗ compliant default.
+    Cloud Claude API integration deferred к future task с explicit consent.
+    """
+    from aurora_launch.engines.forecast_explainer import (
+        ExplainerInputs,
+        explain_local,
+    )
+
+    inputs = ExplainerInputs(
+        point_forecast_mean=float(params.get("point_forecast_mean", 0.0)),
+        ci_lower_mean=float(params.get("ci_lower_mean", 0.0)),
+        ci_upper_mean=float(params.get("ci_upper_mean", 0.0)),
+        horizon_periods=int(params.get("horizon_periods", 12)),
+        granularity=str(params.get("granularity", "monthly")),
+        engine_mode=str(params.get("engine_mode", "pure_transfer")),
+        methodology_signature=str(params.get("methodology_signature", "")),
+        n_recipient=int(params.get("n_recipient", 0)),
+        trust_score=(
+            int(params["trust_score"])
+            if params.get("trust_score") is not None
+            else None
+        ),
+        warnings=tuple(params.get("warnings", [])),
+        currency=str(params.get("currency", "RUB")),
+        locale=str(params.get("locale", "ru")),  # type: ignore[arg-type]
+    )
+    result = explain_local(inputs)
+    return {
+        "what": result.what,
+        "why": result.why,
+        "risks": result.risks,
+        "engine_used": result.engine_used,
+        "confidence": result.confidence,
+    }
+
+
 @register("generate_reproduce_script")
 def _generate_reproduce_script(params: dict[str, Any]) -> dict[str, Any]:
     """Phase Magic M-09: generate Python script reproducing a forecast.

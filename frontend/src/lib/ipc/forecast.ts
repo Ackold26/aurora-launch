@@ -168,3 +168,39 @@ export async function generateReproduceScript(
 ): Promise<ReproduceScriptResult> {
   return invoke<ReproduceScriptResult>('generate_reproduce_script', params);
 }
+
+// ─── Phase Magic M-03: AI explanations (local-first) ────────────────────────
+
+export interface ExplainerInputs {
+  point_forecast_mean: number;
+  ci_lower_mean: number;
+  ci_upper_mean: number;
+  horizon_periods: number;
+  granularity: 'monthly' | 'weekly';
+  engine_mode:
+    | 'pure_transfer'
+    | 'transfer_with_bias_check'
+    | 'ols_with_proxy_priors'
+    | 'bayesian_with_proxy_priors';
+  methodology_signature: string;
+  n_recipient: number;
+  trust_score?: number | null;
+  warnings?: string[];
+  currency?: string;
+  locale?: 'ru' | 'en';
+}
+
+export interface Explanation {
+  what: string;
+  why: string;
+  risks: string;
+  engine_used: 'local' | 'cloud';
+  confidence: 'high' | 'medium' | 'low';
+}
+
+/** Generate 3-paragraph forecast narrative (M-03 local engine). */
+export async function explainForecast(
+  inputs: ExplainerInputs
+): Promise<Explanation> {
+  return invoke<Explanation>('explain_forecast', inputs);
+}

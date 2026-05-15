@@ -13,8 +13,12 @@
   import TrustScore from '$lib/components/TrustScore.svelte';
   import RadarChart from '$lib/components/RadarChart.svelte';
   import ForecastCone from '$lib/components/ForecastCone.svelte';
-  import { computeTrustScore, generateReproduceScript } from '$lib/ipc/forecast';
-  import type { TrustScoreResult } from '$lib/ipc/forecast';
+  import {
+    computeTrustScore,
+    explainForecast,
+    generateReproduceScript,
+  } from '$lib/ipc/forecast';
+  import type { Explanation, TrustScoreResult } from '$lib/ipc/forecast';
   import { pushToast } from '$lib/stores/toast';
   import ModeBadge from '$lib/components/ModeBadge.svelte';
   import { ipc } from '$ipc/client';
@@ -66,6 +70,40 @@
   let reproduceScript = $state<string>('');
   let reproduceFilename = $state<string>('reproduce.py');
   let reproduceLoading = $state(false);
+
+  // M-03 AI explanation state
+  let explanation = $state<Explanation | null>(null);
+  let explanationLoading = $state(false);
+  let explanationError = $state<string | null>(null);
+
+  async function loadExplanation() {
+    if (!forecastData || !forecastData.engineMode || explanationLoading) return;
+    explanationLoading = true;
+    explanationError = null;
+    try {
+      const pointMean = forecastData.points.reduce((s, p) => s + p.point, 0) / forecastData.points.length;
+      const ciLowMean = forecastData.points.reduce((s, p) => s + p.ciLower, 0) / forecastData.points.length;
+      const ciHighMean = forecastData.points.reduce((s, p) => s + p.ciUpper, 0) / forecastData.points.length;
+      explanation = await explainForecast({
+        point_forecast_mean: pointMean,
+        ci_lower_mean: ciLowMean,
+        ci_upper_mean: ciHighMean,
+        horizon_periods: forecastData.horizonWeeks,
+        granularity: 'monthly',
+        engine_mode: forecastData.engineMode,
+        methodology_signature: forecastData.methodologySignature ?? '',
+        n_recipient: 0,
+        trust_score: trustResult?.score ?? null,
+        warnings: forecastData.warnings ?? [],
+        currency: 'RUB',
+        locale: 'ru',
+      });
+    } catch (e) {
+      explanationError = e instanceof Error ? e.message : String(e);
+    } finally {
+      explanationLoading = false;
+    }
+  }
 
   async function openReproduceModal() {
     if (!$activeBundle || !forecastData) return;
@@ -123,6 +161,10 @@
     }
     if (activeTab === 'forecast' && forecastData && similarityData && !trustResult && !trustError) {
       void computeTrustForActiveBundle();
+    }
+    // M-03: load AI explanation когда forecast tab open + data ready
+    if (activeTab === 'forecast' && forecastData && !explanation && !explanationLoading && !explanationError) {
+      void loadExplanation();
     }
   });
 
@@ -389,6 +431,31 @@
                   height={300}
                   title="Forecast cone (saved)"
                 />
+                <!-- M-03: AI explanation panel — 3-paragraph CFO-ready narrative -->
+                {#if explanationLoading}
+                  <div class="explanation-loading">
+                    <Skeleton width="100%" height="120px" rounded />
+                  </div>
+                {:else if explanation}
+                  <article class="forecast-explanation" aria-label="Объяснение прогноза" data-confidence={explanation.confidence}>
+                    <header class="explanation-header">
+                      <h3>
+                        <span aria-hidden="true">💡</span>
+                        Что значит этот прогноз
+                      </h3>
+                      <abbr title="Local engine: текстовое объяснение генерируется на этой машине, без отправки данных в сеть. Cloud (Claude API) — opt-in upgrade в Phase 2.5.">
+                        <span class="explanation-engine-tag">{explanation.engine_used}</span>
+                      </abbr>
+                    </header>
+                    <p class="explanation-para explanation-what">{explanation.what}</p>
+                    <p class="explanation-para explanation-why">{explanation.why}</p>
+                    <p class="explanation-para explanation-risks">{explanation.risks}</p>
+                  </article>
+                {:else if explanationError}
+                  <p class="explanation-error" role="alert">
+                    Не удалось сгенерировать объяснение: {explanationError}
+                  </p>
+                {/if}
                 <!-- M-09 Reproduce-in-Python — magic moment per audit. -->
                 <div class="reproduce-cta">
                   <button
@@ -528,6 +595,66 @@
   /* M-08 mode narrative mount */
   .mode-badge-mount {
     margin-bottom: var(--spacing-3, 0.75rem);
+  }
+
+  /* M-03 explanation panel */
+  .forecast-explanation {
+    margin-top: var(--spacing-4, 1rem);
+    padding: var(--spacing-4, 1rem);
+    background: color-mix(in srgb, var(--bg-elevated, #F0F2F7) 80%, transparent);
+    border-left: 4px solid var(--accent, #2563eb);
+    border-radius: 4px;
+  }
+  .forecast-explanation[data-confidence='low'] {
+    border-left-color: var(--color-warning, #B45309);
+  }
+  .forecast-explanation[data-confidence='high'] {
+    border-left-color: var(--color-success, #047857);
+  }
+  .explanation-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-3, 0.75rem);
+  }
+  .explanation-header h3 {
+    margin: 0;
+    font-family: var(--font-display, var(--font-sans, sans-serif));
+    font-size: 1.125rem;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-2, 0.5rem);
+  }
+  .explanation-engine-tag {
+    font-family: var(--font-mono, monospace);
+    font-size: var(--typography-fontSize-ui-xs, 0.75rem);
+    color: var(--text-muted, #6b7280);
+    padding: 2px 8px;
+    background: var(--bg-surface, white);
+    border: 1px solid var(--border-default, #d1d5db);
+    border-radius: 999px;
+  }
+  .explanation-para {
+    margin: 0 0 var(--spacing-2, 0.5rem) 0;
+    line-height: 1.6;
+    color: var(--text-primary, #111827);
+  }
+  .explanation-para:last-child {
+    margin-bottom: 0;
+  }
+  .explanation-risks {
+    color: var(--text-secondary, #4A4D57);
+    font-size: var(--typography-fontSize-ui-sm, 0.875rem);
+    border-top: 1px dashed var(--border-subtle, #e5e7eb);
+    padding-top: var(--spacing-2, 0.5rem);
+    margin-top: var(--spacing-3, 0.75rem);
+  }
+  .explanation-loading {
+    margin-top: var(--spacing-4, 1rem);
+  }
+  .explanation-error {
+    color: var(--color-danger, #B91C1C);
+    margin-top: var(--spacing-3, 0.75rem);
   }
 
   /* M-09 reproduce-in-Python button + modal */
