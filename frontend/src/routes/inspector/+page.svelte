@@ -274,12 +274,25 @@
         <div role="tabpanel" id="tab-metadata" hidden={activeTab !== 'metadata'}>
           <Card title={$_('inspector.tab.metadata')}>
             {#snippet children()}
+              <!-- M-08: tooltips на cryptographic / provenance metadata fields. -->
               <dl class="meta-grid">
-                <dt>Project ID</dt>
+                <dt>
+                  <abbr title="UUID v4 идентификатор проекта (генерируется при создании, неизменяемый, используется во всех версиях)">
+                    Project ID
+                  </abbr>
+                </dt>
                 <dd class="mono">{$manifestSummary?.project_id ?? '—'}</dd>
-                <dt>Revision</dt>
+                <dt>
+                  <abbr title="Monotonic counter — растёт на 1 при каждом save. Защищает от optimistic-concurrency конфликтов при параллельных правках.">
+                    Revision
+                  </abbr>
+                </dt>
                 <dd class="mono">{$manifestSummary?.revision ?? '—'}</dd>
-                <dt>Aurora Launch version</dt>
+                <dt>
+                  <abbr title="Версия приложения Aurora Launch использованная при создании. Verify-tool сравнивает с локальной версией.">
+                    Aurora Launch version
+                  </abbr>
+                </dt>
                 <dd>{$manifestSummary?.aurora_app_version ?? '—'}</dd>
                 <dt>Created</dt>
                 <dd>{$manifestSummary?.created_at ?? '—'}</dd>
@@ -287,7 +300,11 @@
                 <dd>{$manifestSummary?.last_modified ?? '—'}</dd>
                 <dt>Files</dt>
                 <dd>{Object.keys($manifestSummary?.files ?? {}).length}</dd>
-                <dt>Integrity check</dt>
+                <dt>
+                  <abbr title="SHA-256 hash на каждый файл в bundle. Любая модификация => несовпадение hash => failed verification.">
+                    Integrity check
+                  </abbr>
+                </dt>
                 <dd>{$manifestSummary?.integrity_check ?? '—'}</dd>
                 <dt>Compression</dt>
                 <dd>{$manifestSummary?.compression ?? '—'}</dd>

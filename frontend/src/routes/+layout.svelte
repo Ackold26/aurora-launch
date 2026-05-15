@@ -248,9 +248,12 @@
 
     <div class="header-meta">
       {#if $activeBundle}
-        <Badge variant="info" size="sm">
-          {#snippet children()}r{$activeBundle.revision}{/snippet}
-        </Badge>
+        <!-- M-08: revision badge tooltip explains optimistic concurrency role -->
+        <abbr title="Текущая ревизия открытого bundle. Monotonic счётчик — растёт на 1 при каждом сохранении. Защищает от потери чужих правок в multi-process сценариях.">
+          <Badge variant="info" size="sm">
+            {#snippet children()}r{$activeBundle.revision}{/snippet}
+          </Badge>
+        </abbr>
         <!-- QW9 audit fix: manual Save button + Cmd+S keybind. Без этого
              saveBundleTo() existed but был unreachable through UI. -->
         <button
