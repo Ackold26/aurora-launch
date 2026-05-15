@@ -6,6 +6,7 @@
 
   import Card from '$lib/components/Card.svelte';
   import Button from '$lib/components/Button.svelte';
+  import DailyInsightBanner from '$lib/components/DailyInsightBanner.svelte';
   import { pushToast } from '$lib/stores/toast';
   import { openBundleAt } from '$lib/stores/bundle';
 
@@ -51,6 +52,7 @@
 </script>
 
 <section class="welcome">
+  <DailyInsightBanner />
   <div class="hero">
     <h1>{$_('welcome.title')}</h1>
     <p class="subtitle">{$_('welcome.subtitle')}</p>
