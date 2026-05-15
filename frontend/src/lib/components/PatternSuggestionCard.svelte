@@ -38,10 +38,16 @@
     if (forceMatches !== undefined) return;
 
     if (projectsStore.projects.length === 0 && !projectsStore.loading) {
-      try {
-        await projectsStore.refresh();
-      } catch {
-        /* swallow — fallback к empty matches */
+      // 1.5 fix: store.refresh() catches errors internally + tracks
+      // error_occurred telemetry. Здесь мы лишь логируем в DevTools для
+      // pilot-диагностики (если refresh упал, projectsStore.error содержит
+      // сообщение). Без console.warn это было бы invisible silent fallback.
+      await projectsStore.refresh();
+      if (projectsStore.error) {
+        console.warn(
+          '[M-06 PatternSuggestion] projects.refresh failed, fallback to empty matches:',
+          projectsStore.error,
+        );
       }
     }
 
