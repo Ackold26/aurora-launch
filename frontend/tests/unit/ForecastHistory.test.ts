@@ -6,14 +6,20 @@ import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/sv
 vi.mock('../../src/lib/ipc/projects', () => ({
   getProject: vi.fn(),
   compareVersions: vi.fn(),
+  compareForecastVersions: vi.fn(),
 }));
 
-import { getProject, compareVersions } from '../../src/lib/ipc/projects';
+import {
+  getProject,
+  compareVersions,
+  compareForecastVersions,
+} from '../../src/lib/ipc/projects';
 import type { ProjectDetail, VersionSummary, VersionDiff } from '../../src/lib/ipc/projects';
 import ForecastHistory from '../../src/lib/components/ForecastHistory.svelte';
 
 const mockGetProject = vi.mocked(getProject);
 const mockCompareVersions = vi.mocked(compareVersions);
+const mockCompareForecastVersions = vi.mocked(compareForecastVersions);
 
 function version(overrides: Partial<VersionSummary> = {}): VersionSummary {
   return {
@@ -135,6 +141,7 @@ describe('ForecastHistory', () => {
       files_unchanged: ['manifest.json'],
     };
     mockCompareVersions.mockResolvedValueOnce(diff);
+    mockCompareForecastVersions.mockResolvedValueOnce({ available: false });
 
     render(ForecastHistory, { projectUuid: 't', initialDetail: detail(versions) });
     await fireEvent.click(screen.getByRole('button', { name: /Версия 1.*выделить/ }));
@@ -161,6 +168,7 @@ describe('ForecastHistory', () => {
       files_changed: [],
       files_unchanged: ['manifest.json'],
     });
+    mockCompareForecastVersions.mockResolvedValueOnce({ available: false });
 
     render(ForecastHistory, { projectUuid: 't', initialDetail: detail(versions) });
     await fireEvent.click(screen.getByRole('button', { name: /Версия 1.*выделить/ }));
@@ -210,6 +218,72 @@ describe('ForecastHistory', () => {
       expertMode: false,
     });
     expect(screen.queryByText(/Файлов:/)).toBeNull();
+  });
+
+  it('renders semantic diff when compareForecastVersions returns available', async () => {
+    const versions = [
+      version({ version_id: 1, revision: 1 }),
+      version({ version_id: 2, revision: 2 }),
+    ];
+    mockCompareVersions.mockResolvedValueOnce({
+      files_only_in_a: [],
+      files_only_in_b: [],
+      files_changed: ['forecast.json'],
+      files_unchanged: [],
+    });
+    mockCompareForecastVersions.mockResolvedValueOnce({
+      available: true,
+      point_a: 1_000_000,
+      point_b: 1_200_000,
+      point_delta_abs: 200_000,
+      point_delta_pct: 20.0,
+      ci_width_a: 200_000,
+      ci_width_b: 150_000,
+      ci_width_delta_pct: -25.0,
+      engine_mode_a: 'pure_transfer',
+      engine_mode_b: 'pure_transfer',
+      horizon_a: 12,
+      horizon_b: 12,
+    });
+
+    render(ForecastHistory, { projectUuid: 't', initialDetail: detail(versions) });
+    await fireEvent.click(screen.getByRole('button', { name: /Версия 1.*выделить/ }));
+    await fireEvent.click(screen.getByRole('button', { name: /Версия 2.*выделить/ }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Сравнить' }));
+
+    await waitFor(() => {
+      // Semantic panel shows "Что изменилось" heading + percentage badges
+      expect(screen.getByText(/Что изменилось/)).toBeTruthy();
+      expect(screen.getByText('+20.0%')).toBeTruthy();
+      expect(screen.getByText('-25.0%')).toBeTruthy();
+    });
+  });
+
+  it('hides semantic diff when forecast.json missing from version', async () => {
+    const versions = [
+      version({ version_id: 1, revision: 1 }),
+      version({ version_id: 2, revision: 2 }),
+    ];
+    mockCompareVersions.mockResolvedValueOnce({
+      files_only_in_a: [],
+      files_only_in_b: [],
+      files_changed: [],
+      files_unchanged: ['manifest.json'],
+    });
+    mockCompareForecastVersions.mockResolvedValueOnce({
+      available: false,
+      reason: 'forecast.json missing',
+    });
+
+    render(ForecastHistory, { projectUuid: 't', initialDetail: detail(versions) });
+    await fireEvent.click(screen.getByRole('button', { name: /Версия 1.*выделить/ }));
+    await fireEvent.click(screen.getByRole('button', { name: /Версия 2.*выделить/ }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Сравнить' }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Версии идентичны/)).toBeTruthy();
+    });
+    expect(screen.queryByText(/Что изменилось/)).toBeNull();
   });
 
   it('selection limits к max 2 (FIFO replacement)', async () => {

@@ -675,6 +675,97 @@ def _compare_versions(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+@register("compare_forecast_versions")
+def _compare_forecast_versions(params: dict[str, Any]) -> dict[str, Any]:
+    """Phase 2 semantic diff: compare forecast results между two versions.
+
+    Returns business-metric deltas (point forecast change, CI width
+    change, engine mode change), not file-level diff.
+
+    Params: version_id_a: int (earlier), version_id_b: int (later)
+    Returns:
+        available: bool — false если forecast.json missing в either version
+        reason: str — explanation when not available
+        point_a / point_b: float — mean point forecast per version
+        point_delta_abs / point_delta_pct: float — change a → b
+        ci_width_a / ci_width_b: float — mean CI width per version
+        ci_width_delta_pct: float — % change in CI width (negative = tighter)
+        engine_mode_a / engine_mode_b: str — mode used per version
+        horizon_a / horizon_b: int — period count per version
+    """
+    try:
+        version_id_a = int(params["version_id_a"])
+        version_id_b = int(params["version_id_b"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"version_id_a and version_id_b must be integers: {exc}") from exc
+
+    db = _get_project_db()
+    try:
+        loaded_a = db.load_version(version_id_a)
+        loaded_b = db.load_version(version_id_b)
+    except Exception as exc:
+        raise SidecarStorageError(f"compare_forecast_versions failed: {exc}") from exc
+
+    # Find forecast.json в each version (entry name may vary case)
+    def _find_forecast_json(files: dict[str, bytes]) -> dict[str, Any] | None:
+        for path, content in files.items():
+            if path.lower().endswith("forecast.json") or "forecast" in path.lower():
+                try:
+                    return json.loads(content.decode("utf-8"))
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    continue
+        return None
+
+    fa = _find_forecast_json(loaded_a.files)
+    fb = _find_forecast_json(loaded_b.files)
+
+    if fa is None or fb is None:
+        return {
+            "available": False,
+            "reason": "forecast.json missing в одной из версий",
+        }
+
+    # Extract point + CI per version
+    def _mean(values: list[float]) -> float:
+        return sum(values) / max(len(values), 1)
+
+    def _summarise(forecast: dict[str, Any]) -> tuple[float, float, int]:
+        # Schema может варьироваться — пробуем "weekly_points" then "points"
+        points = forecast.get("weekly_points") or forecast.get("points") or []
+        if not points:
+            return 0.0, 0.0, 0
+        point_mean = _mean([p.get("point") or p.get("point_forecast") or 0 for p in points])
+        ci_widths = [
+            (p.get("ci_upper", 0) - p.get("ci_lower", 0))
+            for p in points
+        ]
+        return point_mean, _mean(ci_widths), len(points)
+
+    point_a, ci_a, horizon_a = _summarise(fa)
+    point_b, ci_b, horizon_b = _summarise(fb)
+
+    point_delta_abs = point_b - point_a
+    point_delta_pct = (point_delta_abs / point_a * 100.0) if point_a != 0 else 0.0
+    ci_width_delta_pct = (
+        ((ci_b - ci_a) / ci_a * 100.0) if ci_a != 0 else 0.0
+    )
+
+    return {
+        "available": True,
+        "point_a": point_a,
+        "point_b": point_b,
+        "point_delta_abs": point_delta_abs,
+        "point_delta_pct": point_delta_pct,
+        "ci_width_a": ci_a,
+        "ci_width_b": ci_b,
+        "ci_width_delta_pct": ci_width_delta_pct,
+        "engine_mode_a": fa.get("engine_mode"),
+        "engine_mode_b": fb.get("engine_mode"),
+        "horizon_a": horizon_a,
+        "horizon_b": horizon_b,
+    }
+
+
 @register("import_aurora_bundle")
 def _import_aurora_bundle(params: dict[str, Any]) -> dict[str, Any]:
     """Import a .aurora ZIP bundle into ProjectDB.

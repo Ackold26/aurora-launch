@@ -119,6 +119,33 @@ export async function compareVersions(
   return invoke<VersionDiff>('compare_versions', { versionIdA, versionIdB });
 }
 
+// Phase 2 smart diff: semantic forecast comparison
+export interface ForecastDiff {
+  available: boolean;
+  reason?: string;
+  point_a?: number;
+  point_b?: number;
+  point_delta_abs?: number;
+  point_delta_pct?: number;
+  ci_width_a?: number;
+  ci_width_b?: number;
+  ci_width_delta_pct?: number;
+  engine_mode_a?: string | null;
+  engine_mode_b?: string | null;
+  horizon_a?: number;
+  horizon_b?: number;
+}
+
+export async function compareForecastVersions(
+  versionIdA: number,
+  versionIdB: number
+): Promise<ForecastDiff> {
+  return invoke<ForecastDiff>('compare_forecast_versions', {
+    version_id_a: versionIdA,
+    version_id_b: versionIdB,
+  });
+}
+
 /** Import an .aurora bundle from disk, creating/versioning a project. */
 export async function importAuroraBundle(
   bundlePath: string,

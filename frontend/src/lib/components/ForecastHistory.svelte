@@ -28,9 +28,11 @@
   import {
     getProject,
     compareVersions,
+    compareForecastVersions,
     type ProjectDetail,
     type VersionSummary,
     type VersionDiff,
+    type ForecastDiff,
   } from '$ipc/projects';
   import ForecastHistorySkeleton from '$lib/components/skeletons/ForecastHistorySkeleton.svelte';
   import EmptyState from '$lib/components/EmptyState.svelte';
@@ -58,6 +60,7 @@
   let canCompare = $derived(selectionCount === 2);
 
   let diff = $state<VersionDiff | null>(null);
+  let forecastDiff = $state<ForecastDiff | null>(null);
   let compareError = $state<string | null>(null);
   let comparing = $state(false);
 
@@ -103,6 +106,7 @@
   function clearSelection(): void {
     selected.clear();
     diff = null;
+    forecastDiff = null;
     compareError = null;
   }
 
@@ -113,15 +117,36 @@
     comparing = true;
     compareError = null;
     diff = null;
+    forecastDiff = null;
     try {
       // Order by version_id ASC so diff semantic = "what changed from a → b"
       const [low, high] = a < b ? [a, b] : [b, a];
-      diff = await compareVersions(low, high);
+      // Run both file-level + semantic forecast diffs в parallel
+      const [fileDiff, semanticDiff] = await Promise.all([
+        compareVersions(low, high),
+        compareForecastVersions(low, high).catch(() => null),
+      ]);
+      diff = fileDiff;
+      forecastDiff = semanticDiff;
     } catch (e) {
       compareError = e instanceof Error ? e.message : String(e);
     } finally {
       comparing = false;
     }
+  }
+
+  function formatPct(v: number | undefined): string {
+    if (v === undefined || !Number.isFinite(v)) return '—';
+    const sign = v > 0 ? '+' : '';
+    return `${sign}${v.toFixed(1)}%`;
+  }
+
+  function formatCompact(v: number | undefined): string {
+    if (v === undefined || !Number.isFinite(v)) return '—';
+    const abs = Math.abs(v);
+    if (abs >= 1_000_000) return `${(v / 1_000_000).toFixed(1).replace(/\.0$/, '')} млн`;
+    if (abs >= 1_000) return `${(v / 1_000).toFixed(0)} тыс`;
+    return v.toFixed(0);
   }
 
   function timeAgo(iso: string): string {
@@ -226,6 +251,49 @@
 
   {#if compareError}
     <p class="error-state" role="alert">{$_("history.compare_error", { values: { reason: compareError } })}</p>
+  {/if}
+
+  {#if forecastDiff && forecastDiff.available}
+    <section class="semantic-diff-pane" aria-label="Семантический diff прогноза">
+      <h3>📊 Что изменилось в прогнозе</h3>
+      <dl class="semantic-diff-grid">
+        <div class="semantic-diff-row">
+          <dt>Прогноз (средний)</dt>
+          <dd>
+            <span class="value-before">{formatCompact(forecastDiff.point_a)}</span>
+            <span class="arrow">→</span>
+            <span class="value-after">{formatCompact(forecastDiff.point_b)}</span>
+            <span
+              class="delta-badge"
+              data-direction={forecastDiff.point_delta_pct! >= 0 ? 'up' : 'down'}
+            >{formatPct(forecastDiff.point_delta_pct)}</span>
+          </dd>
+        </div>
+        <div class="semantic-diff-row">
+          <dt>Ширина CI</dt>
+          <dd>
+            <span class="value-before">{formatCompact(forecastDiff.ci_width_a)}</span>
+            <span class="arrow">→</span>
+            <span class="value-after">{formatCompact(forecastDiff.ci_width_b)}</span>
+            <span
+              class="delta-badge"
+              data-direction={forecastDiff.ci_width_delta_pct! <= 0 ? 'good' : 'bad'}
+              title="Чем уже CI, тем увереннее прогноз"
+            >{formatPct(forecastDiff.ci_width_delta_pct)}</span>
+          </dd>
+        </div>
+        {#if forecastDiff.engine_mode_a !== forecastDiff.engine_mode_b}
+          <div class="semantic-diff-row">
+            <dt>Режим engine</dt>
+            <dd>
+              <code>{forecastDiff.engine_mode_a ?? '—'}</code>
+              <span class="arrow">→</span>
+              <code>{forecastDiff.engine_mode_b ?? '—'}</code>
+            </dd>
+          </div>
+        {/if}
+      </dl>
+    </section>
   {/if}
 
   {#if diff}
@@ -455,6 +523,84 @@
     color: var(--color-danger, #dc2626);
     padding: var(--spacing-4, 1rem);
     text-align: center;
+  }
+
+  /* Phase 2 smart diff semantic panel */
+  .semantic-diff-pane {
+    padding: var(--spacing-3, 0.75rem) var(--spacing-4, 1rem);
+    background: color-mix(in srgb, var(--accent, #2563eb) 5%, transparent);
+    border-left: 3px solid var(--accent, #2563eb);
+    border-radius: 4px;
+    margin-bottom: var(--spacing-3, 0.75rem);
+  }
+  .semantic-diff-pane h3 {
+    margin: 0 0 var(--spacing-3, 0.75rem) 0;
+    font-size: 1rem;
+  }
+  .semantic-diff-grid {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-2, 0.5rem);
+    margin: 0;
+  }
+  .semantic-diff-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3, 0.75rem);
+  }
+  .semantic-diff-row dt {
+    flex: 0 0 140px;
+    color: var(--text-secondary, #4A4D57);
+    font-size: var(--typography-fontSize-ui-sm, 0.875rem);
+  }
+  .semantic-diff-row dd {
+    flex: 1;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2, 0.5rem);
+  }
+  .value-before {
+    color: var(--text-muted, #6b7280);
+    font-family: var(--font-mono, monospace);
+  }
+  .value-after {
+    color: var(--text-primary, #111827);
+    font-weight: 500;
+    font-family: var(--font-mono, monospace);
+  }
+  .arrow {
+    color: var(--text-muted, #9ca3af);
+    font-weight: bold;
+  }
+  .delta-badge {
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: var(--typography-fontSize-ui-xs, 0.75rem);
+    font-weight: 500;
+    font-family: var(--font-mono, monospace);
+  }
+  .delta-badge[data-direction='up'] {
+    background: color-mix(in srgb, var(--color-success, #047857) 15%, transparent);
+    color: var(--color-success, #047857);
+  }
+  .delta-badge[data-direction='down'] {
+    background: color-mix(in srgb, var(--color-danger, #B91C1C) 15%, transparent);
+    color: var(--color-danger, #B91C1C);
+  }
+  .delta-badge[data-direction='good'] {
+    background: color-mix(in srgb, var(--color-success, #047857) 15%, transparent);
+    color: var(--color-success, #047857);
+  }
+  .delta-badge[data-direction='bad'] {
+    background: color-mix(in srgb, var(--color-warning, #B45309) 15%, transparent);
+    color: var(--color-warning, #B45309);
+  }
+  .semantic-diff-row code {
+    font-size: 0.85rem;
+    background: var(--bg-surface, white);
+    padding: 2px 6px;
+    border-radius: 3px;
   }
 
   .diff-pane {
