@@ -42,10 +42,16 @@
 
     // Ensure projects loaded
     if (projectsStore.projects.length === 0 && !projectsStore.loading) {
-      try {
-        await projectsStore.refresh();
-      } catch {
-        /* swallow — fallback к нулевому списку */
+      // 1.5 fix: store.refresh() catches errors internally + tracks
+      // error_occurred telemetry. Здесь логируем в DevTools — если refresh
+      // упал, баннер просто не показывается, customer не знает почему;
+      // pilot-диагностика теперь имеет след в console.
+      await projectsStore.refresh();
+      if (projectsStore.error) {
+        console.warn(
+          '[M-07 DailyInsight] projects.refresh failed, banner suppressed:',
+          projectsStore.error,
+        );
       }
     }
 

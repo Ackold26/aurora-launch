@@ -40,7 +40,10 @@ function daysAgo(iso: string): number | null {
 export function getStoredCategory(): string | null {
   try {
     return window.localStorage.getItem(CATEGORY_KEY);
-  } catch {
+  } catch (e) {
+    // 1.5 fix: было silent → теперь visible. localStorage disabled →
+    // null категория → pattern matching без category boost (некритично).
+    console.warn('[M-06 pattern-matcher] localStorage read failed, no category boost:', e);
     return null;
   }
 }

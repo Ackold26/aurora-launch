@@ -62,7 +62,10 @@ export function shouldShowInsight(): boolean {
   try {
     const last = window.localStorage.getItem(SUPPRESS_KEY);
     return last !== todayIsoDate();
-  } catch {
+  } catch (e) {
+    // 1.5 fix: было silent → теперь visible в DevTools. localStorage
+    // disabled (private browsing / corporate policy) → показываем insight.
+    console.warn('[M-07 daily-insights] localStorage read failed, defaulting к show:', e);
     return true;
   }
 }
@@ -71,8 +74,10 @@ export function shouldShowInsight(): boolean {
 export function markInsightShown(): void {
   try {
     window.localStorage.setItem(SUPPRESS_KEY, todayIsoDate());
-  } catch {
-    /* localStorage may быть disabled — accept loss */
+  } catch (e) {
+    // 1.5 fix: было silent → теперь visible в DevTools. Customer увидит
+    // тот же insight завтра (suppression не сохранилась) — приемлемо.
+    console.warn('[M-07 daily-insights] localStorage write failed, suppression lost:', e);
   }
 }
 
@@ -123,8 +128,10 @@ export function computeDailyInsight(projects: ProjectSummary[]): DailyInsight | 
   let isOnboarded = false;
   try {
     isOnboarded = window.localStorage.getItem(ONBOARDED_KEY) === '1';
-  } catch {
-    /* ignore */
+  } catch (e) {
+    // 1.5 fix: localStorage disabled → false → onboarding nudge не показывается.
+    // Заметно в DevTools для pilot-диагностики.
+    console.warn('[M-07 daily-insights] localStorage onboarded-check failed:', e);
   }
   if (isOnboarded && projects.length === 0) {
     return {
