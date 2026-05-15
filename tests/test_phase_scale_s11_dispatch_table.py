@@ -217,7 +217,12 @@ class TestFallbackWarnings:
             **self._COMMON,
         )
         assert len(warnings) >= 1
-        assert any("OLS+priors fallback" in w for w in warnings)
+        # Post-M-01: real handler emits "OLS+priors: <reason> — falling back…"
+        # when recipient_y missing. Accept either old "fallback" wording OR new.
+        assert any(
+            ("OLS+priors" in w and ("fallback" in w or "falling back" in w))
+            for w in warnings
+        )
 
     def test_mode4_emits_fallback_warning(self) -> None:
         warnings: list[str] = []
@@ -414,7 +419,11 @@ class TestOrchestratorUsesDispatchTable:
         )
         assert result.forecast is not None
         assert result.methodology_signature == "ols_with_proxy_priors_fallback_v1"
-        assert any("OLS+priors fallback" in w for w in result.warnings)
+        # Post-M-01 wording accept variant
+        assert any(
+            ("OLS+priors" in w and ("fallback" in w or "falling back" in w))
+            for w in result.warnings
+        )
 
     def test_mode4_fallback_via_orchestrator(self) -> None:
         """n_recipient=7 (monthly) → Bayesian mode → fallback warning in result."""

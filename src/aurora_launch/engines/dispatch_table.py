@@ -67,6 +67,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+
 from aurora_launch.engines.pure_transfer_engine import (
     ChannelTransferParams,
     RecipientAnchors,
@@ -182,7 +184,7 @@ def _handle_transfer_with_bias_check(
     return forecast, "transfer_with_bias_check_v1"
 
 
-def _handle_ols_with_proxy_priors_stub(
+def _handle_ols_with_proxy_priors(
     channels: list[ChannelTransferParams],
     anchors: RecipientAnchors,
     spend_plan: dict[str, list[float]],
@@ -194,46 +196,176 @@ def _handle_ols_with_proxy_priors_stub(
     warnings: list[str],
     **kwargs: Any,
 ) -> tuple[TransferForecast, str]:
-    """Mode 3 — OLS_WITH_PROXY_PRIORS (Phase Magic M-01 stub).
+    """Mode 3 — OLS_WITH_PROXY_PRIORS (Phase Magic M-01 real implementation).
 
-    Full implementation pending Phase Magic M-01 (ols_engine.train_ols_with_priors).
-    Current fallback: pure_transfer с tighter similarity_inflation (×0.7)
-    because observed y is available to anchor variance.
+    Math: ridge regression combining observed recipient_y с proxy β priors.
+    β̂ = (XᵀX + λΩ⁻¹)⁻¹ (Xᵀy + λΩ⁻¹ μ_proxy)
 
-    Replace this function with the real OLS implementation in Phase Magic M-01.
-    See module OQ-1, OQ-3 for interface questions to resolve first.
+    Falls back к pure_transfer (с warning) if:
+      - recipient_y missing / shorter than MIN_OBSERVATIONS (5)
+      - historical_spend not passed в kwargs OR misaligned
+
+    Required kwargs:
+      - historical_spend: dict[str, list[float]] — per-channel spend для
+        same period as recipient_y. Same channel_ids as in `channels` arg.
+      - shrinkage: float = 0.3 (optional override). High → trust proxy more.
     """
-    warnings.append(
-        "OLS+priors fallback к pure_transfer с tighter inflation "
-        "(full OLS-with-proxy-priors will be wired в Phase Π.2.5)."
+    from aurora_launch.engines.ols_with_priors import (
+        MIN_OBSERVATIONS,
+        DEFAULT_SHRINKAGE,
+        fit_ols_with_priors,
     )
-    tighter_inflations = {
-        ch.channel_id: ch.similarity_inflation * 0.7
-        for ch in channels
-    }
-    tightened_channels = [
-        ChannelTransferParams(
-            channel_id=c.channel_id,
-            proxy_beta_mean=c.proxy_beta_mean,
-            proxy_beta_std=c.proxy_beta_std,
-            adstock_decay=c.adstock_decay,
-            hill_alpha=c.hill_alpha,
-            hill_half_saturation=c.hill_half_saturation,
-            similarity_factor=c.similarity_factor,
-            similarity_inflation=tighter_inflations[c.channel_id],
+
+    historical_spend = kwargs.get("historical_spend")
+    shrinkage = float(kwargs.get("shrinkage", DEFAULT_SHRINKAGE))
+
+    # Fallback path: insufficient input
+    if (
+        recipient_y is None
+        or len(recipient_y) < MIN_OBSERVATIONS
+        or historical_spend is None
+    ):
+        reason = (
+            "missing recipient_y" if recipient_y is None
+            else f"recipient_y too short ({len(recipient_y)} < {MIN_OBSERVATIONS})"
+            if len(recipient_y) < MIN_OBSERVATIONS
+            else "missing historical_spend"
         )
-        for c in channels
-    ]
-    forecast = _run_pure_transfer(
-        channels=tightened_channels,
-        anchors=anchors,
-        spend_plan=spend_plan,
-        horizon_periods=horizon_periods,
-        granularity=granularity,
-        proxy_baseline=proxy_baseline,
-        coverage_target=coverage_target,
+        warnings.append(
+            f"OLS+priors: {reason} — falling back к pure_transfer с tighter "
+            f"inflation (×0.7) as proxy-only baseline."
+        )
+        tighter_inflations = {
+            ch.channel_id: ch.similarity_inflation * 0.7
+            for ch in channels
+        }
+        tightened_channels = [
+            ChannelTransferParams(
+                channel_id=c.channel_id,
+                proxy_beta_mean=c.proxy_beta_mean,
+                proxy_beta_std=c.proxy_beta_std,
+                adstock_decay=c.adstock_decay,
+                hill_alpha=c.hill_alpha,
+                hill_half_saturation=c.hill_half_saturation,
+                similarity_factor=c.similarity_factor,
+                similarity_inflation=tighter_inflations[c.channel_id],
+            )
+            for c in channels
+        ]
+        forecast = _run_pure_transfer(
+            channels=tightened_channels,
+            anchors=anchors,
+            spend_plan=spend_plan,
+            horizon_periods=horizon_periods,
+            granularity=granularity,
+            proxy_baseline=proxy_baseline,
+            coverage_target=coverage_target,
+        )
+        return forecast, "ols_with_proxy_priors_fallback_v1"
+
+    # Real OLS+priors path
+    channel_ids = [c.channel_id for c in channels]
+
+    # Scale proxy β к recipient baseline (same logic as pure_transfer)
+    recipient_baseline_mean = float(
+        np.mean(_compute_baseline_for_ols(anchors, horizon_periods))
     )
-    return forecast, "ols_with_proxy_priors_fallback_v1"
+    if proxy_baseline <= 0:
+        warnings.append(
+            "OLS+priors: proxy_baseline <= 0 — falling back к pure_transfer."
+        )
+        return _handle_ols_with_proxy_priors(
+            channels=channels, anchors=anchors, spend_plan=spend_plan,
+            horizon_periods=horizon_periods, granularity=granularity,
+            proxy_baseline=1.0, coverage_target=coverage_target,
+            recipient_y=None, warnings=warnings,  # forces fallback path
+        )
+    scale_ratio = recipient_baseline_mean / proxy_baseline
+
+    proxy_beta_means_scaled = {
+        c.channel_id: c.proxy_beta_mean * scale_ratio * c.similarity_factor
+        for c in channels
+    }
+    proxy_beta_stds_scaled = {
+        c.channel_id: c.proxy_beta_std * scale_ratio + c.similarity_inflation
+        for c in channels
+    }
+    adstock_decays = {c.channel_id: c.adstock_decay for c in channels}
+    hill_params = {c.channel_id: (c.hill_alpha, c.hill_half_saturation) for c in channels}
+
+    try:
+        result = fit_ols_with_priors(
+            recipient_y=recipient_y,
+            historical_spend=historical_spend,
+            channel_ids=channel_ids,
+            adstock_decays=adstock_decays,
+            hill_params=hill_params,
+            proxy_beta_means=proxy_beta_means_scaled,
+            proxy_beta_stds=proxy_beta_stds_scaled,
+            shrinkage=shrinkage,
+        )
+    except (ValueError, np.linalg.LinAlgError) as exc:
+        warnings.append(
+            f"OLS+priors fit failed ({exc}) — falling back к pure_transfer."
+        )
+        forecast = _run_pure_transfer(
+            channels=channels, anchors=anchors, spend_plan=spend_plan,
+            horizon_periods=horizon_periods, granularity=granularity,
+            proxy_baseline=proxy_baseline, coverage_target=coverage_target,
+        )
+        return forecast, "ols_with_proxy_priors_fallback_v1"
+
+    # Build forecast using combined β + σ. Same pipeline as pure_transfer
+    # but channels now have updated β_mean / β_std from fit.
+    updated_channels = []
+    for i, c in enumerate(channels):
+        # β_combined is в recipient units already (we scaled priors before fit).
+        # Reverse-engineer proxy-side params for pure_transfer entry: divide
+        # back by scale_ratio so the engine's own scale_ratio multiplication
+        # restores the combined β.
+        new_proxy_mean = float(result.beta_combined[i]) / (
+            scale_ratio * c.similarity_factor if (scale_ratio * c.similarity_factor) != 0 else 1.0
+        )
+        # Inflation captures the OLS+priors combined σ minus the scale-back proxy σ.
+        # Conservative: zero inflation (rely on combined σ for variance).
+        new_proxy_std = float(result.sigma_beta_combined[i]) / (
+            scale_ratio if scale_ratio != 0 else 1.0
+        )
+        updated_channels.append(
+            ChannelTransferParams(
+                channel_id=c.channel_id,
+                proxy_beta_mean=new_proxy_mean,
+                proxy_beta_std=new_proxy_std,
+                adstock_decay=c.adstock_decay,
+                hill_alpha=c.hill_alpha,
+                hill_half_saturation=c.hill_half_saturation,
+                similarity_factor=c.similarity_factor,
+                similarity_inflation=0.0,  # already в combined σ
+            )
+        )
+
+    forecast = _run_pure_transfer(
+        channels=updated_channels, anchors=anchors, spend_plan=spend_plan,
+        horizon_periods=horizon_periods, granularity=granularity,
+        proxy_baseline=proxy_baseline, coverage_target=coverage_target,
+    )
+
+    warnings.append(
+        f"OLS+priors fit converged (N={result.n_observations}, "
+        f"shrinkage={result.shrinkage_used:.2f}, σ_residual="
+        f"{result.sigma_residual:.2f})."
+    )
+    return forecast, "ols_with_proxy_priors_v1"
+
+
+def _compute_baseline_for_ols(anchors: RecipientAnchors, horizon: int) -> np.ndarray:
+    """Helper — mirrors pure_transfer_engine.compute_recipient_baseline."""
+    from aurora_launch.engines.pure_transfer_engine import compute_recipient_baseline
+    return compute_recipient_baseline(anchors, horizon)
+
+
+# Backward-compat alias (test imports the stub name)
+_handle_ols_with_proxy_priors_stub = _handle_ols_with_proxy_priors
 
 
 def _handle_bayesian_with_proxy_priors_stub(
@@ -307,7 +439,7 @@ def _run_pure_transfer(
 _MODE_DISPATCH: dict[EngineMode, DispatchHandler] = {
     EngineMode.PURE_TRANSFER: _handle_pure_transfer,
     EngineMode.TRANSFER_WITH_BIAS_CHECK: _handle_transfer_with_bias_check,
-    EngineMode.OLS_WITH_PROXY_PRIORS: _handle_ols_with_proxy_priors_stub,
+    EngineMode.OLS_WITH_PROXY_PRIORS: _handle_ols_with_proxy_priors,
     EngineMode.BAYESIAN_WITH_PROXY_PRIORS: _handle_bayesian_with_proxy_priors_stub,
 }
 
