@@ -199,8 +199,11 @@ impl SidecarManager {
         // Block 4 audit B4-S1 fix: write через CommandChild directly. Mutex
         // serialises to prevent two callers writing partial bytes at once.
         let write_result: AuroraResult<()> = {
-            let child_guard = self.child.lock().await;
-            match child_guard.as_ref() {
+            // Phase 2 fix: write requires &mut CommandChild — acquire write lock
+            // via mut deref through MutexGuard. Previously `as_ref()` returned
+            // &CommandChild which doesn't allow write() (needs mut).
+            let mut child_guard = self.child.lock().await;
+            match child_guard.as_mut() {
                 Some(child) => {
                     let mut buf = Vec::with_capacity(line.len() + 1);
                     buf.extend_from_slice(line.as_bytes());

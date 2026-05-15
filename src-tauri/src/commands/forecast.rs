@@ -141,3 +141,72 @@ pub async fn get_forecast_status(
         eta_ms: None,
     })
 }
+
+// ---------------------------------------------------------------------------
+// Phase 2 production Rust IPC bridges (audit deferred closure)
+// Each is thin pass-through к sidecar JSON-RPC method. Typed contracts make
+// frontend code clearer + tauri-cli generates bindings.
+// ---------------------------------------------------------------------------
+
+/// Compute trust score from Phase Premium P-03 inputs.
+#[tauri::command]
+pub async fn compute_trust_score(
+    sidecar: State<'_, std::sync::Arc<crate::sidecar::SidecarManager>>,
+    params: serde_json::Value,
+) -> AuroraResult<serde_json::Value> {
+    sidecar.invoke("compute_trust_score", params).await
+}
+
+/// Generate Python script reproducing forecast (M-09).
+#[tauri::command]
+pub async fn generate_reproduce_script(
+    sidecar: State<'_, std::sync::Arc<crate::sidecar::SidecarManager>>,
+    bundle_path: String,
+    anchors: serde_json::Value,
+    spend_plan: serde_json::Value,
+    horizon_periods: u32,
+    granularity: Option<String>,
+    coverage_target: Option<f64>,
+    n_recipient: Option<u32>,
+    seed: Option<u64>,
+) -> AuroraResult<serde_json::Value> {
+    let params = serde_json::json!({
+        "bundle_path": bundle_path,
+        "anchors": anchors,
+        "spend_plan": spend_plan,
+        "horizon_periods": horizon_periods,
+        "granularity": granularity.unwrap_or_else(|| "monthly".into()),
+        "coverage_target": coverage_target.unwrap_or(0.95),
+        "n_recipient": n_recipient.unwrap_or(0),
+        "seed": seed.unwrap_or(42),
+    });
+    sidecar.invoke("generate_reproduce_script", params).await
+}
+
+/// Local-first AI forecast explanation (M-03).
+#[tauri::command]
+pub async fn explain_forecast(
+    sidecar: State<'_, std::sync::Arc<crate::sidecar::SidecarManager>>,
+    params: serde_json::Value,
+) -> AuroraResult<serde_json::Value> {
+    sidecar.invoke("explain_forecast", params).await
+}
+
+/// Semantic forecast version diff (audit #7.8).
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ForecastVersionDiffInput {
+    pub version_id_a: i64,
+    pub version_id_b: i64,
+}
+
+#[tauri::command]
+pub async fn compare_forecast_versions(
+    sidecar: State<'_, std::sync::Arc<crate::sidecar::SidecarManager>>,
+    input: ForecastVersionDiffInput,
+) -> AuroraResult<serde_json::Value> {
+    let params = serde_json::json!({
+        "version_id_a": input.version_id_a,
+        "version_id_b": input.version_id_b,
+    });
+    sidecar.invoke("compare_forecast_versions", params).await
+}

@@ -17,6 +17,8 @@
 
 use std::sync::Mutex;
 
+use tauri::Manager;  // Phase 2 fix: required для AppHandle::manage() call
+
 mod commands;
 mod errors;
 mod panic_handler;
@@ -77,6 +79,11 @@ pub fn run() {
             commands::forecast::start_forecast,
             commands::forecast::cancel_forecast,
             commands::forecast::get_forecast_status,
+            // Phase 2 production Rust IPC bridges (audit deferred closure)
+            commands::forecast::compute_trust_score,
+            commands::forecast::generate_reproduce_script,
+            commands::forecast::explain_forecast,
+            commands::forecast::compare_forecast_versions,
             // methodology_cert commands (Block 2C)
             commands::methodology_cert::verify_bundle_signature,
             commands::methodology_cert::generate_local_dev_signature,

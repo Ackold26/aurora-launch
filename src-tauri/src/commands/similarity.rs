@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::errors::AuroraResult;
+use crate::errors::{AuroraError, AuroraResult};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SimilarityDimensionScores {
