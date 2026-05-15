@@ -177,6 +177,7 @@ def generate_ts_interfaces(models: list[type[BaseModel]]) -> str:
 def main(output: Path, print_only: bool) -> None:
     """Auto-generate TypeScript interfaces from Aurora Launch Pydantic schemas."""
     # Import all public models — registry will expand recursively
+    from aurora_launch.engines.bundle_manifest import BundleManifest, BundleFileEntry
     from aurora_launch.schemas import (
         AnonymizationDetails,
         AuroraLaunchBundleMetadata,
@@ -186,8 +187,21 @@ def main(output: Path, print_only: bool) -> None:
         SimilarityDimensionScores,
         SyntheticProjectSpec,
     )
+    from aurora_launch.schemas.forecast_bundle import (
+        ForecastJsonV1,
+        ForecastPoint,
+        RecipientAnchorsPayload,
+    )
 
     models: list[type[BaseModel]] = [
+        # Bundle / manifest contracts (engines layer)
+        BundleManifest,
+        BundleFileEntry,
+        # Forecast bundle (etap 1.3)
+        ForecastJsonV1,
+        ForecastPoint,
+        RecipientAnchorsPayload,
+        # Aurora Launch schemas
         AuroraLaunchBundleMetadata,  # composition root
         AnonymizationDetails,
         FormatAdapterContract,

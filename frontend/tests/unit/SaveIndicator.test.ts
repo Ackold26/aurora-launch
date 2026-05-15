@@ -19,11 +19,15 @@ function renderIndicator(props: {
   lastSavedAt?: string | null;
   mode?: 'auto' | 'manual';
 }) {
-  return render(SaveIndicator, {
+  // exactOptionalPropertyTypes: only include 'mode' when it has a concrete value.
+  const componentProps: { state: typeof props.state; lastSavedAt: string | null; mode?: 'auto' | 'manual' } = {
     state: props.state,
     lastSavedAt: props.lastSavedAt ?? null,
-    mode: props.mode,
-  });
+  };
+  if (props.mode !== undefined) {
+    componentProps.mode = props.mode;
+  }
+  return render(SaveIndicator, componentProps);
 }
 
 // ---------------------------------------------------------------------------

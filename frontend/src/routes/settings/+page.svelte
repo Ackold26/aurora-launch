@@ -103,22 +103,23 @@
   </Card>
 
   {#if buildInfo}
+    {@const info = buildInfo}
     <Card title="About">
       {#snippet children()}
         <dl class="about">
           <dt>{$_('settings.about.version')}</dt>
           <dd>
-            <code>{buildInfo.version}</code>
-            {#if buildInfo.is_dev_build}
+            <code>{info.version}</code>
+            {#if info.is_dev_build}
               <Badge variant="warning" size="sm">
-                {#snippet children()}{buildInfo.build_profile}{/snippet}
+                {#snippet children()}{info.build_profile}{/snippet}
               </Badge>
             {/if}
           </dd>
           <dt>{$_('settings.about.build_profile')}</dt>
-          <dd><code>{buildInfo.build_profile}</code></dd>
+          <dd><code>{info.build_profile}</code></dd>
           <dt>Rust</dt>
-          <dd><code>{buildInfo.rust_version}</code></dd>
+          <dd><code>{info.rust_version}</code></dd>
         </dl>
       {/snippet}
     </Card>

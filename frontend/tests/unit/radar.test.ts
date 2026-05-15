@@ -29,7 +29,8 @@ describe('RadarChart geometry', () => {
   it('places n vertices evenly around the circle', () => {
     const points = Array.from({ length: 8 }, (_, i) => pointFor(i, 1, 8, 100, 200));
     // Vertex 0 на top, vertex 4 на bottom (180° apart)
-    expect(points[4].x).toBeCloseTo(200, 5);
-    expect(points[4].y).toBeCloseTo(300, 5);
+    const p4 = points[4];
+    expect(p4?.x).toBeCloseTo(200, 5);
+    expect(p4?.y).toBeCloseTo(300, 5);
   });
 });

@@ -15,6 +15,7 @@
 //  12. Buffer cap at 64 — excess events dropped
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { TelemetryEvent } from '../../src/lib/ipc/client';
 import {
   track,
   initTelemetryInternal,
@@ -28,7 +29,8 @@ import {
 // ─── Test helpers ─────────────────────────────────────────────────────────────
 
 function makeIpcMocks(optIn: boolean | 'throw') {
-  const logEvent = vi.fn(async () => 1);
+  // Explicit generic ensures mock.calls[n][0] is typed as TelemetryEvent, not never.
+  const logEvent = vi.fn<(event: TelemetryEvent) => Promise<number>>(async () => 1);
   const getTelemetryOptIn = vi.fn(async () => {
     if (optIn === 'throw') throw new Error('IPC unavailable');
     return optIn;

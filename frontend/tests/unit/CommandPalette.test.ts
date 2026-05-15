@@ -6,6 +6,16 @@ import CommandPalette from '../../src/lib/components/CommandPalette.svelte';
 
 beforeEach(() => cleanup());
 
+/**
+ * Type-safe indexed array access for noUncheckedIndexedAccess.
+ * Throws if the element is missing so tests fail loudly on wrong assumptions.
+ */
+function at<T>(arr: readonly T[], idx: number): T {
+  const el = arr[idx];
+  if (el === undefined) throw new Error(`Expected element at index ${idx}, but array has length ${arr.length}`);
+  return el;
+}
+
 // Sample commands fixture
 const COMMANDS = [
   {
@@ -95,7 +105,7 @@ describe('CommandPalette', () => {
     await fireEvent.input(input, { target: { value: 'настройки приложения' } });
     const items = screen.getAllByRole('option');
     expect(items).toHaveLength(1);
-    expect(items[0].textContent).toContain('Настройки');
+    expect(at(items, 0).textContent).toContain('Настройки');
   });
 
   it('no matches → "Ничего не найдено" displayed', async () => {
@@ -113,8 +123,8 @@ describe('CommandPalette', () => {
     await fireEvent.keyDown(backdrop, { key: 'ArrowDown' });
     const items = screen.getAllByRole('option');
     // After one ArrowDown: index 1 is selected
-    expect(items[1].getAttribute('aria-selected')).toBe('true');
-    expect(items[0].getAttribute('aria-selected')).toBe('false');
+    expect(at(items, 1).getAttribute('aria-selected')).toBe('true');
+    expect(at(items, 0).getAttribute('aria-selected')).toBe('false');
   });
 
   it('ArrowUp at index 0 clamps to 0 (no change)', async () => {
@@ -123,7 +133,7 @@ describe('CommandPalette', () => {
     await fireEvent.keyDown(backdrop, { key: 'ArrowUp' });
     const items = screen.getAllByRole('option');
     // Still index 0
-    expect(items[0].getAttribute('aria-selected')).toBe('true');
+    expect(at(items, 0).getAttribute('aria-selected')).toBe('true');
   });
 
   it('ArrowDown then ArrowUp → back to first item selected', async () => {
@@ -132,8 +142,8 @@ describe('CommandPalette', () => {
     await fireEvent.keyDown(backdrop, { key: 'ArrowDown' });
     await fireEvent.keyDown(backdrop, { key: 'ArrowUp' });
     const items = screen.getAllByRole('option');
-    expect(items[0].getAttribute('aria-selected')).toBe('true');
-    expect(items[1].getAttribute('aria-selected')).toBe('false');
+    expect(at(items, 0).getAttribute('aria-selected')).toBe('true');
+    expect(at(items, 1).getAttribute('aria-selected')).toBe('false');
   });
 
   it('Enter executes selected command action + calls onClose', async () => {
@@ -143,7 +153,7 @@ describe('CommandPalette', () => {
     const backdrop = screen.getByRole('dialog');
     // Default selectedIndex=0 → first command
     await fireEvent.keyDown(backdrop, { key: 'Enter' });
-    expect(commands[0].action).toHaveBeenCalledOnce();
+    expect(commands[0]?.action).toHaveBeenCalledOnce();
     expect(onClose).toHaveBeenCalledOnce();
   });
 
@@ -175,8 +185,8 @@ describe('CommandPalette', () => {
     const commands = freshCommands();
     render(CommandPalette, { commands, open: true, onClose });
     const items = screen.getAllByRole('option');
-    await fireEvent.click(items[0]);
-    expect(commands[0].action).toHaveBeenCalledOnce();
+    await fireEvent.click(at(items, 0));
+    expect(commands[0]?.action).toHaveBeenCalledOnce();
     expect(onClose).toHaveBeenCalledOnce();
   });
 
@@ -226,7 +236,7 @@ describe('CommandPalette', () => {
     render(CommandPalette, defaultProps());
     const input = screen.getByRole('combobox');
     const options = screen.getAllByRole('option');
-    const firstOptionId = options[0].getAttribute('id');
+    const firstOptionId = at(options, 0).getAttribute('id');
     expect(input.getAttribute('aria-activedescendant')).toBe(firstOptionId);
   });
 
@@ -237,7 +247,7 @@ describe('CommandPalette', () => {
     const input = screen.getByRole('combobox');
     const options = screen.getAllByRole('option');
     // After one ArrowDown: index 1 selected
-    const secondOptionId = options[1].getAttribute('id');
+    const secondOptionId = at(options, 1).getAttribute('id');
     expect(input.getAttribute('aria-activedescendant')).toBe(secondOptionId);
   });
 
@@ -257,8 +267,8 @@ describe('CommandPalette', () => {
     render(CommandPalette, defaultProps());
     const items = screen.getAllByRole('option');
     // Hover over the third item (index 2)
-    await fireEvent.mouseEnter(items[2]);
-    expect(items[2].getAttribute('aria-selected')).toBe('true');
-    expect(items[0].getAttribute('aria-selected')).toBe('false');
+    await fireEvent.mouseEnter(at(items, 2));
+    expect(at(items, 2).getAttribute('aria-selected')).toBe('true');
+    expect(at(items, 0).getAttribute('aria-selected')).toBe('false');
   });
 });

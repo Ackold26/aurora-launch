@@ -166,7 +166,7 @@ export interface ReproduceScriptResult {
 export async function generateReproduceScript(
   params: ReproduceScriptParams
 ): Promise<ReproduceScriptResult> {
-  return invoke<ReproduceScriptResult>('generate_reproduce_script', params);
+  return invoke<ReproduceScriptResult>('generate_reproduce_script', params as unknown as Record<string, unknown>);
 }
 
 // ─── Phase Magic M-03: AI explanations (local-first) ────────────────────────

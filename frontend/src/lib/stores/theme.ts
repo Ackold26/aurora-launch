@@ -56,5 +56,10 @@ export function cycleTheme(): void {
   const mode = get(themeMode);
   const order: ThemeMode[] = ['system', 'dark', 'light', 'high-contrast'];
   const idx = order.indexOf(mode);
-  themeMode.set(order[(idx + 1) % order.length]);
+  const next = order[(idx + 1) % order.length];
+  // next is always defined: idx comes from indexOf on the same array and
+  // order.length > 0, so (idx + 1) % order.length is always a valid index.
+  if (next !== undefined) {
+    themeMode.set(next);
+  }
 }

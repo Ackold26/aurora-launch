@@ -280,7 +280,7 @@ export const ipc = {
       revision: number;
       manifest: BundleManifest;
       composite_hash: string;
-    }>('save_bundle', input)
+    }>('save_bundle', input as unknown as Record<string, unknown>)
 };
 
 export interface SaveBundleInput {

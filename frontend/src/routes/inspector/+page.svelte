@@ -48,19 +48,19 @@
   let forecastData = $state<{
     points: { weekIndex: number; point: number; ciLower: number; ciUpper: number }[];
     horizonWeeks: number;
-    engineMode?: EngineMode;
-    methodologySignature?: string;
-    warnings?: string[];
+    engineMode?: EngineMode | undefined;
+    methodologySignature?: string | undefined;
+    warnings?: string[] | undefined;
     // B-5 audit fix: real n_recipient + granularity from forecast.json
     // (fallback к defaults if legacy bundle без полей). Используется
     // loadExplanation чтобы M-03 narrative ссылался на реальные числа,
     // а не врал «обучилась на 0 наблюдениях» для Mode 2/3/4.
-    nRecipient?: number;
-    granularity?: 'monthly' | 'weekly';
+    nRecipient?: number | undefined;
+    granularity?: 'monthly' | 'weekly' | undefined;
     // 1.4 wiring: real anchors + spend_plan от commit fbd1c93 schema v1.
     // null = absent (legacy bundle без новых полей → preview fallback).
-    anchors?: Record<string, unknown> | null;
-    spendPlan?: Record<string, number[]> | null;
+    anchors?: Record<string, unknown> | null | undefined;
+    spendPlan?: Record<string, number[]> | null | undefined;
   } | null>(null);
   let loadingSimilarity = $state(false);
   let loadingForecast = $state(false);
@@ -233,7 +233,7 @@
       const uncertaintyInverse = Math.max(0, Math.min(1, 1 - meanWidth));
 
       // Methodology: bundle is signed → assume cert pass (1) unless verify failed
-      const methodologyCertified = (verification?.verdict === 'verified') ? 1 : 0.5;
+      const methodologyCertified = (verification?.valid === true) ? 1 : 0.5;
 
       trustResult = await computeTrustScore({
         proxy_similarity_score: similarityPct,

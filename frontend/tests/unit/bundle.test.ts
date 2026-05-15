@@ -5,13 +5,13 @@ import { activeBundle, openBundleAt, closeActiveBundle, readEntryJson } from '..
 
 describe('bundle store', () => {
   beforeEach(() => {
-    const mock = (globalThis as { __auroraIpcMock: ReturnType<typeof vi.fn> }).__auroraIpcMock;
+    const mock = (globalThis as unknown as { __auroraIpcMock: ReturnType<typeof vi.fn> }).__auroraIpcMock;
     mock.mockReset();
     activeBundle.set(null);
   });
 
   it('openBundleAt sets activeBundle', async () => {
-    const mock = (globalThis as { __auroraIpcMock: ReturnType<typeof vi.fn> }).__auroraIpcMock;
+    const mock = (globalThis as unknown as { __auroraIpcMock: ReturnType<typeof vi.fn> }).__auroraIpcMock;
     mock.mockImplementationOnce(async () => ({
       handle_id: 'h1',
       source_format: 'zip',
@@ -34,7 +34,7 @@ describe('bundle store', () => {
       manifest: {} as never,
       path: '/tmp/foo.aurora'
     });
-    const mock = (globalThis as { __auroraIpcMock: ReturnType<typeof vi.fn> }).__auroraIpcMock;
+    const mock = (globalThis as unknown as { __auroraIpcMock: ReturnType<typeof vi.fn> }).__auroraIpcMock;
     mock.mockImplementationOnce(async () => undefined);
     await closeActiveBundle();
     expect(get(activeBundle)).toBeNull();
@@ -56,7 +56,7 @@ describe('bundle store', () => {
       manifest: {} as never,
       path: '/tmp/foo.aurora'
     });
-    const mock = (globalThis as { __auroraIpcMock: ReturnType<typeof vi.fn> }).__auroraIpcMock;
+    const mock = (globalThis as unknown as { __auroraIpcMock: ReturnType<typeof vi.fn> }).__auroraIpcMock;
     const json = JSON.stringify({ k: 1 });
     const b64 = btoa(json);
     mock.mockImplementationOnce(async () => ({
