@@ -34,14 +34,18 @@ import os
 import threading
 import time
 import uuid
+from collections.abc import Callable
+from datetime import UTC
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from aurora_launch import __version__
 from aurora_launch.sidecar import events
 from aurora_launch.sidecar.protocol_version import (
     MIN_COMPATIBLE_RUST,
     PROTOCOL_VERSION,
+)
+from aurora_launch.sidecar.protocol_version import (
     negotiate as _protocol_negotiate,
 )
 
@@ -117,6 +121,7 @@ def _get_autosave_manager() -> Any:
             else:
                 try:
                     import platformdirs  # type: ignore[import-untyped]
+
                     data_root = Path(platformdirs.user_data_dir("Aurora Launch"))
                 except ImportError:
                     data_root = Path.home() / ".aurora-launch"
@@ -129,9 +134,7 @@ def _get_autosave_manager() -> Any:
             )
             return _AUTOSAVE
         except Exception as exc:
-            raise SidecarStorageError(
-                f"Cannot initialize AutosaveManager: {exc}"
-            ) from exc
+            raise SidecarStorageError(f"Cannot initialize AutosaveManager: {exc}") from exc
 
 
 def _get_project_db() -> Any:
@@ -164,6 +167,7 @@ def _get_project_db() -> Any:
             else:
                 try:
                     import platformdirs  # type: ignore[import-untyped]
+
                     data_root = Path(platformdirs.user_data_dir("Aurora Launch"))
                 except ImportError:
                     data_root = Path.home() / ".aurora-launch"
@@ -184,12 +188,11 @@ def _get_project_db() -> Any:
             # data leak on dev's machine misconfigured). Now: loud SystemExit.
             key_env = os.environ.get("AURORA_PROJECT_DB_KEY", "auto").strip().lower()
             if key_env == "none":
-                is_dev_profile = (
-                    os.environ.get("AURORA_BUILD_PROFILE", "").lower() == "dev"
-                )
+                is_dev_profile = os.environ.get("AURORA_BUILD_PROFILE", "").lower() == "dev"
                 is_testing = bool(os.environ.get("AURORA_LAUNCH_TESTING"))
                 if not (is_dev_profile or is_testing):
                     import sys as _sys
+
                     msg = (
                         "FATAL: AURORA_PROJECT_DB_KEY=none requires explicit "
                         "AURORA_BUILD_PROFILE=dev OR AURORA_LAUNCH_TESTING=1. "
@@ -214,9 +217,7 @@ def _get_project_db() -> Any:
             _start_gc_thread()
             return _PROJECT_DB
         except Exception as exc:
-            raise SidecarStorageError(
-                f"Cannot initialize ProjectDB: {exc}"
-            ) from exc
+            raise SidecarStorageError(f"Cannot initialize ProjectDB: {exc}") from exc
 
 
 def _gc_thread_body() -> None:
@@ -229,6 +230,7 @@ def _gc_thread_body() -> None:
     Per INV-14 no-lying-progress: silent in idle, log only on actual GC run.
     """
     import logging as _logging
+
     _gc_log = _logging.getLogger(__name__ + ".gc_thread")
     _gc_log.info("GC background thread started (interval=%ss)", GC_INTERVAL_S)
 
@@ -237,16 +239,12 @@ def _gc_thread_body() -> None:
         sleep_for = 0.0
         if _PROJECT_DB is not None:
             try:
-                from datetime import datetime, timezone
+                from datetime import datetime
 
                 last_ran_at, _ = _PROJECT_DB.get_gc_metadata()
                 if last_ran_at:
-                    last_dt = datetime.fromisoformat(
-                        last_ran_at.replace("Z", "+00:00")
-                    )
-                    elapsed_s = (
-                        datetime.now(timezone.utc) - last_dt
-                    ).total_seconds()
+                    last_dt = datetime.fromisoformat(last_ran_at.replace("Z", "+00:00"))
+                    elapsed_s = (datetime.now(UTC) - last_dt).total_seconds()
                     sleep_for = max(0.0, GC_INTERVAL_S - elapsed_s)
             except (ValueError, TypeError) as exc:
                 _gc_log.warning("GC thread: metadata parse error: %s", exc)
@@ -394,11 +392,7 @@ def _explain_forecast(params: dict[str, Any]) -> dict[str, Any]:
         engine_mode=str(params.get("engine_mode", "pure_transfer")),
         methodology_signature=str(params.get("methodology_signature", "")),
         n_recipient=int(params.get("n_recipient", 0)),
-        trust_score=(
-            int(params["trust_score"])
-            if params.get("trust_score") is not None
-            else None
-        ),
+        trust_score=(int(params["trust_score"]) if params.get("trust_score") is not None else None),
         warnings=tuple(params.get("warnings", [])),
         currency=str(params.get("currency", "RUB")),
         locale=str(params.get("locale", "ru")),  # type: ignore[arg-type]
@@ -449,6 +443,60 @@ def _generate_reproduce_script(params: dict[str, Any]) -> dict[str, Any]:
     return {
         "script": script,
         "suggested_filename": reproduce_script_to_filename(),
+    }
+
+
+@register("compose_forecast_json")
+def _compose_forecast_json(params: dict[str, Any]) -> dict[str, Any]:
+    """Этап 1.3: построить canonical forecast.json bytes + вернуть base64.
+
+    Используется wizard'ом сразу после `forecast_completed` event'a: frontend
+    собирает anchors (из anchors step), spend_plan (из media-plan UI) и
+    points (накопленные через forecast_progress events), потом дёргает этот
+    метод и кладёт результат в `extra_files["forecast.json"]` к
+    `save_bundle`.
+
+    Params:
+      - horizon_weeks: int
+      - weekly_points: list[{week_index, point, ci_lower, ci_upper}]
+      - engine_mode: str = "pure_transfer"
+      - granularity: str = "monthly"
+      - methodology_signature: str = ""
+      - n_recipient: int = 0
+      - warnings: list[str] = []
+      - anchors: dict | null — RecipientAnchorsPayload fields
+      - spend_plan: dict[str, list[float]] | null
+      - coverage_target: float = 0.95
+      - seed: int = 42
+      - produced_at: str | null — ISO-8601 UTC
+
+    Returns:
+      - forecast_json_base64: str — base64-encoded bytes (UTF-8 JSON)
+      - schema_version: str — "1"
+      - byte_size: int — длина bytes до base64
+    """
+    import base64 as _b64
+
+    from aurora_launch.schemas.forecast_bundle import compose_forecast_json_bytes
+
+    forecast_bytes = compose_forecast_json_bytes(
+        horizon_weeks=int(params["horizon_weeks"]),
+        weekly_points=list(params["weekly_points"]),
+        engine_mode=str(params.get("engine_mode", "pure_transfer")),  # type: ignore[arg-type]
+        granularity=str(params.get("granularity", "monthly")),  # type: ignore[arg-type]
+        methodology_signature=str(params.get("methodology_signature", "")),
+        n_recipient=int(params.get("n_recipient", 0)),
+        warnings=list(params.get("warnings", [])) if params.get("warnings") else None,
+        anchors=params.get("anchors"),
+        spend_plan=params.get("spend_plan"),
+        coverage_target=float(params.get("coverage_target", 0.95)),
+        seed=int(params.get("seed", 42)),
+        produced_at=params.get("produced_at"),
+    )
+    return {
+        "forecast_json_base64": _b64.b64encode(forecast_bytes).decode("ascii"),
+        "schema_version": "1",
+        "byte_size": len(forecast_bytes),
     }
 
 
@@ -735,10 +783,7 @@ def _compare_forecast_versions(params: dict[str, Any]) -> dict[str, Any]:
         if not points:
             return 0.0, 0.0, 0
         point_mean = _mean([p.get("point") or p.get("point_forecast") or 0 for p in points])
-        ci_widths = [
-            (p.get("ci_upper", 0) - p.get("ci_lower", 0))
-            for p in points
-        ]
+        ci_widths = [(p.get("ci_upper", 0) - p.get("ci_lower", 0)) for p in points]
         return point_mean, _mean(ci_widths), len(points)
 
     point_a, ci_a, horizon_a = _summarise(fa)
@@ -746,9 +791,7 @@ def _compare_forecast_versions(params: dict[str, Any]) -> dict[str, Any]:
 
     point_delta_abs = point_b - point_a
     point_delta_pct = (point_delta_abs / point_a * 100.0) if point_a != 0 else 0.0
-    ci_width_delta_pct = (
-        ((ci_b - ci_a) / ci_a * 100.0) if ci_a != 0 else 0.0
-    )
+    ci_width_delta_pct = ((ci_b - ci_a) / ci_a * 100.0) if ci_a != 0 else 0.0
 
     return {
         "available": True,
@@ -845,8 +888,7 @@ def _load_sample_bundle(params: dict[str, Any]) -> dict[str, Any]:
     scenario = str(params.get("scenario", "")).strip()
     if scenario not in _SAMPLE_BUNDLE_PATHS:
         raise ValueError(
-            f"Unknown scenario {scenario!r}. "
-            f"Valid: {sorted(_SAMPLE_BUNDLE_PATHS.keys())}"
+            f"Unknown scenario {scenario!r}. Valid: {sorted(_SAMPLE_BUNDLE_PATHS.keys())}"
         )
 
     xlsx_path = _SAMPLE_BUNDLE_PATHS[scenario]
@@ -986,11 +1028,7 @@ def _parse_data_file(params: dict[str, Any]) -> dict[str, Any]:
     max_records = int(params.get("max_records", 100))
 
     registry = build_default_registry()
-    adapter = (
-        registry.get_by_id(explicit_adapter)
-        if explicit_adapter
-        else registry.detect(path)
-    )
+    adapter = registry.get_by_id(explicit_adapter) if explicit_adapter else registry.detect(path)
     if adapter is None:
         raise UnsupportedFormatError(f"no adapter detected for {path}")
 
@@ -1056,9 +1094,7 @@ def _load_project_forecast_data(project_id: str) -> _ProjectForecastData:
         raise _ProjectNotFoundInDB(project_id)
 
     if detail.current_version_id is None:
-        raise ValueError(
-            f"Project {project_id!r} has no saved versions — cannot run forecast"
-        )
+        raise ValueError(f"Project {project_id!r} has no saved versions — cannot run forecast")
 
     loaded = db.load_version(detail.current_version_id)
 
@@ -1219,9 +1255,7 @@ def _start_forecast(params: dict[str, Any]) -> dict[str, Any]:
             from aurora_launch.schemas.adaptation import PriorParam
 
             recipient_priors = {
-                "trend_slope": PriorParam(
-                    mean=0.001, std=0.005, source="proxy_transferred"
-                )
+                "trend_slope": PriorParam(mean=0.001, std=0.005, source="proxy_transferred")
             }
             samples = prior_predictive_samples_real(
                 recipient_priors=recipient_priors,
@@ -1249,9 +1283,7 @@ def _start_forecast(params: dict[str, Any]) -> dict[str, Any]:
                         "point_forecast": mean_val,
                         "ci_lower": lo,
                         "ci_upper": hi,
-                        "progress_pct": round(
-                            (week_idx + 1) / horizon_weeks * 100.0, 2
-                        ),
+                        "progress_pct": round((week_idx + 1) / horizon_weeks * 100.0, 2),
                         "elapsed_ms": int((time.monotonic() - started) * 1000),
                     },
                 )
@@ -1287,9 +1319,7 @@ def _start_forecast(params: dict[str, Any]) -> dict[str, Any]:
             _cancel_flags.pop(handle, None)
             _forecast_threads.pop(handle, None)
 
-    thread = threading.Thread(
-        target=runner, name=f"aurora-forecast-{handle[:8]}", daemon=True
-    )
+    thread = threading.Thread(target=runner, name=f"aurora-forecast-{handle[:8]}", daemon=True)
     _forecast_threads[handle] = thread
     thread.start()
 
@@ -1330,9 +1360,8 @@ def _run_orchestrated_forecast_from_data(
         media_cols=posterior_data["media_cols"],
         normalization=posterior_data["normalization"],
         config=posterior_data.get("config", {}),
-        n_proxy_observations=int(
-            posterior_data.get("n_proxy_observations", 0)
-        ) or data.project_metadata.get("n_periods", 0),
+        n_proxy_observations=int(posterior_data.get("n_proxy_observations", 0))
+        or data.project_metadata.get("n_periods", 0),
     )
 
     # Build anchors from project metadata + optional caller override.
@@ -1366,9 +1395,7 @@ def _run_orchestrated_forecast_from_data(
     if spend_plan:
         effective_spend_plan = spend_plan
     else:
-        effective_spend_plan = {
-            ch: [0.0] * horizon_periods for ch in proxy.media_cols
-        }
+        effective_spend_plan = {ch: [0.0] * horizon_periods for ch in proxy.media_cols}
 
     granularity = data.granularity  # "monthly" | "weekly"
 
@@ -1748,9 +1775,8 @@ def _shutdown(_params: dict[str, Any]) -> dict[str, Any]:
                 _AUTOSAVE.shutdown()
             except Exception as exc:  # noqa: BLE001
                 import logging as _logging
-                _logging.getLogger(__name__).warning(
-                    "AutosaveManager shutdown raised: %s", exc
-                )
+
+                _logging.getLogger(__name__).warning("AutosaveManager shutdown raised: %s", exc)
             _AUTOSAVE = None
 
     # Close ProjectDB singleton so WAL checkpoint + file locks release cleanly.
@@ -1761,6 +1787,7 @@ def _shutdown(_params: dict[str, Any]) -> dict[str, Any]:
                 _PROJECT_DB.close()
             except Exception as exc:  # noqa: BLE001
                 import logging as _logging
+
                 _logging.getLogger(__name__).warning(
                     "ProjectDB close during shutdown raised: %s", exc
                 )
