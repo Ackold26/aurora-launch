@@ -325,6 +325,48 @@ class MethodNotFoundError(LookupError):
 # ─── Diagnostic ───────────────────────────────────────────────────────────────
 
 
+@register("get_memory_report")
+def _get_memory_report(_params: dict[str, Any]) -> dict[str, Any]:
+    """Phase Scale S-10: return current process memory snapshot для UI policy.
+
+    Returns:
+      - rss_bytes: int — process resident set size (or 0 if psutil missing)
+      - vms_bytes: int — virtual memory size
+      - available_bytes: int — system-wide available RAM
+      - severity: 'ok' | 'warning' | 'hard_cap' | 'critical'
+      - threshold_bytes: int — threshold for current severity
+      - advice: str — Russian advisory text
+      - measured: bool — false if psutil missing (severity='ok' anyway)
+    """
+    from aurora_launch.sidecar.memory_profile import (
+        get_memory_report,
+        policy_advice,
+    )
+
+    try:
+        report = get_memory_report()
+    except ImportError:
+        # psutil missing — degrade gracefully (no policy enforcement)
+        return {
+            "rss_bytes": 0,
+            "vms_bytes": 0,
+            "available_bytes": 0,
+            "severity": "ok",
+            "threshold_bytes": 0,
+            "advice": "Профилирование памяти недоступно (psutil не установлен).",
+            "measured": False,
+        }
+    return {
+        "rss_bytes": report.rss_bytes,
+        "vms_bytes": report.vms_bytes,
+        "available_bytes": report.available_bytes,
+        "severity": report.severity,
+        "threshold_bytes": report.threshold_bytes,
+        "advice": policy_advice(report),
+        "measured": True,
+    }
+
+
 @register("ping")
 def _ping(_params: dict[str, Any]) -> dict[str, Any]:
     return {

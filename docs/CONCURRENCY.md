@@ -90,6 +90,41 @@ synchronous RPC responses. Every write goes through `events.write_line()`.
 
 ---
 
+## S-14 RACI matrix — concurrency ownership
+
+Per-resource Responsible/Accountable/Consulted/Informed roles.
+R = Responsible (does the work). A = Accountable (single owner).
+C = Consulted (must be consulted). I = Informed (notified).
+
+| Resource / Decision | Main RPC thread | Forecast thread | GC thread | Integrity thread | Notes |
+|---|---|---|---|---|---|
+| projects.db (writes) | R/A | — | R (gc_metadata only) | — | GC writes single row; safe via WAL |
+| projects.db (reads) | R/A | R (pre-load only) | C | R (PRAGMA integrity_check) | WAL allows concurrent readers |
+| Blob filesystem (writes) | R/A | — | R (orphan delete) | — | GC + main both write but не overlap |
+| Blob filesystem (reads) | R/A | — | C | R | Integrity walks fs |
+| stdout (events.emit) | R | R | R | R | Shared `events._lock` mutex |
+| stderr (logging) | R | R | R | R | Python logging thread-safe |
+| _forecast_threads dict | R/A | C (own entry cleanup) | I | I | Main writes; threads remove own на exit |
+| _integrity_threads dict | R/A | I | I | C (own entry cleanup) | Same pattern |
+| _GC_THREAD singleton | R/A | I | C | I | Created once at first ProjectDB init |
+| _PROJECT_DB singleton | R/A | I | C | C | Double-checked locking |
+| _AUTOSAVE singleton | R/A | I | I | I | SIGTERM handler self-registered |
+| sidecar shutdown protocol | A/R | I | I | I | Drains all threads с 5-10s timeout |
+| ProxyBundle (frozen dataclass) | R | R (read-only) | I | I | Immutable — no concurrency concerns |
+| dispatch_table (engine routing) | R | C | I | I | Pure function lookup, thread-safe |
+
+**Cross-cutting invariants:**
+- No thread acquires more than one mutex simultaneously (no deadlock topology).
+- All event emission goes through `events.write_line()` под shared lock.
+- All cancel flags use `threading.Event` (atomic set/clear). No volatile booleans.
+- Shutdown drain is the only place we `join()` other threads — никогда mid-flight.
+
+**Out of scope (future):**
+- Cross-process locking (multiple Aurora app instances on same machine): handled by `process_lock.py` (S-04 advisory `.lock` file). Not represented in this matrix because cross-process resources (file locks on disk) live above thread layer.
+- Distributed concurrency (cloud sync, KMS signing): Phase Cloud — separate document.
+
+---
+
 ## ProjectDB thread safety
 
 `ProjectDB` is **not thread-safe**: a single `sqlite3.Connection` is used per

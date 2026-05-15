@@ -32,6 +32,10 @@ dependencies = [
     "pymc>=5.0",
     "arviz>=0.18",
     "pytensor>=2.18",
+    # Phase Scale S-10: memory profile + policy (process RSS + virtual mem).
+    # Cross-platform; required for IPC get_memory_report. Handler degrades
+    # gracefully when missing (severity='ok', measured=False).
+    "psutil>=5.9",
 ]
 
 [tool.uv]
