@@ -373,20 +373,29 @@ class TestDispatchContract:
                     f"Actual params: {params}"
                 )
 
-    def test_all_handlers_accept_kwargs(self) -> None:
-        """Every handler must accept **kwargs for future extensibility."""
-        from inspect import Parameter
+    def test_all_handlers_accept_extras(self) -> None:
+        """Every handler must accept extras: DispatchExtras parameter.
+
+        Phase 1 audit fix: typed DispatchExtras replaces unsafe **kwargs.
+        Handlers MUST accept extras as the last positional/keyword.
+        """
+        from aurora_launch.engines.dispatch_table import DispatchExtras
 
         for mode, handler in _MODE_DISPATCH.items():
             sig = inspect.signature(handler)
-            has_var_keyword = any(
-                p.kind == Parameter.VAR_KEYWORD
-                for p in sig.parameters.values()
-            )
-            assert has_var_keyword, (
+            assert "extras" in sig.parameters, (
                 f"Handler for {mode.name} ({handler.__name__}) "
-                f"does not accept **kwargs. Add **kwargs: Any to the signature."
+                f"does not accept extras: DispatchExtras parameter."
             )
+            param = sig.parameters["extras"]
+            # Either default value OR annotation must be DispatchExtras
+            ann = param.annotation
+            if ann is not inspect.Parameter.empty:
+                # accept "DispatchExtras" as forward ref or class
+                assert (
+                    ann is DispatchExtras
+                    or getattr(ann, "__name__", str(ann)) == "DispatchExtras"
+                ), f"Handler {handler.__name__} extras param wrong annotation: {ann}"
 
 
 # ---------------------------------------------------------------------------

@@ -288,6 +288,7 @@ class TestDispatchTableIntegration:
     def test_real_path_when_inputs_complete(self) -> None:
         """Sufficient recipient_y + historical_spend → real OLS path."""
         from aurora_launch.engines.dispatch_table import (
+            DispatchExtras,
             _handle_ols_with_proxy_priors,
         )
         from aurora_launch.engines.pure_transfer_engine import (
@@ -331,7 +332,7 @@ class TestDispatchTableIntegration:
             coverage_target=0.95,
             recipient_y=recipient_y,
             warnings=warnings,
-            historical_spend=historical_spend,
+            extras=DispatchExtras(historical_spend=historical_spend),
         )
         assert forecast is not None
         assert sig == "ols_with_proxy_priors_v1"

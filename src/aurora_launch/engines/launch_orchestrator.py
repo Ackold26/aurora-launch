@@ -302,6 +302,10 @@ class LaunchOrchestrator:
         channels = [ChannelTransferParams.model_validate(d) for d in channel_dicts]
 
         _check_cancel()
+        # Phase 1 audit fix: typed DispatchExtras instead of **kwargs.
+        # historical_spend optional — passed by sidecar after R-03 wiring.
+        # Plumbed via orchestrator caller когда available.
+        from aurora_launch.engines.dispatch_table import DispatchExtras
         forecast, signature = dispatch_engine(
             mode=engine_config.mode,
             channels=channels,
@@ -313,7 +317,9 @@ class LaunchOrchestrator:
             coverage_target=coverage_target,
             recipient_y=recipient_y,
             warnings=warnings,
-            shrinkage_factor=shrinkage_factor,
+            extras=DispatchExtras(
+                shrinkage=shrinkage_factor if shrinkage_factor is not None else 0.3,
+            ),
         )
 
         if (

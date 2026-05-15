@@ -197,6 +197,7 @@ class TestDispatchIntegration:
 
     def test_real_path_when_inputs_complete(self) -> None:
         from aurora_launch.engines.dispatch_table import (
+            DispatchExtras,
             _handle_bayesian_with_proxy_priors,
         )
         from aurora_launch.engines.pure_transfer_engine import (
@@ -240,7 +241,7 @@ class TestDispatchIntegration:
             coverage_target=0.95,
             recipient_y=recipient_y,
             warnings=warnings,
-            historical_spend=historical_spend,
+            extras=DispatchExtras(historical_spend=historical_spend),
         )
         assert forecast is not None
         assert sig == "bayesian_with_proxy_priors_v1"

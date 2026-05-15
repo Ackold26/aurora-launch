@@ -65,6 +65,7 @@ OQ-4: Mode 3 fallback inflation factor (0.7×) was chosen conservatively.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -77,6 +78,38 @@ from aurora_launch.engines.pure_transfer_engine import (
     forecast_pure_transfer,
 )
 from aurora_launch.engines.router import EngineMode, Granularity
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 audit 1.2 closure: typed DispatchExtras replaces unsafe **kwargs
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class DispatchExtras:
+    """Typed extras для dispatch handlers (Phase 1 audit fix).
+
+    Previously **kwargs surface allowed silent typos: `historicl_spend`
+    would simply be missing from kwargs.get() и handler would silently
+    fallback к pure_transfer. Now: typo на field name raises TypeError
+    при construction.
+
+    Phase Magic-Math handlers (M-01, M-02) use historical_spend +
+    shrinkage. Future modes can extend this dataclass с new optional
+    fields без breaking handler signatures.
+    """
+    historical_spend: dict[str, list[float]] | None = None
+    """Per-channel historical spend для OLS+priors / Bayesian+priors fits."""
+
+    shrinkage: float = 0.3
+    """Proxy prior weight ∈ [0, 1]. 0 = pure OLS, 1 = pure proxy."""
+
+    n_samples: int = 500
+    """Number of posterior samples для Mode 4 Bayesian+priors output."""
+
+    @classmethod
+    def empty(cls) -> "DispatchExtras":
+        """Default extras (no historical data, default shrinkage)."""
+        return cls()
 
 if TYPE_CHECKING:
     pass  # future: ProxyChannelPrior for M-01/M-02 real impls
@@ -124,7 +157,7 @@ def _handle_pure_transfer(
     coverage_target: float,
     recipient_y: list[float] | None,
     warnings: list[str],
-    **kwargs: Any,
+    extras: DispatchExtras = DispatchExtras(),
 ) -> tuple[TransferForecast, str]:
     """Mode 1 — PURE_TRANSFER.
 
@@ -152,7 +185,7 @@ def _handle_transfer_with_bias_check(
     coverage_target: float,
     recipient_y: list[float] | None,
     warnings: list[str],
-    **kwargs: Any,
+    extras: DispatchExtras = DispatchExtras(),
 ) -> tuple[TransferForecast, str]:
     """Mode 2 — TRANSFER_WITH_BIAS_CHECK.
 
@@ -194,7 +227,7 @@ def _handle_ols_with_proxy_priors(
     coverage_target: float,
     recipient_y: list[float] | None,
     warnings: list[str],
-    **kwargs: Any,
+    extras: DispatchExtras = DispatchExtras(),
 ) -> tuple[TransferForecast, str]:
     """Mode 3 — OLS_WITH_PROXY_PRIORS (Phase Magic M-01 real implementation).
 
@@ -216,8 +249,9 @@ def _handle_ols_with_proxy_priors(
         fit_ols_with_priors,
     )
 
-    historical_spend = kwargs.get("historical_spend")
-    shrinkage = float(kwargs.get("shrinkage", DEFAULT_SHRINKAGE))
+    # Phase 1 audit fix: typed extras instead of kwargs.get (typo-unsafe)
+    historical_spend = extras.historical_spend
+    shrinkage = float(extras.shrinkage) if extras.shrinkage != DEFAULT_SHRINKAGE else DEFAULT_SHRINKAGE
 
     # Fallback path: insufficient input
     if (
@@ -378,7 +412,7 @@ def _handle_bayesian_with_proxy_priors(
     coverage_target: float,
     recipient_y: list[float] | None,
     warnings: list[str],
-    **kwargs: Any,
+    extras: DispatchExtras = DispatchExtras(),
 ) -> tuple[TransferForecast, str]:
     """Mode 4 — BAYESIAN_WITH_PROXY_PRIORS (Phase Magic M-02 real impl).
 
@@ -406,9 +440,10 @@ def _handle_bayesian_with_proxy_priors(
         MIN_OBSERVATIONS,
     )
 
-    historical_spend = kwargs.get("historical_spend")
-    shrinkage = float(kwargs.get("shrinkage", DEFAULT_SHRINKAGE))
-    n_samples = int(kwargs.get("n_samples", DEFAULT_POSTERIOR_SAMPLES))
+    # Phase 1 audit fix: typed extras instead of kwargs.get (typo-unsafe)
+    historical_spend = extras.historical_spend
+    shrinkage = float(extras.shrinkage)
+    n_samples = int(extras.n_samples) if extras.n_samples != DEFAULT_POSTERIOR_SAMPLES else DEFAULT_POSTERIOR_SAMPLES
 
     # Fallback path: insufficient input
     if (
@@ -581,7 +616,7 @@ def dispatch_engine(
     coverage_target: float,
     recipient_y: list[float] | None,
     warnings: list[str],
-    **kwargs: Any,
+    extras: DispatchExtras = DispatchExtras(),
 ) -> tuple[TransferForecast, str]:
     """Dispatch forecast execution to the registered handler for *mode*.
 
@@ -627,5 +662,5 @@ def dispatch_engine(
         coverage_target,
         recipient_y,
         warnings,
-        **kwargs,
+        extras,
     )
