@@ -87,6 +87,45 @@ jobs:
       - working-directory: frontend
         run: npm test
 
+  bundle-size:
+    name: Bundle size check
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - working-directory: frontend
+        run: npm ci
+      - working-directory: frontend
+        run: npm run gen:tokens
+      - name: Build frontend
+        working-directory: frontend
+        # TAURI_ENV_PLATFORM triggers chrome105 target (production-like)
+        env:
+          TAURI_ENV_PLATFORM: windows
+        run: npx svelte-kit sync && npx vite build
+      - name: Check entry chunk size (500 KB limit)
+        # Fail if any JS entry chunk in _app/immutable/entry/ exceeds 500 KB.
+        # manualChunks in vite.config.ts splits chart.js + svelte-i18n
+        # so main entry should stay well under limit.
+        run: |
+          FAIL=0
+          for f in frontend/build/_app/immutable/entry/*.js; do
+            [ -f "$f" ] || continue
+            SIZE_KB=$(du -k "$f" | cut -f1)
+            echo "$SIZE_KB KB  $f"
+            if [ "$SIZE_KB" -gt 500 ]; then
+              echo "FAIL: $f exceeds 500 KB threshold (${SIZE_KB} KB)"
+              FAIL=1
+            fi
+          done
+          exit $FAIL
+
   cloud:
     name: Aurora Cloud (Edge Functions)
     # Cloud/Edge Functions are Deno/TS — platform-independent logic.

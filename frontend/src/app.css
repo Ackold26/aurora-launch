@@ -27,6 +27,9 @@
 @import '@fontsource/jetbrains-mono/500.css';
 
 @import './lib/styles/tokens.css';
+/* overrides.css MUST come после tokens.css — adds P-06/P-10/P-14/QW6
+ * tokens lost when tokens.css regenerates from tokens.json. */
+@import './lib/styles/overrides.css';
 @import './lib/styles/base.css';
 
 :root {

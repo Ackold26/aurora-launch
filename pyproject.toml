@@ -50,6 +50,8 @@ dev-dependencies = [
     # PyInstaller для sidecar packaging (CI per-OS builds + local test).
     # Py3.12 поддерживается с PyInstaller 6.0+.
     "pyinstaller>=6.0",
+    # pre-commit: git hook manager. Install hooks once with: pre-commit install
+    "pre-commit>=3.8.0",
 ]
 
 # Phase A path-deps are configured locally per developer via uv.sources
@@ -128,3 +130,17 @@ python_version = "3.11"
 strict = true
 warn_unused_ignores = true
 disallow_untyped_defs = true
+
+[tool.coverage.run]
+source = ["src/aurora_launch"]
+omit = ["tests/*", "src/aurora_launch/__init__.py"]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "@abstractmethod",
+]

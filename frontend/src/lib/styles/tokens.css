@@ -1,14 +1,14 @@
 /* Aurora Launch — tokens.css
-   Generated from ../../06_Aurora_Design_system/01_Tokens/tokens.json
+   Generated from ..\06_Aurora_Design_system\01_Tokens\tokens.json
    Run `npm run gen:tokens` to regenerate. Do NOT hand-edit. */
 
 :root {
   /* colors */
-  --color-brand-deep-100: #0A1628;
-  --color-brand-deep-80: #1E3A5F;
-  --color-brand-deep-60: #547090;
-  --color-brand-deep-40: #99ADC2;
   --color-brand-deep-20: #D6DFE8;
+  --color-brand-deep-40: #99ADC2;
+  --color-brand-deep-60: #547090;
+  --color-brand-deep-80: #1E3A5F;
+  --color-brand-deep-100: #0A1628;
   --color-brand-gold-primary: #C5A46D;
   --color-brand-gold-muted: #8C7142;
   --color-brand-bg-white: #FFFFFF;
@@ -17,7 +17,6 @@
   --color-brand-text-primary: var(--color-brand-deep-100);
   --color-brand-text-secondary: var(--color-brand-deep-60);
   --color-brand-sig-lime: #CCFF00;
-
   --color-ui-accent-primary: #2E5BFF;
   --color-ui-accent-secondary: var(--color-brand-sig-lime);
   --color-ui-bg-main: #0f1117;
@@ -26,7 +25,6 @@
   --color-ui-text-primary: #EAEAF0;
   --color-ui-text-secondary: #A8A8B8;
   --color-ui-text-muted: #7A7A90;
-
   --color-semantic-success: #10B981;
   --color-semantic-warning: #F59E0B;
   --color-semantic-danger: #EF4444;
@@ -34,7 +32,6 @@
   --color-semantic-stop: #ED2124;
   --color-semantic-caution: #F1C44D;
   --color-semantic-go: #269924;
-
   --color-data-ocean: #0A6F7A;
   --color-data-jade: #3EB661;
   --color-data-berry: #D3086F;
@@ -43,11 +40,13 @@
   --color-data-aqua: #4CCACD;
   --color-data-peach: #FF7E81;
 
-  /* typography — P-11 premium font stack (self-hosted via @fontsource, no CDN) */
-  --typography-fontFamily-uiSerif: 'Noto Serif', Georgia, serif;
-  --typography-fontFamily-uiSans: 'Inter', system-ui, -apple-system, sans-serif;
-  --typography-fontFamily-uiDisplay: 'Manrope', 'Inter', system-ui, sans-serif;
-  --typography-fontFamily-uiMono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  /* typography */
+  --typography-fontFamily-serif: Georgia;
+  --typography-fontFamily-sans: Arial;
+  --typography-fontFamily-mono: Consolas;
+  --typography-fontFamily-uiSerif: Noto Serif;
+  --typography-fontFamily-uiSans: Inter;
+  --typography-fontFamily-uiMono: JetBrains Mono;
   --typography-fontSize-ui-h1: 2rem;
   --typography-fontSize-ui-h2: 1.5rem;
   --typography-fontSize-ui-h3: 1.25rem;
@@ -58,7 +57,7 @@
   --typography-fontWeight-regular: 400;
   --typography-fontWeight-medium: 500;
   --typography-fontWeight-bold: 700;
-  --typography-lineHeight-tight: 1.0;
+  --typography-lineHeight-tight: 1;
   --typography-lineHeight-snug: 1.15;
   --typography-lineHeight-normal: 1.5;
 
@@ -78,12 +77,14 @@
   --sizing-ui-sidebarWidth: 240px;
 
   /* borders */
+  --border-width-hairline: 0.75pt;
+  --border-width-signature: 2pt;
   --border-radius-none: 0;
   --border-radius-sm: 2px;
   --border-radius-md: 4px;
   --border-radius-lg: 8px;
 
-  /* Aurora Launch convenience aliases (UX_PRINCIPLES.md §2.1, audit D2) */
+  /* Aurora Launch convenience aliases (UX_PRINCIPLES.md §2.1) */
   --bg-main: var(--color-ui-bg-main);
   --bg-surface: var(--color-ui-bg-surface);
   --border-subtle: var(--color-ui-bg-border);
@@ -98,105 +99,29 @@
   --color-info: var(--color-semantic-info);
   --font-sans: var(--typography-fontFamily-uiSans);
   --font-serif: var(--typography-fontFamily-uiSerif);
-  --font-display: var(--typography-fontFamily-uiDisplay);
   --font-mono: var(--typography-fontFamily-uiMono);
 
-  /* Skeleton tokens (P-10) */
-  --surface-skeleton: color-mix(in srgb, var(--bg-surface) 60%, var(--text-muted));
-  --surface-skeleton-shimmer: color-mix(in srgb, var(--bg-surface) 30%, var(--text-muted));
-
-  /* Surface tier aliases (P-14) — used by ForecastHistory, CertChainViewer, CommandPalette */
-  --bg-elevated: #222532;          /* raised panel above surface */
-  --surface-base: var(--bg-surface);
-  --surface-hover: color-mix(in srgb, var(--bg-surface) 70%, var(--text-muted) 30%);
-  --surface-selected: color-mix(in srgb, var(--accent) 12%, var(--bg-surface));
-
-  /* Border tier aliases (P-14) */
-  --border-default: #3a3d4d;       /* standard rule, stronger than --border-subtle */
-
-  /* Action aliases (P-14) — mirrors --accent so ForecastHistory buttons resolve */
-  --color-primary: var(--accent);
-  --color-primary-hover: color-mix(in srgb, var(--accent) 80%, #fff 20%);
-  --color-muted: var(--text-muted);
-
-  /* Display type scale (P-14) — used by ForecastHistory section headings */
-  --typography-fontSize-display-xs: 1.125rem;
-  --typography-fontSize-display-sm: 1.5rem;
-  --typography-fontSize-ui-base: var(--typography-fontSize-ui-body);  /* alias used by CommandPalette */
-
-  /* ── Motion tokens (P-06 / MOTION.md) ────────────────────────────────────
-     Canonical scale. See frontend/src/lib/styles/MOTION.md for full spec.
-     INV-14: all durations collapse to 0ms under prefers-reduced-motion:reduce. */
-
-  /* Duration scale */
-  --motion-duration-instant:   0ms;
-  --motion-duration-fast:      80ms;
-  --motion-duration-normal:    160ms;
-  --motion-duration-moderate:  240ms;
-  --motion-duration-slow:      360ms;
-  --motion-duration-leisurely: 480ms;
-
-  /* Easing curves */
-  --motion-easing-standard:    cubic-bezier(0.25, 0.1, 0.25, 1);  /* ease */
-  --motion-easing-enter:       cubic-bezier(0, 0, 0.2, 1);        /* decelerate */
-  --motion-easing-exit:        cubic-bezier(0.4, 0, 1, 1);        /* accelerate */
-  --motion-easing-spring-soft: cubic-bezier(0.34, 1.56, 0.64, 1); /* slight overshoot */
-  --motion-easing-linear:      linear;
-
-  /* Legacy aliases (Block 2D) — preserved for backward compat.
-     Migration path: replace usages with canonical tokens above, then remove.
-     --motion-fast     was 150ms → now maps to --motion-duration-normal  (160ms)
-     --motion-default  was 200ms → now maps to --motion-duration-moderate (240ms)
-     --motion-smooth   was 320ms → now maps to --motion-duration-slow     (360ms)
-     --easing-spring → --motion-easing-spring-soft
-     --easing-smooth → --motion-easing-standard
-     --easing-emphasized → --motion-easing-enter */
-  --motion-fast:     var(--motion-duration-normal);
-  --motion-default:  var(--motion-duration-moderate);
-  --motion-smooth:   var(--motion-duration-slow);
-  --easing-spring:   var(--motion-easing-spring-soft);
-  --easing-smooth:   var(--motion-easing-standard);
-  --easing-emphasized: var(--motion-easing-enter);
-
-  /* Elevation shadows */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.18);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.32);
-  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.48);
-  --shadow-glow: 0 0 24px rgba(46, 91, 255, 0.22);
+  /* Motion timings (Block 2D) */
+  --motion-fast: 150ms;
+  --motion-default: 200ms;
+  --motion-smooth: 320ms;
+  --easing-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --easing-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --easing-emphasized: cubic-bezier(0.2, 0, 0, 1);
 }
 
 /* Light theme overrides (Block 2 D9) — tokens.json остаётся dark SSOT */
-[data-theme='light'] {
+[data-theme="light"] {
   --bg-main: #FAFAFC;
   --bg-surface: #FFFFFF;
   --border-subtle: #E0E2E8;
   --text-primary: #1A1D27;
   --text-secondary: #4A4D57;
   --text-muted: #7A7D87;
-  --shadow-sm: 0 1px 2px rgba(20, 30, 60, 0.08);
-  --shadow-md: 0 4px 12px rgba(20, 30, 60, 0.12);
-  --shadow-lg: 0 12px 32px rgba(20, 30, 60, 0.18);
-  --shadow-glow: 0 0 24px rgba(46, 91, 255, 0.18);
-
-  /* P-14 surface/border overrides for light theme */
-  --bg-elevated: #F0F2F7;
-  --surface-hover: #F5F6FA;
-  --surface-selected: color-mix(in srgb, var(--accent) 8%, #FFFFFF);
-  --border-default: #C8CBD6;
-
-  /* PA-A06 fix: semantic colors darker on light bg for WCAG AA contrast.
-   * Dark theme: --color-success #10B981 (4.6:1 on dark bg) — keep.
-   * Light theme: same hex = 2.5:1 (FAIL AA 4.5:1 minimum).
-   * Override с darker variants meeting AA on #FFFFFF / #FAFAFC bases.
-   */
-  --color-success: #047857;  /* 4.97:1 on #FFFFFF — passes AA */
-  --color-warning: #B45309;  /* 4.91:1 on #FFFFFF — passes AA */
-  --color-danger:  #B91C1C;  /* 5.94:1 on #FFFFFF — passes AA */
-  --color-info:    #1D4ED8;  /* 8.59:1 on #FFFFFF — passes AAA */
 }
 
-/* High contrast (a11y, ГОСТ Р 52872-2019) */
-[data-theme='high-contrast'] {
+/* High contrast palette (a11y, ГОСТ Р 52872-2019) */
+[data-theme="high-contrast"] {
   --bg-main: #000000;
   --bg-surface: #0F0F0F;
   --border-subtle: #FFFFFF;
@@ -204,22 +129,12 @@
   --text-secondary: #FFFF00;
   --text-muted: #BBBBBB;
   --accent: #00FFFF;
-  --accent-sigil: #FFFF00;
 }
 
-/* Reduced motion preference — INV-14 */
 @media (prefers-reduced-motion: reduce) {
   :root {
-    /* Canonical duration tokens → 0 */
-    --motion-duration-fast:      0ms;
-    --motion-duration-normal:    0ms;
-    --motion-duration-moderate:  0ms;
-    --motion-duration-slow:      0ms;
-    --motion-duration-leisurely: 0ms;
-    /* Legacy aliases → 0 (belt-and-suspenders; aliases point to canonical above
-       but explicit override ensures any stale CSS variable references also zero) */
-    --motion-fast:    0ms;
+    --motion-fast: 0ms;
     --motion-default: 0ms;
-    --motion-smooth:  0ms;
+    --motion-smooth: 0ms;
   }
 }

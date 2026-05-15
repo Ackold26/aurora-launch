@@ -12,6 +12,12 @@ const config = {
       precompress: false,
       strict: true
     }),
+    prerender: {
+      // Dynamic routes like /project/[uuid]/history are never pre-crawled;
+      // suppress the SvelteKit post-build error so CI bundle-size check
+      // can read compiled output from .svelte-kit/output/client/.
+      handleUnseenRoutes: 'warn',
+    },
     alias: {
       $lib: 'src/lib',
       $types: 'src/lib/types',

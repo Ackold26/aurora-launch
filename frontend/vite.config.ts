@@ -34,9 +34,13 @@ export default defineConfig(async () => ({
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
     rollupOptions: {
       output: {
-        manualChunks: {
-          chart: ['chart.js'],
-          i18n: ['svelte-i18n']
+        // manualChunks: only split chart.js + svelte-i18n when they are
+        // actually bundled (not treated as externals by plugins).
+        // Using a function form avoids the "external module" error when
+        // running `vite build` outside the full Tauri pipeline.
+        manualChunks(id) {
+          if (id.includes('node_modules/chart.js')) return 'chart';
+          if (id.includes('node_modules/svelte-i18n')) return 'i18n';
         }
       }
     }

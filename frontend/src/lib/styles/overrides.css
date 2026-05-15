@@ -1,0 +1,92 @@
+/* Aurora Launch — token overrides
+ *
+ * IMPORTANT: tokens.css is generated from tokens.json — `npm run gen:tokens`
+ * regenerates and overwrites hand-edits. Manual additions live HERE instead.
+ *
+ * Imported after tokens.css в app.css так что these override generated values.
+ *
+ * History:
+ * - P-06 motion canonical tokens (duration scale + easing curves)
+ * - P-10 surface-skeleton tokens (shimmer effect)
+ * - P-14 dark mode + light theme completeness (P-Premium dark mode audit)
+ * - PA-A06 WCAG AA contrast — light theme color-success/warning/danger/info
+ */
+
+:root {
+  /* P-14 surface tokens — missing from generated tokens.css */
+  --bg-elevated: #222532;
+  --surface-base: var(--bg-surface);
+  --surface-hover: color-mix(in srgb, var(--bg-surface) 70%, var(--text-muted));
+  --surface-selected: color-mix(in srgb, var(--accent) 12%, var(--bg-surface));
+  --border-default: #3a3d4d;
+
+  /* P-14 semantic color aliases */
+  --color-primary: var(--accent);
+  --color-primary-hover: color-mix(in srgb, var(--accent) 80%, #FFFFFF 20%);
+  --color-muted: var(--text-muted);
+
+  /* P-14 display typography */
+  --typography-fontSize-display-xs: 1.125rem;
+  --typography-fontSize-display-sm: 1.5rem;
+  --typography-fontSize-display-md: 1.75rem;
+  --typography-fontSize-display-lg: 2.5rem;
+  --typography-fontSize-ui-base: var(--typography-fontSize-ui-body);
+  --typography-fontSize-ui-md: 1rem;
+
+  /* P-11 display font family (Manrope from @fontsource) */
+  --typography-fontFamily-uiDisplay: 'Manrope', 'Inter', system-ui, sans-serif;
+  --font-display: var(--typography-fontFamily-uiDisplay);
+
+  /* P-10 surface-skeleton tokens — shimmer background */
+  --surface-skeleton: color-mix(in srgb, var(--bg-surface) 70%, var(--text-muted) 30%);
+  --surface-skeleton-shimmer: color-mix(in srgb, var(--surface-skeleton) 70%, #FFFFFF 30%);
+
+  /* P-06 motion canonical tokens — see frontend/src/lib/styles/MOTION.md */
+  --motion-duration-instant: 0ms;
+  --motion-duration-fast: 80ms;
+  --motion-duration-normal: 160ms;
+  --motion-duration-moderate: 240ms;
+  --motion-duration-slow: 360ms;
+  --motion-duration-leisurely: 480ms;
+  --motion-easing-standard: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --motion-easing-enter: cubic-bezier(0, 0, 0.2, 1);
+  --motion-easing-exit: cubic-bezier(0.4, 0, 1, 1);
+  --motion-easing-spring-soft: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --motion-easing-linear: linear;
+
+  /* P-14 link color (used in breadcrumbs etc) */
+  --text-link: var(--accent);
+}
+
+/* Light theme: dark SSOT tokens.css already overrides several tokens.
+ * Here we add the additional ones not covered + WCAG AA contrast fixes. */
+[data-theme='light'] {
+  /* P-14 light theme surfaces */
+  --bg-elevated: #F0F2F7;
+  --surface-base: #FFFFFF;
+  --surface-hover: #F5F6FA;
+  --surface-selected: color-mix(in srgb, var(--accent) 8%, #FFFFFF);
+  --border-default: #C8CBD6;
+
+  /* PA-A06 WCAG AA: dark theme color-success #10B981 = 2.5:1 on light bg
+   * (fails AA 4.5:1). Override с darker variants. */
+  --color-success: #047857;  /* 4.97:1 on #FFFFFF — passes AA */
+  --color-warning: #B45309;  /* 4.91:1 on #FFFFFF — passes AA */
+  --color-danger:  #B91C1C;  /* 5.94:1 on #FFFFFF — passes AA */
+  --color-info:    #1D4ED8;  /* 8.59:1 on #FFFFFF — passes AAA */
+
+  /* P-10 light theme skeleton */
+  --surface-skeleton: #F3F4F6;
+  --surface-skeleton-shimmer: #E5E7EB;
+}
+
+/* Reduced motion: zero canonical durations explicitly. INV-14. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-duration-fast: 0ms;
+    --motion-duration-normal: 0ms;
+    --motion-duration-moderate: 0ms;
+    --motion-duration-slow: 0ms;
+    --motion-duration-leisurely: 0ms;
+  }
+}

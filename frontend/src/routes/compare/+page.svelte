@@ -75,13 +75,13 @@
 
   <div class="grid">
     {#each slots as slot, i (slot.label)}
+      {#snippet cardActions()}
+        <Button variant="ghost" size="sm" onclick={() => removeSlot(i)}>
+          {#snippet children()}{$_('compare.remove')}{/snippet}
+        </Button>
+      {/snippet}
       <Card title={slot.label}
-        actions={() => null}>
-        {#snippet actions()}
-          <Button variant="ghost" size="sm" onclick={() => removeSlot(i)}>
-            {#snippet children()}{$_('compare.remove')}{/snippet}
-          </Button>
-        {/snippet}
+        actions={cardActions}>
         {#snippet children()}
           <div class="cell">
             <RadarChart dimensions={slot.dimensions} size={260} />

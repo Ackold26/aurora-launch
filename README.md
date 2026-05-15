@@ -1,5 +1,8 @@
 # Aurora Launch
 
+[![CI](https://github.com/Ackold26/aurora-launch/actions/workflows/ci.yml/badge.svg)](https://github.com/Ackold26/aurora-launch/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/Ackold26/aurora-launch/branch/main/graph/badge.svg)](https://codecov.io/gh/Ackold26/aurora-launch)
+
 **MMM forecasting product для запуска новых брендов via ad-hoc proxy intake.**
 
 Phase B Aurora Analytics Suite product. Spec: [`03_Architecture/PHASE_B_REQUIREMENTS.md`](03_Architecture/PHASE_B_REQUIREMENTS.md).
@@ -77,6 +80,22 @@ uv run ruff format --check .
 # Проверка типов
 uv run mypy src/aurora_launch
 ```
+
+### Pre-commit hooks (обязательно после первого клонирования)
+
+Pre-commit автоматически запускает ruff, mypy, prettier, eslint и cargo-fmt
+перед каждым коммитом. Установить один раз:
+
+```bash
+uv sync               # устанавливает pre-commit как dev-зависимость
+pre-commit install    # регистрирует .git/hooks/pre-commit
+
+# Проверить все файлы вручную (полезно после клонирования):
+pre-commit run --all-files
+```
+
+Hooks блокируют коммит при нарушениях; многие (ruff, prettier) авто-исправляют файлы —
+просто добавьте исправленные файлы в индекс и повторите коммит.
 
 ### Запуск sidecar локально
 

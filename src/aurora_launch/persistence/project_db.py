@@ -141,7 +141,17 @@ def _utc_now_iso() -> str:
 
 
 class ProjectDB:
-    """Aurora Launch Planner project database (working storage)."""
+    """Aurora Launch Planner project database (working storage).
+
+    Thread safety (Phase 1 audit fix):
+        - WAL mode allows multiple CONCURRENT readers (per RACI matrix)
+        - check_same_thread=False permits cross-thread access for read-only
+          background tasks (S-08 integrity check, S-07 gc periodic)
+        - Writes MUST acquire ``_write_lock`` to prevent corruption
+          when main thread + gc thread + other writers race
+        - Decorated methods: save_version, delete_project, gc_orphan_blobs,
+          _update_gc_metadata, create_project
+    """
 
     def __init__(
         self,
@@ -200,6 +210,12 @@ class ProjectDB:
         self._conn.execute("PRAGMA journal_mode = WAL")
         self._conn.execute("PRAGMA synchronous = NORMAL")
         self._conn.execute("PRAGMA foreign_keys = ON")
+        # Phase 1 audit P1.5: write lock serialises все write ops так что
+        # concurrent writers (main RPC thread + gc background thread + future
+        # autosave thread) не corrupt WAL via interleaved INSERT/UPDATE.
+        # Readers (WAL allows concurrent) NOT через этот lock.
+        import threading as _threading
+        self._write_lock = _threading.Lock()
         self._apply_schema()
         self._maybe_gc_on_open()
 
@@ -288,7 +304,8 @@ class ProjectDB:
         now = _utc_now_iso()
         meta_json = json.dumps(metadata or {}, ensure_ascii=False)
 
-        with self._tx():
+        # Phase 1 audit fix: acquire write lock к serialise с concurrent writers
+        with self._write_lock, self._tx():
             self._conn.execute(
                 """
                 INSERT INTO projects (
@@ -370,7 +387,8 @@ class ProjectDB:
         params.append(_utc_now_iso())
         params.append(project_uuid)
 
-        with self._tx():
+        # Phase 1 audit fix: acquire write lock
+        with self._write_lock, self._tx():
             cur = self._conn.execute(
                 f"UPDATE projects SET {', '.join(updates)} WHERE project_uuid = ?",
                 params,
@@ -385,8 +403,10 @@ class ProjectDB:
         в случае двойного delete от concurrent processes (WAL BEGIN IMMEDIATE
         защищает single-process; cross-process needs explicit clamp).
         Schema has CHECK (ref_count >= 0) as defense-in-depth.
+
+        Phase 1 audit fix: acquires _write_lock к serialise с GC/other writers.
         """
-        with self._tx():
+        with self._write_lock, self._tx():
             # Verify project exists (raise raньше чем DELETE for clear error)
             row = self._conn.execute(
                 "SELECT 1 FROM projects WHERE project_uuid = ?", (project_uuid,)
@@ -448,7 +468,10 @@ class ProjectDB:
             sha = self.blob_store.compute_hash(content)
             prepared.append((file_path, content, sha))
 
-        with self._tx():
+        # Phase 1 audit fix: acquire write lock к serialise с GC/concurrent
+        # save_version calls. Pre-compute (blob hashing) outside lock — purely
+        # functional, no DB touch.
+        with self._write_lock, self._tx():
             # Validate project exists и compute next revision
             row = self._conn.execute(
                 "SELECT 1 FROM projects WHERE project_uuid = ?", (project_uuid,)
@@ -717,9 +740,11 @@ class ProjectDB:
         """Record a GC run: set last_gc_ran_at=now, increment orphans_collected_total.
 
         Must be called OUTSIDE of an active transaction (opens its own).
+        Phase 1 audit fix: acquires _write_lock — gc thread + main thread
+        could race на UPDATE without lock.
         """
         now = _utc_now_iso()
-        with self._tx():
+        with self._write_lock, self._tx():
             self._conn.execute(
                 """
                 UPDATE gc_metadata
@@ -772,7 +797,11 @@ class ProjectDB:
         """Delete blobs with ref_count = 0 (from disk + DB row).
 
         Returns count of blobs reclaimed. Idempotent; safe to call anytime.
+        Phase 1 audit fix: acquires _write_lock к serialise с save_version
+        + delete_project. Read phase (SELECT) outside lock — WAL allows
+        concurrent reads safely.
         """
+        # Read outside lock — WAL concurrent reads allowed
         rows = self._conn.execute(
             "SELECT sha256 FROM blobs WHERE ref_count <= 0"
         ).fetchall()
@@ -780,9 +809,16 @@ class ProjectDB:
             return 0
 
         count = 0
-        with self._tx():
+        with self._write_lock, self._tx():
             for r in rows:
                 sha = r["sha256"]
+                # Re-check ref_count inside lock — concurrent save_version
+                # could have re-incremented между read и delete.
+                check = self._conn.execute(
+                    "SELECT ref_count FROM blobs WHERE sha256 = ?", (sha,)
+                ).fetchone()
+                if check is None or check["ref_count"] > 0:
+                    continue
                 try:
                     self.blob_store.delete(sha)
                 except BlobStoreError as exc:

@@ -22,7 +22,8 @@
     "gen:tokens": "node scripts/generate-tokens-css.mjs",
     "tauri:dev": "tauri dev",
     "tauri:build": "AURORA_BUILD_PROFILE=production tauri build",
-    "tauri:build:dev": "AURORA_BUILD_PROFILE=dev tauri build --debug"
+    "tauri:build:dev": "AURORA_BUILD_PROFILE=dev tauri build --debug",
+    "bundle-stats": "vite-bundle-visualizer"
   },
   "devDependencies": {
     "@histoire/plugin-svelte": "^0.17.17",
@@ -46,6 +47,7 @@
     "tslib": "^2.6.0",
     "typescript": "^5.5.0",
     "vite": "^5.4.0",
+    "vite-bundle-visualizer": "^1.2.1",
     "vitest": "^2.1.0"
   },
   "dependencies": {

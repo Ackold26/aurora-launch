@@ -8,6 +8,10 @@ name: CI
 #     pytest matrix Python 3.11/3.12 × OS с coverage + BC corpus +
 #     reproducibility checks.
 #   - test.yml owns non-Python integrations: Rust + Frontend + Cloud.
+#
+# Phase 1 DevOps additions (2026-05-15):
+#   - pre-commit job: runs all hooks against changed files on PR + all files on push main
+#   - Codecov upload in test job (ubuntu-latest / py3.11 matrix leg)
 
 on:
   push:
@@ -23,6 +27,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  pre-commit:
+    name: pre-commit hooks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Install deps (including pre-commit)
+        run: uv pip install --system pre-commit ruff mypy pydantic numpy
+
+      - name: Run pre-commit on all files
+        run: pre-commit run --all-files --show-diff-on-failure
+
   lint:
     name: Lint & type-check
     runs-on: ubuntu-latest
@@ -81,13 +108,21 @@ jobs:
       - name: Run tests
         run: pytest -v --cov=src/aurora_launch --cov-report=term-missing --cov-report=xml
 
-      - name: Upload coverage
+      - name: Upload coverage artifact
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: coverage.xml
           retention-days: 7
+
+      - name: Upload coverage to Codecov
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          flags: python
+          fail_ci_if_error: false
 
   corpus-check:
     name: BC corpus & reproducibility

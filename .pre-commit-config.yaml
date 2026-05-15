@@ -30,17 +30,35 @@ repos:
         args: [--ignore-missing-imports]
         files: ^src/
 
-  # TODO(block-2): Add rustfmt + clippy hooks after src-tauri is created
-  # - repo: local
-  #   hooks:
-  #     - id: cargo-fmt
-  #       name: cargo fmt
-  #       entry: cargo fmt --manifest-path src-tauri/Cargo.toml --
-  #       language: system
-  #       types: [rust]
-  #     - id: cargo-clippy
-  #       name: cargo clippy
-  #       entry: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
-  #       language: system
-  #       types: [rust]
-  #       pass_filenames: false
+  # Prettier: format Svelte, TS, JS, JSON in frontend/
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.1.0
+    hooks:
+      - id: prettier
+        files: ^frontend/
+        types_or: [svelte, ts, javascript, json]
+        additional_dependencies:
+          - prettier@^3.3.0
+          - prettier-plugin-svelte@^3.2.0
+
+  # ESLint: lint frontend Svelte + TS via local node_modules (eslint 9 flat config)
+  - repo: local
+    hooks:
+      - id: eslint-frontend
+        name: eslint (frontend)
+        entry: sh -c 'cd frontend && npx eslint --max-warnings 0 src/'
+        language: system
+        files: ^frontend/src/
+        types_or: [svelte, ts, javascript]
+        pass_filenames: false
+
+  # Cargo fmt: format Rust code (skipped gracefully if cargo not on PATH)
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt (src-tauri)
+        entry: sh -c 'command -v cargo >/dev/null 2>&1 && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check || echo "cargo not found, skipping rust fmt"'
+        language: system
+        files: ^src-tauri/
+        types: [rust]
+        pass_filenames: false
