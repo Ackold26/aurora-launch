@@ -27,6 +27,7 @@ Limitations (Phase B+ improvements):
 from __future__ import annotations
 
 import sys
+import types as _types_module
 from pathlib import Path
 from typing import Any, Literal, Union, get_args, get_origin
 
@@ -54,8 +55,10 @@ def _python_type_to_ts(py_type: Any, model_registry: dict[str, type[BaseModel]])
 
     origin = get_origin(py_type)
 
-    # Handle Optional[X] = Union[X, None]
-    if origin is Union:
+    # Audit H-1 (этап 1.7): handle both typing.Union AND new-style
+    # types.UnionType (Python 3.10+ syntax `X | Y`). Без UnionType-проверки
+    # все новые поля типа `T | None` шли в fallback "unknown".
+    if origin is Union or isinstance(py_type, _types_module.UnionType):
         args = get_args(py_type)
         non_none = [a for a in args if a is not type(None)]
         has_none = type(None) in args

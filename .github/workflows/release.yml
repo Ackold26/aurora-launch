@@ -293,15 +293,31 @@ jobs:
           python3 - <<'PY'
           import os, json, glob
           version = os.environ['VERSION']
+          # Audit H-2 (этап 1.7): Tauri на Windows производит .exe (NSIS)
+          # И .msi одновременно — оба с .sig. Tauri updater поддерживает
+          # ТОЛЬКО NSIS (.exe). Если glob возвращает .msi первым, ключ
+          # windows-x86_64 указывает на MSI → авто-апдейтер ломается.
+          # Фикс: явный приоритет .exe (NSIS) над .msi, sorted iteration.
+          # L-2: используем datetime вместо os.popen('date').
+          import datetime
           platforms = {}
-          for sig_path in glob.glob('release-artifacts/**/*.sig', recursive=True):
+          # sorted даёт детерминированный порядок, плюс sort key даёт
+          # .exe приоритет (он лексически раньше .msi).
+          sigs = sorted(glob.glob('release-artifacts/**/*.sig', recursive=True))
+          for sig_path in sigs:
               installer = sig_path.removesuffix('.sig')
               if not os.path.exists(installer):
                   continue
               with open(sig_path) as f:
                   sig = f.read().strip()
               fname = os.path.basename(installer)
-              if fname.endswith(('.msi', '.exe')):
+              if fname.endswith('.exe'):
+                  key = 'windows-x86_64'  # NSIS — Tauri updater format
+              elif fname.endswith('.msi'):
+                  # MSI не поддерживается Tauri updater; если .exe уже найден
+                  # под этим ключом — не перезаписываем; иначе fallback.
+                  if 'windows-x86_64' in platforms:
+                      continue
                   key = 'windows-x86_64'
               elif fname.endswith('.dmg'):
                   key = 'darwin-aarch64' if 'aarch64' in installer else 'darwin-x86_64'
@@ -316,7 +332,7 @@ jobs:
           manifest = {
               'version': version,
               'notes': f'Aurora Launch v{version}',
-              'pub_date': os.popen('date -u +%Y-%m-%dT%H:%M:%SZ').read().strip(),
+              'pub_date': datetime.datetime.now(datetime.UTC).strftime('%Y-%m-%dT%H:%M:%SZ'),
               'platforms': platforms,
           }
           with open('updater-manifest.json', 'w') as f:

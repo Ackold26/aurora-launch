@@ -40,8 +40,21 @@ export function detectReproduceMode(inputs: ReproduceModeInputs): ReproduceModeR
     return { isReal: false, reason: 'anchors absent (legacy bundle)' };
   }
 
+  // Audit A-9 (этап 1.7): TypeScript тип Record<string, unknown> не
+  // защищает от runtime-подделок — bundle может прислать string/array вместо
+  // object. Проверяем явно чтобы preview-fallback не передал кривое значение
+  // sidecar'у (там Pydantic raise ValidationError, но customer увидит
+  // generic ошибку вместо graceful preview-mode).
+  if (typeof anchors !== 'object' || Array.isArray(anchors)) {
+    return { isReal: false, reason: 'anchors is not a plain object (corrupted bundle)' };
+  }
+
   if (spendPlan === null || spendPlan === undefined) {
     return { isReal: false, reason: 'spend_plan absent (legacy bundle)' };
+  }
+
+  if (typeof spendPlan !== 'object' || Array.isArray(spendPlan)) {
+    return { isReal: false, reason: 'spend_plan is not a plain object (corrupted bundle)' };
   }
 
   if (Object.keys(spendPlan).length === 0) {

@@ -94,6 +94,35 @@ describe('detectReproduceMode', () => {
     expect(result.isReal).toBe(false);
   });
 
+  // ─── Audit A-9: corrupted bundle (wrong type for anchors/spendPlan) ──────────
+
+  it('isReal=false when anchors is a string (corrupted bundle)', () => {
+    const result = detectReproduceMode({
+      anchors: 'evil string' as unknown as Record<string, unknown>,
+      spendPlan: { tv: [100_000] },
+    });
+    expect(result.isReal).toBe(false);
+    expect(result.reason).toContain('not a plain object');
+  });
+
+  it('isReal=false when anchors is an array (corrupted bundle)', () => {
+    const result = detectReproduceMode({
+      anchors: [1, 2, 3] as unknown as Record<string, unknown>,
+      spendPlan: { tv: [100_000] },
+    });
+    expect(result.isReal).toBe(false);
+    expect(result.reason).toContain('not a plain object');
+  });
+
+  it('isReal=false when spendPlan is an array (corrupted bundle)', () => {
+    const result = detectReproduceMode({
+      anchors: { market_size: 1_000_000 },
+      spendPlan: [100_000] as unknown as Record<string, number[]>,
+    });
+    expect(result.isReal).toBe(false);
+    expect(result.reason).toContain('not a plain object');
+  });
+
   // ─── reason field sanity ─────────────────────────────────────────────────────
 
   it('real result contains non-empty reason string', () => {

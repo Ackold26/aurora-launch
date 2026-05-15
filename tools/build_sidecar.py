@@ -204,15 +204,23 @@ def run_smoke_test(binary_path: Path) -> None:
     except OSError as exc:
         die(f"Не удалось запустить бинарь для smoke-теста: {exc}")
 
+    # Audit L-1 (этап 1.7): 10s было рискованно для медленных CI-раннеров
+    # (PyInstaller cold start распаковывает 200-400 MB во temp).
+    # 30s по умолчанию + override через env AURORA_SMOKE_TIMEOUT.
+    smoke_timeout = int(os.environ.get("AURORA_SMOKE_TIMEOUT", "30"))
     try:
         stdout_data, stderr_data = proc.communicate(
             input=request_json.encode(),
-            timeout=10,
+            timeout=smoke_timeout,
         )
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.wait()
-        die("Smoke-тест: бинарь не ответил в течение 10 секунд (зависание).", code=1)
+        die(
+            f"Smoke-тест: бинарь не ответил в течение {smoke_timeout}s. "
+            f"Установите AURORA_SMOKE_TIMEOUT=60 для медленных CI.",
+            code=1,
+        )
 
     response = stdout_data.decode(errors="replace")
 

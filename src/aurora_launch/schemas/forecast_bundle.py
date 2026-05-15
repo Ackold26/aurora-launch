@@ -20,12 +20,27 @@ Schema versioning:
 from __future__ import annotations
 
 import json
+import math
 from typing import Any, Literal
 
 import rfc8785
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 _FROZEN = ConfigDict(frozen=True, extra="forbid", validate_assignment=True)
+
+
+def _reject_non_finite(value: float, *, name: str) -> float:
+    """Audit A-1 (этап 1.7): reject NaN / +-Inf на write пути.
+
+    Python json.dumps по умолчанию принимает NaN/Inf и кодирует как
+    'NaN'/'Infinity' — это **invalid JSON** по RFC 8259 (никакой JS-клиент
+    или другой язык не распарсит). rfc8785 (JCS canonical) ещё строже:
+    FloatDomainError. Принимая non-finite на write пути, bundle становится
+    не-хешируемым (canonical падает) и не-парсящимся JS-стороной.
+    """
+    if not math.isfinite(value):
+        raise ValueError(f"{name}={value!r} must be finite (NaN/Infinity не сохраняются)")
+    return value
 
 
 # Зеркало RecipientAnchors из engines/pure_transfer_engine.py, но как
@@ -43,6 +58,20 @@ class RecipientAnchorsPayload(BaseModel):
     pricing_index: float = Field(gt=0)
     elasticity: float = Field(ge=0)
     seasonality: list[float] | None = None
+
+    @field_validator("market_size", "market_size_cv", "pricing_index", "elasticity")
+    @classmethod
+    def _scalar_finite(cls, v: float) -> float:
+        return _reject_non_finite(v, name="anchors scalar")
+
+    @field_validator("planned_share_trajectory", "distribution_trajectory", "seasonality")
+    @classmethod
+    def _trajectory_finite(cls, v: list[float] | None) -> list[float] | None:
+        if v is None:
+            return v
+        for i, x in enumerate(v):
+            _reject_non_finite(x, name=f"anchors trajectory[{i}]")
+        return v
 
     @model_validator(mode="after")
     def _trajectory_lengths_match(self) -> RecipientAnchorsPayload:
@@ -78,6 +107,11 @@ class ForecastPoint(BaseModel):
     point: float
     ci_lower: float
     ci_upper: float
+
+    @field_validator("point", "ci_lower", "ci_upper")
+    @classmethod
+    def _finite_value(cls, v: float) -> float:
+        return _reject_non_finite(v, name="forecast point")
 
     @model_validator(mode="after")
     def _ci_ordering(self) -> ForecastPoint:
@@ -123,6 +157,21 @@ class ForecastJsonV1(BaseModel):
     # Observability — НЕ участвует в canonical hash (см. to_canonical_bytes).
     # ISO-8601 UTC с суффиксом Z, заполняется писателем (None в тестах).
     produced_at: str | None = None
+
+    @field_validator("spend_plan")
+    @classmethod
+    def _spend_plan_finite(
+        cls, v: dict[str, list[float]] | None
+    ) -> dict[str, list[float]] | None:
+        """Audit B-1 (этап 1.7 Sonnet): spend_plan был пропущен в A-1 fix.
+        NaN/Inf в any канале → невалидный JSON + FloatDomainError на canonical hash.
+        """
+        if v is None:
+            return v
+        for channel, values in v.items():
+            for i, x in enumerate(values):
+                _reject_non_finite(x, name=f"spend_plan[{channel!r}][{i}]")
+        return v
 
     @model_validator(mode="after")
     def _points_match_horizon(self) -> ForecastJsonV1:
@@ -182,9 +231,20 @@ def load_forecast_json(blob: bytes) -> ForecastJsonV1:
     if not isinstance(data, dict):
         raise ValueError(f"forecast.json root must be object, got {type(data).__name__}")
 
+    raw_version = data.get("version")
+
     # Legacy-detect: нет `version` ключа → v0 → нужно нормализовать
-    if data.get("version") is None:
+    if raw_version is None:
         data = _normalize_legacy_to_v1(data)
+    elif raw_version != "1":
+        # Audit A-2 (этап 1.7): защита от future major-version bundles.
+        # Без явной проверки model_validate упадёт с непонятной ошибкой про
+        # extra-field; здесь даём осмысленное сообщение клиенту.
+        raise ValueError(
+            f"forecast.json version={raw_version!r} не поддерживается этим Aurora Launch "
+            f"(понимаю только version='1'). Обновите Aurora Launch до новой версии."
+        )
+
     return ForecastJsonV1.model_validate(data)
 
 
@@ -210,6 +270,25 @@ def _normalize_legacy_to_v1(legacy: dict[str, Any]) -> dict[str, Any]:
     normalized.setdefault("methodology_signature", "")
     normalized.setdefault("n_recipient", 0)
     normalized.setdefault("warnings", [])
+    # Audit H-3 (этап 1.7): legacy `engine_mode` может быть из older codebase,
+    # сейчас не входить в текущий Literal. Без graceful fallback Pydantic
+    # выдаст невнятный `literal_error` про конкретные строки. Заменяем
+    # на pure_transfer по умолчанию + warning в самом bundle.
+    _KNOWN_ENGINE_MODES = {
+        "pure_transfer",
+        "transfer_with_bias_check",
+        "ols_with_proxy_priors",
+        "bayesian_with_proxy_priors",
+    }
+    if normalized["engine_mode"] not in _KNOWN_ENGINE_MODES:
+        legacy_mode = normalized["engine_mode"]
+        normalized["engine_mode"] = "pure_transfer"
+        warnings_list = list(normalized.get("warnings", []))
+        warnings_list.append(
+            f"Legacy bundle had unknown engine_mode={legacy_mode!r}, "
+            f"normalised to 'pure_transfer'. Reproducibility limited."
+        )
+        normalized["warnings"] = warnings_list
     # horizon_weeks — обязательно. Если нет → derive из weekly_points
     if "horizon_weeks" not in normalized and "weekly_points" in normalized:
         normalized["horizon_weeks"] = len(normalized["weekly_points"])

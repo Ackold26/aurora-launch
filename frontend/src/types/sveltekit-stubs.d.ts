@@ -34,9 +34,17 @@ declare module '$app/navigation' {
    * Navigate to a new URL programmatically.
    * In this Tauri app the runtime shim delegates to window.location.
    */
+  // Audit M-3 (этап 1.7): добавлены state + invalidateAll из SvelteKit 2.x API
+  // чтобы код использующий эти опции получал корректный type-check.
   export function goto(
     url: string,
-    opts?: { replaceState?: boolean; noScroll?: boolean; keepFocus?: boolean }
+    opts?: {
+      replaceState?: boolean;
+      noScroll?: boolean;
+      keepFocus?: boolean;
+      state?: Record<string, unknown>;
+      invalidateAll?: boolean;
+    }
   ): Promise<void>;
 
   export function preloadData(url: string): Promise<void>;

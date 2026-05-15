@@ -290,6 +290,186 @@ class TestBackwardsCompat:
             load_forecast_json(b"not json at all")
 
 
+class TestAuditA1NonFiniteRejection:
+    """Audit A-1 (этап 1.7): NaN/Inf отвергаются на write пути."""
+
+    def test_forecast_point_rejects_nan(self):
+        import math
+
+        with pytest.raises(ValidationError):
+            ForecastPoint(week_index=0, point=math.nan, ci_lower=-1.0, ci_upper=1.0)
+
+    def test_forecast_point_rejects_positive_inf(self):
+        import math
+
+        with pytest.raises(ValidationError):
+            ForecastPoint(week_index=0, point=math.inf, ci_lower=0.0, ci_upper=math.inf)
+
+    def test_forecast_point_rejects_negative_inf(self):
+        import math
+
+        with pytest.raises(ValidationError):
+            ForecastPoint(week_index=0, point=-math.inf, ci_lower=-math.inf, ci_upper=0.0)
+
+    def test_anchors_reject_inf_market_size(self):
+        import math
+
+        with pytest.raises(ValidationError):
+            RecipientAnchorsPayload(
+                market_size=math.inf,
+                planned_share_trajectory=[0.05],
+                distribution_trajectory=[0.7],
+                pricing_index=1.0,
+                elasticity=0.0,
+            )
+
+    def test_anchors_reject_nan_in_trajectory(self):
+        import math
+
+        with pytest.raises(ValidationError):
+            RecipientAnchorsPayload(
+                market_size=1000.0,
+                planned_share_trajectory=[0.05, math.nan],
+                distribution_trajectory=[0.7, 0.8],
+                pricing_index=1.0,
+                elasticity=0.0,
+            )
+
+    def test_anchors_reject_inf_in_seasonality(self):
+        import math
+
+        with pytest.raises(ValidationError):
+            RecipientAnchorsPayload(
+                market_size=1000.0,
+                planned_share_trajectory=[0.05],
+                distribution_trajectory=[0.7],
+                pricing_index=1.0,
+                elasticity=0.0,
+                seasonality=[math.inf],
+            )
+
+    def test_spend_plan_rejects_nan(self):
+        """Audit B-1 (Sonnet 1.7): spend_plan был пропущен в A-1 fix."""
+        import math
+
+        with pytest.raises(ValidationError) as exc:
+            ForecastJsonV1(
+                horizon_weeks=1,
+                weekly_points=_make_points(1),
+                spend_plan={"tv": [math.nan]},
+            )
+        # Сообщение должно идентифицировать какой канал и индекс
+        assert "tv" in str(exc.value) or "spend_plan" in str(exc.value)
+
+    def test_spend_plan_rejects_inf_in_channel(self):
+        import math
+
+        with pytest.raises(ValidationError):
+            ForecastJsonV1(
+                horizon_weeks=2,
+                weekly_points=_make_points(2),
+                spend_plan={"tv": [100.0, 200.0], "digital": [50.0, math.inf]},
+            )
+
+    def test_spend_plan_empty_dict_ok(self):
+        """Пустой spend_plan допустим (но в Inspector triggers preview-mode)."""
+        f = ForecastJsonV1(
+            horizon_weeks=1,
+            weekly_points=_make_points(1),
+            spend_plan={},
+        )
+        assert f.spend_plan == {}
+
+
+class TestAuditA2VersionDispatch:
+    """Audit A-2 (этап 1.7): future bundle versions отвергаются с понятной ошибкой."""
+
+    def test_future_version_2_rejected(self):
+        import json
+
+        blob = json.dumps(
+            {
+                "version": "2",
+                "horizon_weeks": 1,
+                "weekly_points": _make_points(1),
+            }
+        ).encode("utf-8")
+        with pytest.raises(ValueError) as exc:
+            load_forecast_json(blob)
+        # Сообщение должно объяснить что нужно обновить Aurora Launch
+        assert "не поддерживается" in str(exc.value) or "обновите" in str(exc.value).lower()
+
+    def test_future_version_string_rejected(self):
+        import json
+
+        blob = json.dumps(
+            {
+                "version": "3.0-beta",
+                "horizon_weeks": 1,
+                "weekly_points": _make_points(1),
+            }
+        ).encode("utf-8")
+        with pytest.raises(ValueError):
+            load_forecast_json(blob)
+
+    def test_legacy_no_version_still_works(self):
+        """Backwards-compat не должен сломаться от audit A-2 fix."""
+        import json
+
+        legacy = json.dumps(
+            {
+                "horizon_weeks": 2,
+                "weekly_points": _make_points(2),
+            }
+        ).encode("utf-8")
+        f = load_forecast_json(legacy)
+        assert f.version == "1"
+
+    def test_v1_explicit_works(self):
+        import json
+
+        blob = json.dumps(
+            {
+                "version": "1",
+                "horizon_weeks": 1,
+                "weekly_points": _make_points(1),
+            }
+        ).encode("utf-8")
+        f = load_forecast_json(blob)
+        assert f.version == "1"
+
+    def test_legacy_unknown_engine_mode_normalised(self):
+        """Audit H-3 (Sonnet 1.7): unknown engine_mode → pure_transfer + warning."""
+        import json
+
+        legacy = json.dumps(
+            {
+                "horizon_weeks": 2,
+                "weekly_points": _make_points(2),
+                "engine_mode": "old_legacy_mode_v0",
+            }
+        ).encode("utf-8")
+        f = load_forecast_json(legacy)
+        assert f.engine_mode == "pure_transfer"
+        assert any("old_legacy_mode_v0" in w for w in f.warnings)
+
+    def test_legacy_known_engine_mode_preserved(self):
+        """Backwards-compat: известный engine_mode НЕ перезаписывается H-3 fix'ом."""
+        import json
+
+        legacy = json.dumps(
+            {
+                "horizon_weeks": 2,
+                "weekly_points": _make_points(2),
+                "engine_mode": "ols_with_proxy_priors",
+            }
+        ).encode("utf-8")
+        f = load_forecast_json(legacy)
+        assert f.engine_mode == "ols_with_proxy_priors"
+        # warnings не должны содержать legacy-предупреждение
+        assert not any("legacy_mode" in w.lower() for w in f.warnings)
+
+
 class TestComposeHelper:
     def test_minimal_compose(self):
         blob = compose_forecast_json_bytes(

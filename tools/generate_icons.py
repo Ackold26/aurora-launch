@@ -33,10 +33,10 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_SOURCE = Path(
-    "D:/Docs/Aurora_Ai/06_Aurora_Design_system/05_Logo/Flat/Deliverable/"
-    "aurora-deliverable-gold-accent.png"
-)
+# Audit A-6 (этап 1.7): master хранится В репо (packaging/) чтобы скрипт
+# работал на любой машине + в CI без mount общей дизайн-системы.
+# Файл синхронизируется с aurora-meta дизайн-системой при обновлении лого.
+DEFAULT_SOURCE = REPO_ROOT / "packaging" / "aurora_icon_master.png"
 DEFAULT_OUT = REPO_ROOT / "src-tauri" / "icons"
 
 ICO_SIZES = [(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)]
