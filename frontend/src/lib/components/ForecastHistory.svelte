@@ -34,6 +34,7 @@
     type VersionDiff,
     type ForecastDiff,
   } from '$ipc/projects';
+  import { countUp } from '$lib/services/count-up';
   import ForecastHistorySkeleton from '$lib/components/skeletons/ForecastHistorySkeleton.svelte';
   import EmptyState from '$lib/components/EmptyState.svelte';
   import { formatTimeAgo } from '$lib/utils/time';
@@ -63,6 +64,24 @@
   let forecastDiff = $state<ForecastDiff | null>(null);
   let compareError = $state<string | null>(null);
   let comparing = $state(false);
+
+  // M-10 Confidence narrative: animated delta values for visible "growth" feel
+  let animatedPointPct = $state(0);
+  let animatedCiPct = $state(0);
+
+  $effect(() => {
+    // Trigger animation each time semantic diff loads с new values
+    if (forecastDiff?.available && forecastDiff.point_delta_pct !== undefined) {
+      countUp(0, forecastDiff.point_delta_pct, 700, (v) => (animatedPointPct = v));
+    } else {
+      animatedPointPct = 0;
+    }
+    if (forecastDiff?.available && forecastDiff.ci_width_delta_pct !== undefined) {
+      countUp(0, forecastDiff.ci_width_delta_pct, 700, (v) => (animatedCiPct = v));
+    } else {
+      animatedCiPct = 0;
+    }
+  });
 
   // M-05 Anticipation UX: hover-triggered preload cache.
   // Key format: "min-max" (always lower version_id first). Value: cached
@@ -315,7 +334,7 @@
             <span
               class="delta-badge"
               data-direction={forecastDiff.point_delta_pct! >= 0 ? 'up' : 'down'}
-            >{formatPct(forecastDiff.point_delta_pct)}</span>
+            >{formatPct(animatedPointPct)}</span>
           </dd>
         </div>
         <div class="semantic-diff-row">
@@ -328,7 +347,7 @@
               class="delta-badge"
               data-direction={forecastDiff.ci_width_delta_pct! <= 0 ? 'good' : 'bad'}
               title="Чем уже CI, тем увереннее прогноз"
-            >{formatPct(forecastDiff.ci_width_delta_pct)}</span>
+            >{formatPct(animatedCiPct)}</span>
           </dd>
         </div>
         {#if forecastDiff.engine_mode_a !== forecastDiff.engine_mode_b}
@@ -339,6 +358,13 @@
               <span class="arrow">→</span>
               <code>{forecastDiff.engine_mode_b ?? '—'}</code>
             </dd>
+          </div>
+        {/if}
+        <!-- M-10 confidence narrative: positive copy when CI tightens -->
+        {#if forecastDiff.ci_width_delta_pct !== undefined && forecastDiff.ci_width_delta_pct < -5}
+          <div class="confidence-narrative">
+            <span aria-hidden="true">✨</span>
+            <span>Прогноз становится надёжнее — доверительный интервал сузился на {formatPct(Math.abs(animatedCiPct))}.</span>
           </div>
         {/if}
       </dl>
@@ -650,6 +676,36 @@
     background: var(--bg-surface, white);
     padding: 2px 6px;
     border-radius: 3px;
+  }
+
+  /* M-10 confidence narrative — appears when CI tightens significantly */
+  .confidence-narrative {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2, 0.5rem);
+    margin-top: var(--spacing-2, 0.5rem);
+    padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
+    background: color-mix(in srgb, var(--color-success, #047857) 8%, transparent);
+    border-left: 3px solid var(--color-success, #047857);
+    border-radius: 4px;
+    font-size: var(--typography-fontSize-ui-sm, 0.875rem);
+    color: var(--color-success, #047857);
+    font-weight: 500;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .confidence-narrative {
+      animation: confidence-fade-in 600ms ease-out;
+    }
+    @keyframes confidence-fade-in {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
   }
 
   .diff-pane {
