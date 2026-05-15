@@ -16,6 +16,7 @@
   import { computeTrustScore, generateReproduceScript } from '$lib/ipc/forecast';
   import type { TrustScoreResult } from '$lib/ipc/forecast';
   import { pushToast } from '$lib/stores/toast';
+  import ModeBadge from '$lib/components/ModeBadge.svelte';
   import { ipc } from '$ipc/client';
   import type { VerificationResult } from '$ipc/client';
 
@@ -32,9 +33,19 @@
     dimensions: { label: string; value: number }[];
     score: number;
   } | null>(null);
+  // Phase 2 mode narrative: track methodology + mode для ModeBadge mount
+  type EngineMode =
+    | 'pure_transfer'
+    | 'transfer_with_bias_check'
+    | 'ols_with_proxy_priors'
+    | 'bayesian_with_proxy_priors';
+
   let forecastData = $state<{
     points: { weekIndex: number; point: number; ciLower: number; ciUpper: number }[];
     horizonWeeks: number;
+    engineMode?: EngineMode;
+    methodologySignature?: string;
+    warnings?: string[];
   } | null>(null);
   let loadingSimilarity = $state(false);
   let loadingForecast = $state(false);
@@ -198,6 +209,9 @@
           ci_upper: number;
         }>;
         horizon_weeks: number;
+        engine_mode?: EngineMode;
+        methodology_signature?: string;
+        warnings?: string[];
       }>('forecast.json');
       if (payload) {
         forecastData = {
@@ -207,7 +221,12 @@
             ciLower: p.ci_lower,
             ciUpper: p.ci_upper
           })),
-          horizonWeeks: payload.horizon_weeks
+          horizonWeeks: payload.horizon_weeks,
+          // M-08 mode narrative — derive engineMode из methodology_signature
+          // if explicit field absent (legacy bundles)
+          engineMode: payload.engine_mode ?? _inferEngineMode(payload.methodology_signature),
+          methodologySignature: payload.methodology_signature,
+          warnings: payload.warnings ?? [],
         };
       }
     } catch (e) {
@@ -215,6 +234,16 @@
     } finally {
       loadingForecast = false;
     }
+  }
+
+  /** Derive EngineMode from methodology_signature when bundle lacks explicit field. */
+  function _inferEngineMode(sig?: string): EngineMode | undefined {
+    if (!sig) return undefined;
+    if (sig.startsWith('pure_transfer')) return 'pure_transfer';
+    if (sig.startsWith('transfer_with_bias_check')) return 'transfer_with_bias_check';
+    if (sig.startsWith('ols_with_proxy_priors')) return 'ols_with_proxy_priors';
+    if (sig.startsWith('bayesian_with_proxy_priors')) return 'bayesian_with_proxy_priors';
+    return undefined;
   }
 
   function selectTab(t: Tab) {
@@ -342,6 +371,17 @@
               {#if loadingForecast}
                 <Skeleton width="100%" height="240px" rounded />
               {:else if forecastData}
+                <!-- Phase 2 audit #11 closure: ModeBadge с narrative показывает
+                     какой engine использован + warnings (Mode 3/4 fallback). -->
+                {#if forecastData.engineMode}
+                  <div class="mode-badge-mount">
+                    <ModeBadge
+                      mode={forecastData.engineMode}
+                      warnings={forecastData.warnings ?? []}
+                      showFullDetails={false}
+                    />
+                  </div>
+                {/if}
                 <ForecastCone
                   points={forecastData.points}
                   horizonWeeks={forecastData.horizonWeeks}
@@ -485,6 +525,11 @@
 {/if}
 
 <style>
+  /* M-08 mode narrative mount */
+  .mode-badge-mount {
+    margin-bottom: var(--spacing-3, 0.75rem);
+  }
+
   /* M-09 reproduce-in-Python button + modal */
   .reproduce-cta {
     margin-top: var(--spacing-4, 1rem);
