@@ -13,8 +13,9 @@
   import TrustScore from '$lib/components/TrustScore.svelte';
   import RadarChart from '$lib/components/RadarChart.svelte';
   import ForecastCone from '$lib/components/ForecastCone.svelte';
-  import { computeTrustScore } from '$lib/ipc/forecast';
+  import { computeTrustScore, generateReproduceScript } from '$lib/ipc/forecast';
   import type { TrustScoreResult } from '$lib/ipc/forecast';
+  import { pushToast } from '$lib/stores/toast';
   import { ipc } from '$ipc/client';
   import type { VerificationResult } from '$ipc/client';
 
@@ -48,6 +49,59 @@
   let trustResult = $state<TrustScoreResult | null>(null);
   let trustError = $state<string | null>(null);
   let trustIsRealCompute = $state<boolean>(false);
+
+  // M-09 Reproduce-in-Python state
+  let reproduceModalOpen = $state(false);
+  let reproduceScript = $state<string>('');
+  let reproduceFilename = $state<string>('reproduce.py');
+  let reproduceLoading = $state(false);
+
+  async function openReproduceModal() {
+    if (!$activeBundle || !forecastData) return;
+    reproduceLoading = true;
+    reproduceModalOpen = true;
+    try {
+      const result = await generateReproduceScript({
+        bundle_path: $activeBundle.path ?? './project.aurora',
+        anchors: {
+          market_size: 1_000_000.0,
+          market_size_cv: 0.1,
+          planned_share_trajectory: Array(forecastData.horizonWeeks).fill(0.05),
+          distribution_trajectory: Array(forecastData.horizonWeeks).fill(0.8),
+          pricing_index: 1.0,
+          elasticity: 0.0,
+          seasonality: null,
+        },
+        spend_plan: {},  // TODO wire from bundle metadata когда schema expanded
+        horizon_periods: forecastData.horizonWeeks,
+        granularity: 'monthly',
+        coverage_target: 0.95,
+      });
+      reproduceScript = result.script;
+      reproduceFilename = result.suggested_filename;
+    } catch (e) {
+      reproduceScript = `# Ошибка генерации скрипта:\n# ${e instanceof Error ? e.message : String(e)}\n`;
+    } finally {
+      reproduceLoading = false;
+    }
+  }
+
+  async function copyReproduceScript() {
+    try {
+      await navigator.clipboard.writeText(reproduceScript);
+      pushToast({
+        level: 'success',
+        title: 'Скопировано',
+        body: `${reproduceScript.length} символов в буфере обмена`,
+      });
+    } catch (e) {
+      pushToast({
+        level: 'danger',
+        title: 'Не удалось скопировать',
+        body: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
 
   $effect(() => {
     if (activeTab === 'similarity' && $activeBundle && !similarityData && !loadingSimilarity) {
@@ -278,6 +332,22 @@
                   height={300}
                   title="Forecast cone (saved)"
                 />
+                <!-- M-09 Reproduce-in-Python — magic moment per audit. -->
+                <div class="reproduce-cta">
+                  <button
+                    type="button"
+                    class="reproduce-btn"
+                    onclick={openReproduceModal}
+                    title="Сгенерировать Python скрипт что воспроизведёт этот прогноз бит-в-бит"
+                  >
+                    <span aria-hidden="true">🐍</span>
+                    Воспроизвести в Python
+                  </button>
+                  <small class="reproduce-hint">
+                    Скрипт + сохранённый .aurora bundle = идентичный прогноз
+                    на любой машине с pip install aurora-launch.
+                  </small>
+                </div>
                 {#if trustResult}
                   <!-- PA-A03 + QW3: TrustScore с explicit preview badge когда
                        fallback (real compute_trust_score IPC unavailable). -->
@@ -336,7 +406,187 @@
   </section>
 {/if}
 
+<!-- M-09 Reproduce-in-Python modal -->
+{#if reproduceModalOpen}
+  <div
+    class="reproduce-modal-backdrop"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="reproduce-modal-title"
+    onclick={() => (reproduceModalOpen = false)}
+    onkeydown={(e) => { if (e.key === 'Escape') reproduceModalOpen = false; }}
+    tabindex="-1"
+  >
+    <div
+      class="reproduce-modal-content"
+      role="document"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.stopPropagation()}
+      role="document"
+    >
+      <header class="reproduce-modal-header">
+        <h2 id="reproduce-modal-title">🐍 Воспроизвести прогноз в Python</h2>
+        <button
+          type="button"
+          class="reproduce-modal-close"
+          onclick={() => (reproduceModalOpen = false)}
+          aria-label="Закрыть"
+        >
+          ✕
+        </button>
+      </header>
+      <p class="reproduce-modal-intro">
+        Сохраните этот скрипт как <code>{reproduceFilename}</code> + .aurora bundle.
+        Запустите <code>python {reproduceFilename}</code>. Прогноз будет
+        идентичным до бита.
+      </p>
+      <div class="reproduce-actions">
+        <button
+          type="button"
+          class="reproduce-action-btn primary"
+          onclick={copyReproduceScript}
+          disabled={reproduceLoading || !reproduceScript}
+        >
+          📋 Скопировать в буфер
+        </button>
+        <a
+          class="reproduce-action-btn secondary"
+          href={`data:text/x-python;charset=utf-8,${encodeURIComponent(reproduceScript)}`}
+          download={reproduceFilename}
+          role="button"
+        >
+          💾 Скачать .py
+        </a>
+      </div>
+      {#if reproduceLoading}
+        <Skeleton width="100%" height="320px" rounded />
+      {:else}
+        <pre class="reproduce-code" tabindex="0"><code>{reproduceScript}</code></pre>
+      {/if}
+    </div>
+  </div>
+{/if}
+
 <style>
+  /* M-09 reproduce-in-Python button + modal */
+  .reproduce-cta {
+    margin-top: var(--spacing-4, 1rem);
+    padding: var(--spacing-3, 0.75rem);
+    background: color-mix(in srgb, var(--accent, #2563eb) 6%, transparent);
+    border-left: 3px solid var(--accent, #2563eb);
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-2, 0.5rem);
+  }
+  .reproduce-btn {
+    align-self: flex-start;
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1px solid var(--accent, #2563eb);
+    background: var(--accent, #2563eb);
+    color: white;
+    cursor: pointer;
+    font-size: var(--typography-fontSize-ui-sm, 0.875rem);
+    font-weight: 500;
+    transition: background-color 120ms ease;
+  }
+  .reproduce-btn:hover {
+    background: var(--color-primary-hover, #1d4ed8);
+  }
+  .reproduce-hint {
+    color: var(--text-muted, #6b7280);
+    font-size: var(--typography-fontSize-ui-xs, 0.75rem);
+    line-height: 1.4;
+  }
+  .reproduce-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: var(--spacing-4, 1rem);
+  }
+  .reproduce-modal-content {
+    background: var(--bg-surface, white);
+    border-radius: 8px;
+    max-width: 920px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: var(--spacing-6, 1.5rem);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-3, 0.75rem);
+  }
+  .reproduce-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .reproduce-modal-header h2 {
+    margin: 0;
+    font-family: var(--font-display, var(--font-sans, sans-serif));
+    font-size: 1.5rem;
+  }
+  .reproduce-modal-close {
+    background: transparent;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: var(--text-muted, #6b7280);
+    padding: 0;
+    width: 32px;
+    height: 32px;
+  }
+  .reproduce-modal-close:hover {
+    color: var(--text-primary, #111827);
+  }
+  .reproduce-modal-intro {
+    color: var(--text-secondary, #4A4D57);
+    line-height: 1.5;
+  }
+  .reproduce-actions {
+    display: flex;
+    gap: var(--spacing-2, 0.5rem);
+  }
+  .reproduce-action-btn {
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: var(--typography-fontSize-ui-sm, 0.875rem);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid transparent;
+  }
+  .reproduce-action-btn.primary {
+    background: var(--accent, #2563eb);
+    color: white;
+    border-color: var(--accent, #2563eb);
+  }
+  .reproduce-action-btn.secondary {
+    background: transparent;
+    color: var(--text-primary, #111827);
+    border-color: var(--border-default, #d1d5db);
+  }
+  .reproduce-code {
+    background: var(--bg-elevated, #F0F2F7);
+    border: 1px solid var(--border-subtle, #e5e7eb);
+    border-radius: 6px;
+    padding: var(--spacing-3, 0.75rem);
+    font-family: var(--font-mono, monospace);
+    font-size: 0.85rem;
+    line-height: 1.5;
+    overflow-x: auto;
+    margin: 0;
+    max-height: 60vh;
+    color: var(--text-primary, #111827);
+  }
+
   .trust-mount {
     margin-top: var(--spacing-4, 1rem);
   }

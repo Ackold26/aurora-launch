@@ -367,6 +367,45 @@ def _get_memory_report(_params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+@register("generate_reproduce_script")
+def _generate_reproduce_script(params: dict[str, Any]) -> dict[str, Any]:
+    """Phase Magic M-09: generate Python script reproducing a forecast.
+
+    Params:
+      - bundle_path: str — path к .aurora bundle (relative or absolute)
+      - anchors: dict — RecipientAnchors fields
+      - spend_plan: dict[str, list[float]]
+      - horizon_periods: int
+      - granularity: str = "monthly"
+      - coverage_target: float = 0.95
+      - n_recipient: int = 0
+      - seed: int = 42
+
+    Returns:
+      - script: str — Python source code (executable as .py file)
+      - suggested_filename: str — для UI Save As dialog
+    """
+    from aurora_launch.tools.reproduce_script import (
+        generate_reproduce_script,
+        reproduce_script_to_filename,
+    )
+
+    script = generate_reproduce_script(
+        bundle_path=str(params.get("bundle_path", "./project.aurora")),
+        anchors=dict(params.get("anchors", {})),
+        spend_plan=dict(params.get("spend_plan", {})),
+        horizon_periods=int(params.get("horizon_periods", 12)),
+        granularity=str(params.get("granularity", "monthly")),
+        coverage_target=float(params.get("coverage_target", 0.95)),
+        n_recipient=int(params.get("n_recipient", 0)),
+        seed=int(params.get("seed", 42)),
+    )
+    return {
+        "script": script,
+        "suggested_filename": reproduce_script_to_filename(),
+    }
+
+
 @register("ping")
 def _ping(_params: dict[str, Any]) -> dict[str, Any]:
     return {

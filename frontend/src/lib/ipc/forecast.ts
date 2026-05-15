@@ -143,3 +143,28 @@ export async function computeTrustScore(
 ): Promise<TrustScoreResult> {
   return invoke<TrustScoreResult>('compute_trust_score', { params: inputs });
 }
+
+// ─── Phase Magic M-09: Reproduce-in-Python script generator ──────────────────
+
+export interface ReproduceScriptParams {
+  bundle_path: string;
+  anchors: Record<string, unknown>;
+  spend_plan: Record<string, number[]>;
+  horizon_periods: number;
+  granularity?: 'monthly' | 'weekly';
+  coverage_target?: number;
+  n_recipient?: number;
+  seed?: number;
+}
+
+export interface ReproduceScriptResult {
+  script: string;
+  suggested_filename: string;
+}
+
+/** Generate Python script reproducing the forecast bit-exact (M-09). */
+export async function generateReproduceScript(
+  params: ReproduceScriptParams
+): Promise<ReproduceScriptResult> {
+  return invoke<ReproduceScriptResult>('generate_reproduce_script', params);
+}
