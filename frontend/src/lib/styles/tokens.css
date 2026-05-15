@@ -124,13 +124,39 @@
   --typography-fontSize-display-sm: 1.5rem;
   --typography-fontSize-ui-base: var(--typography-fontSize-ui-body);  /* alias used by CommandPalette */
 
-  /* Motion timings (Block 2D) */
-  --motion-fast: 150ms;
-  --motion-default: 200ms;
-  --motion-smooth: 320ms;
-  --easing-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --easing-smooth: cubic-bezier(0.4, 0, 0.2, 1);
-  --easing-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  /* ── Motion tokens (P-06 / MOTION.md) ────────────────────────────────────
+     Canonical scale. See frontend/src/lib/styles/MOTION.md for full spec.
+     INV-14: all durations collapse to 0ms under prefers-reduced-motion:reduce. */
+
+  /* Duration scale */
+  --motion-duration-instant:   0ms;
+  --motion-duration-fast:      80ms;
+  --motion-duration-normal:    160ms;
+  --motion-duration-moderate:  240ms;
+  --motion-duration-slow:      360ms;
+  --motion-duration-leisurely: 480ms;
+
+  /* Easing curves */
+  --motion-easing-standard:    cubic-bezier(0.25, 0.1, 0.25, 1);  /* ease */
+  --motion-easing-enter:       cubic-bezier(0, 0, 0.2, 1);        /* decelerate */
+  --motion-easing-exit:        cubic-bezier(0.4, 0, 1, 1);        /* accelerate */
+  --motion-easing-spring-soft: cubic-bezier(0.34, 1.56, 0.64, 1); /* slight overshoot */
+  --motion-easing-linear:      linear;
+
+  /* Legacy aliases (Block 2D) — preserved for backward compat.
+     Migration path: replace usages with canonical tokens above, then remove.
+     --motion-fast     was 150ms → now maps to --motion-duration-normal  (160ms)
+     --motion-default  was 200ms → now maps to --motion-duration-moderate (240ms)
+     --motion-smooth   was 320ms → now maps to --motion-duration-slow     (360ms)
+     --easing-spring → --motion-easing-spring-soft
+     --easing-smooth → --motion-easing-standard
+     --easing-emphasized → --motion-easing-enter */
+  --motion-fast:     var(--motion-duration-normal);
+  --motion-default:  var(--motion-duration-moderate);
+  --motion-smooth:   var(--motion-duration-slow);
+  --easing-spring:   var(--motion-easing-spring-soft);
+  --easing-smooth:   var(--motion-easing-standard);
+  --easing-emphasized: var(--motion-easing-enter);
 
   /* Elevation shadows */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.18);
@@ -171,11 +197,19 @@
   --accent-sigil: #FFFF00;
 }
 
-/* Reduced motion preference */
+/* Reduced motion preference — INV-14 */
 @media (prefers-reduced-motion: reduce) {
   :root {
-    --motion-fast: 0ms;
+    /* Canonical duration tokens → 0 */
+    --motion-duration-fast:      0ms;
+    --motion-duration-normal:    0ms;
+    --motion-duration-moderate:  0ms;
+    --motion-duration-slow:      0ms;
+    --motion-duration-leisurely: 0ms;
+    /* Legacy aliases → 0 (belt-and-suspenders; aliases point to canonical above
+       but explicit override ensures any stale CSS variable references also zero) */
+    --motion-fast:    0ms;
     --motion-default: 0ms;
-    --motion-smooth: 0ms;
+    --motion-smooth:  0ms;
   }
 }

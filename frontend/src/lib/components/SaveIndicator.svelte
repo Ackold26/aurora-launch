@@ -15,6 +15,7 @@
 
 <script lang="ts">
   import { formatTimeAgo } from '$lib/utils/time';
+  import { _ } from 'svelte-i18n';
 
   interface Props {
     /** Current save state */
@@ -33,12 +34,12 @@
   }
 
   const savedLabel = $derived(
-    mode === 'auto' ? 'Сохранено автоматически' : 'Сохранено вручную'
+    mode === 'auto' ? $_('save.auto') : $_('save.manual')
   );
 
   const label = $derived.by(() => {
-    if (state === 'saving') return 'Сохраняется…';
-    if (state === 'unsaved') return 'Не сохранено';
+    if (state === 'saving') return $_('save.saving');
+    if (state === 'unsaved') return $_('save.unsaved');
     // saved
     const when = timeAgo(lastSavedAt);
     return when ? `${savedLabel} ${when}` : savedLabel;

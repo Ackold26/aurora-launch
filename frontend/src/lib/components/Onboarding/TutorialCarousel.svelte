@@ -16,6 +16,8 @@
 -->
 
 <script lang="ts">
+  import { _ } from 'svelte-i18n';
+
   interface Slide {
     title: string;
     body: string;
@@ -32,35 +34,18 @@
     onskip?: () => void;
   }
 
-  const DEFAULT_SLIDES: Slide[] = [
-    {
-      title: 'Прогноз запуска нового бренда',
-      body: 'Aurora Launch Planner строит прогноз продаж для бренда, у которого пока нет своих данных, используя похожий бренд как «прокси».',
-      icon: '🎯',
-    },
-    {
-      title: 'Загрузка данных',
-      body: 'Принимаем XLSX из Эконометрики, .aurora-бандлы из Data Studio, или подключение к корпоративным источникам.',
-      icon: '📊',
-    },
-    {
-      title: 'Прогноз и подтверждение',
-      body: 'Алгоритм даёт точечный прогноз + доверительный интервал. Шкала «Доверие» оценивает надёжность одним числом (0–100).',
-      icon: '📈',
-    },
-    {
-      title: 'Сценарии чувствительности',
-      body: 'Один клик — три сценария: пессимистичный, базовый, оптимистичный. Эксперт-режим разворачивает 6 параметров чувствительности.',
-      icon: '🎛',
-    },
-    {
-      title: 'Сертификат методологии',
-      body: 'Каждый прогноз подписан Ed25519. Можно проверить независимо через verify.auroraai.pro — алгоритм публичен.',
-      icon: '🔐',
-    },
-  ];
+  let { slides: slidesProp = undefined as Slide[] | undefined, onsample, onblank, onskip }: Props = $props();
 
-  let { slides = DEFAULT_SLIDES, onsample, onblank, onskip }: Props = $props();
+  // Default slides derived from locale — reactive to language switch (INV-25).
+  const defaultSlides = $derived<Slide[]>([
+    { title: $_('onboarding.tutorial.slide1.title'), body: $_('onboarding.tutorial.slide1.body'), icon: '🎯' },
+    { title: $_('onboarding.tutorial.slide2.title'), body: $_('onboarding.tutorial.slide2.body'), icon: '📊' },
+    { title: $_('onboarding.tutorial.slide3.title'), body: $_('onboarding.tutorial.slide3.body'), icon: '📈' },
+    { title: $_('onboarding.tutorial.slide4.title'), body: $_('onboarding.tutorial.slide4.body'), icon: '🎛' },
+    { title: $_('onboarding.tutorial.slide5.title'), body: $_('onboarding.tutorial.slide5.body'), icon: '🔐' },
+  ]);
+
+  const slides = $derived(slidesProp ?? defaultSlides);
 
   let currentIndex = $state(0);
   let total = $derived(slides.length);
@@ -103,24 +88,24 @@
 
 <svelte:window onkeydown={handleKey} />
 
-<section class="tutorial" aria-label="Учебник Aurora Launch Planner">
+<section class="tutorial" aria-label={$_("onboarding.tutorial.section_label")}>
   <header class="tutorial-header">
-    <div class="dots" role="tablist" aria-label="Прогресс учебника">
-      {#each slides as _, i (i)}
+    <div class="dots" role="tablist" aria-label={$_("onboarding.tutorial.progress_label")}>
+      {#each slides as _slide, i (i)}
         <button
           type="button"
           class="dot"
           class:active={i === currentIndex}
           role="tab"
           aria-selected={i === currentIndex}
-          aria-label={`Слайд ${i + 1}`}
+          aria-label={$_("onboarding.tutorial.slide_label", { values: { index: i + 1 } })}
           onclick={() => (currentIndex = i)}
         ></button>
       {/each}
     </div>
 
     <button type="button" class="skip-btn" onclick={skip}>
-      Пропустить →
+      {$_("onboarding.tutorial.skip")}
     </button>
   </header>
 
@@ -138,13 +123,13 @@
       class="btn btn-ghost"
       onclick={prev}
       disabled={currentIndex === 0}
-      aria-label="Предыдущий слайд"
+      aria-label={$_("onboarding.tutorial.prev_label")}
     >
-      ← Назад
+      {$_("onboarding.tutorial.prev")}
     </button>
 
     <div class="position-indicator" aria-hidden="true">
-      {currentIndex + 1} / {total}
+      {$_("onboarding.tutorial.position", { values: { current: currentIndex + 1, total } })}
     </div>
 
     {#if !isLast}
@@ -152,17 +137,17 @@
         type="button"
         class="btn btn-primary"
         onclick={next}
-        aria-label="Следующий слайд"
+        aria-label={$_("onboarding.tutorial.next_label")}
       >
-        Далее →
+        {$_("onboarding.tutorial.next")}
       </button>
     {:else}
       <div class="final-ctas">
         <button type="button" class="btn btn-primary" onclick={pickSample}>
-          Открыть пример
+          {$_("onboarding.tutorial.cta_sample")}
         </button>
         <button type="button" class="btn btn-ghost" onclick={pickBlank}>
-          Начать с нуля
+          {$_("onboarding.tutorial.cta_blank")}
         </button>
       </div>
     {/if}
@@ -199,7 +184,9 @@
     background: var(--surface-base, white);
     cursor: pointer;
     padding: 0;
-    transition: background-color 150ms ease, transform 150ms ease;
+    transition:
+      background-color var(--motion-duration-fast, 80ms) var(--motion-easing-standard, ease),
+      transform       var(--motion-duration-fast, 80ms) var(--motion-easing-spring-soft, cubic-bezier(0.34,1.56,0.64,1));
   }
 
   .dot.active {
@@ -277,7 +264,9 @@
     border: 1px solid transparent;
     font-size: var(--typography-fontSize-ui-sm, 0.875rem);
     cursor: pointer;
-    transition: background-color 120ms ease, border-color 120ms ease;
+    transition:
+      background-color var(--motion-duration-normal, 160ms) var(--motion-easing-standard, ease),
+      border-color     var(--motion-duration-normal, 160ms) var(--motion-easing-standard, ease);
   }
 
   .btn-primary {
@@ -304,6 +293,9 @@
     cursor: not-allowed;
   }
 
+  /* Reduced motion — INV-14 (tokens.css already zeroes --motion-duration-*
+     under this media query; explicit none is belt-and-suspenders for components
+     that use shorthand transition without CSS variable durations). */
   @media (prefers-reduced-motion: reduce) {
     .dot,
     .btn {

@@ -8,6 +8,8 @@
   import Card from '$lib/components/Card.svelte';
   import Skeleton from '$lib/components/Skeleton.svelte';
   import Badge from '$lib/components/Badge.svelte';
+  import EmptyState from '$lib/components/EmptyState.svelte';
+  import { goto } from '$app/navigation';
 
   let entries = $state<AuditEntry[]>([]);
   let telemetry = $state<StoredTelemetryEvent[]>([]);
@@ -42,7 +44,12 @@
       {#if loading}
         <Skeleton width="100%" height="120px" rounded />
       {:else if entries.length === 0}
-        <p class="muted">{$_('audit.empty')}</p>
+        <EmptyState
+          icon="📂"
+          title="Журнал пока пуст"
+          body="История действий в приложении появится здесь — открытие проектов, сохранения, экспорт. Это хранится локально и никуда не отправляется."
+          primaryAction={{ label: 'К списку проектов', onClick: () => goto('/') }}
+        />
       {:else}
         <ol class="timeline">
           {#each entries as e (e.id)}
@@ -68,7 +75,13 @@
       {#if loading}
         <Skeleton width="100%" height="80px" rounded />
       {:else if telemetry.length === 0}
-        <p class="muted">No events recorded yet.</p>
+        <EmptyState
+          compact
+          icon="📊"
+          title="Метрик пока нет"
+          body="Чтобы начать собирать — включите телеметрию в Настройках."
+          primaryAction={{ label: 'Открыть Настройки', onClick: () => goto('/settings') }}
+        />
       {:else}
         <ul class="events">
           {#each telemetry as ev (ev.id)}

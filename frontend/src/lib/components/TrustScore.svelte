@@ -25,6 +25,8 @@
 -->
 
 <script lang="ts">
+  import { _ } from 'svelte-i18n';
+
   interface DiagnosticDetail {
     label: string;
     value: string;
@@ -47,11 +49,11 @@
 
   // Score-to-tier mapping (INV-25 Manager mode)
   const tier = $derived.by(() => {
-    if (score >= 90) return { label: 'Очень высокий', color: 'success', tone: 'vivid' };
-    if (score >= 75) return { label: 'Высокий', color: 'success', tone: 'standard' };
-    if (score >= 60) return { label: 'Средний', color: 'warning', tone: 'standard' };
-    if (score >= 40) return { label: 'Низкий', color: 'warning', tone: 'standard' };
-    return { label: 'Не подтверждён', color: 'danger', tone: 'standard' };
+    if (score >= 90) return { label: $_('trustScore.tier.very_high'), color: 'success', tone: 'vivid' };
+    if (score >= 75) return { label: $_('trustScore.tier.high'), color: 'success', tone: 'standard' };
+    if (score >= 60) return { label: $_('trustScore.tier.medium'), color: 'warning', tone: 'standard' };
+    if (score >= 40) return { label: $_('trustScore.tier.low'), color: 'warning', tone: 'standard' };
+    return { label: $_('trustScore.tier.unconfirmed'), color: 'danger', tone: 'standard' };
   });
 
   const finalVerdict = $derived(verdict ?? tier.label);
@@ -65,7 +67,7 @@
 
 <article class="trust-score" data-tier={tier.color}>
   <header class="trust-header">
-    <div class="trust-label">Уровень доверия к прогнозу</div>
+    <div class="trust-label">{$_("trustScore.label")}</div>
     {#if expertMode}
       <button
         type="button"
@@ -74,26 +76,26 @@
         aria-expanded={expanded}
         aria-controls="trust-diagnostics"
       >
-        {expanded ? '↑ Свернуть' : '↓ Подробнее'}
+        {expanded ? $_("trustScore.collapse") : $_("trustScore.expand")}
       </button>
     {/if}
   </header>
 
   <div class="trust-body">
     <div class="trust-score-circle" data-tier={tier.color}>
-      <span class="trust-score-number" aria-label={`Trust score: ${scoreClamped} из 100`}>
+      <span class="trust-score-number" aria-label={$_("trustScore.aria_score", { values: { score: scoreClamped } })}>
         {scoreClamped}
       </span>
     </div>
     <div class="trust-verdict-block">
-      <div class="trust-verdict-label">Вердикт</div>
+      <div class="trust-verdict-label">{$_("trustScore.verdict_label")}</div>
       <div class="trust-verdict-value" data-tier={tier.color}>{finalVerdict}</div>
     </div>
   </div>
 
   {#if expertMode && expanded && diagnostics.length > 0}
-    <section id="trust-diagnostics" class="trust-diagnostics" aria-label="Подробная диагностика">
-      <h4 class="trust-diagnostics-title">Диагностика (Expert mode)</h4>
+    <section id="trust-diagnostics" class="trust-diagnostics" aria-label={$_("trustScore.diagnostics_label")}>
+      <h4 class="trust-diagnostics-title">{$_("trustScore.diagnostics_title")}</h4>
       <dl class="trust-diagnostics-list">
         {#each diagnostics as d (d.label)}
           <div class="trust-diagnostic-row" data-status={d.status}>

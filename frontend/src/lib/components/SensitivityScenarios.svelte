@@ -12,6 +12,7 @@
 
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { _ } from 'svelte-i18n';
   import { track } from '$lib/services/telemetry';
 
   // Phase Premium P-04: accept RAW numbers + granularity + currency.
@@ -97,11 +98,11 @@
   }
 </script>
 
-<section class="sensitivity-scenarios" aria-label="Сценарии чувствительности прогноза">
+<section class="sensitivity-scenarios" aria-label={$_("sensitivity.section_label")}>
   <header class="scenarios-header">
-    <h3 class="scenarios-title">Сценарии прогноза</h3>
+    <h3 class="scenarios-title">{$_("sensitivity.title")}</h3>
     <button type="button" class="expert-toggle" onclick={handleSwitchToExpert}>
-      ⚙ Expert mode (расширенные параметры)
+      {$_("sensitivity.expert_toggle")}
     </button>
   </header>
 
@@ -165,7 +166,7 @@
     font-size: var(--typography-fontSize-ui-sm);
     color: var(--text-secondary);
     cursor: pointer;
-    transition: all var(--motion-fast) var(--easing-smooth);
+    transition: all var(--motion-duration-normal, 160ms) var(--motion-easing-standard, ease);
   }
   .expert-toggle:hover {
     color: var(--text-primary);
@@ -191,9 +192,9 @@
     color: inherit;
     font-family: inherit;
     transition:
-      transform var(--motion-default) var(--easing-spring),
-      border-color var(--motion-default) var(--easing-smooth),
-      box-shadow var(--motion-default) var(--easing-smooth);
+      transform    var(--motion-duration-normal, 160ms)   var(--motion-easing-spring-soft, cubic-bezier(0.34,1.56,0.64,1)),
+      border-color var(--motion-duration-normal, 160ms)   var(--motion-easing-standard, ease),
+      box-shadow   var(--motion-duration-moderate, 240ms) var(--motion-easing-standard, ease);
   }
 
   .scenario-card:hover:not(.selected) {

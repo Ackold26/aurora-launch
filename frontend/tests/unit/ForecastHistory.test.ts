@@ -45,7 +45,8 @@ beforeEach(() => {
 describe('ForecastHistory', () => {
   it('renders empty-state when project has no versions', async () => {
     render(ForecastHistory, { projectUuid: 'uuid-test', initialDetail: detail([]) });
-    expect(screen.getByText(/нет сохранённых версий/)).toBeTruthy();
+    expect(screen.getByText('Здесь будет ваша история')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Создать первый прогноз' })).toBeTruthy();
   });
 
   it('renders timeline with provided versions', async () => {

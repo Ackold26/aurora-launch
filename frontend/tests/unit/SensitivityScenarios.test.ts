@@ -100,7 +100,7 @@ describe('SensitivityScenarios', () => {
   it('click "Expert mode" button → onSwitchToExpert called', async () => {
     const onSwitch = vi.fn();
     render(SensitivityScenarios, defaultProps({ onSwitchToExpert: onSwitch }));
-    const expertBtn = screen.getByText(/Expert mode/i);
+    const expertBtn = screen.getByText(/Expert mode|Расширенные параметры/i);
     await fireEvent.click(expertBtn);
     expect(onSwitch).toHaveBeenCalledOnce();
   });

@@ -16,6 +16,8 @@
 -->
 
 <script lang="ts">
+	import { _ } from 'svelte-i18n';
+
 	interface Props {
 		mode:
 			| 'pure_transfer'
@@ -32,45 +34,35 @@
 		switch (mode) {
 			case 'pure_transfer':
 				return {
-					label: 'Pure Transfer',
-					sublabel: 'Прогноз без данных recipient',
+					label: $_('modeBadge.pure_transfer.label'),
+					sublabel: $_('modeBadge.pure_transfer.sublabel'),
 					tone: 'success' as const,
 					isFallback: false,
-					explanation:
-						'Прогноз построен через scaled proxy posterior + recipient anchors. ' +
-						'Никаких compromises — это первичный сценарий Launch Planner.',
+					explanation: $_('modeBadge.pure_transfer.explanation'),
 				};
 			case 'transfer_with_bias_check':
 				return {
-					label: 'Transfer + Bias Check',
-					sublabel: '1–2 месяца recipient',
+					label: $_('modeBadge.transfer_bias.label'),
+					sublabel: $_('modeBadge.transfer_bias.sublabel'),
 					tone: 'success' as const,
 					isFallback: false,
-					explanation:
-						'Pure Transfer + проверка observed vs. predicted на доступных recipient точках. ' +
-						'Если bias >30%, в результате будет warning.',
+					explanation: $_('modeBadge.transfer_bias.explanation'),
 				};
 			case 'ols_with_proxy_priors':
 				return {
-					label: 'OLS + Priors (упрощённый)',
-					sublabel: '3–6 месяцев recipient',
+					label: $_('modeBadge.ols_priors.label'),
+					sublabel: $_('modeBadge.ols_priors.sublabel'),
 					tone: 'warning' as const,
 					isFallback: true,
-					explanation:
-						'Текущая версия (v0.1.0-rc2) использует Pure Transfer с tighter similarity ' +
-						'inflation. Полная OLS-регрессия с proxy posterior priors реализуется в v0.1.1. ' +
-						'CI bands conservative — прогноз можно использовать.',
+					explanation: $_('modeBadge.ols_priors.explanation'),
 				};
 			case 'bayesian_with_proxy_priors':
 				return {
-					label: 'Bayesian + Priors (упрощённый)',
-					sublabel: '≥7 месяцев recipient',
+					label: $_('modeBadge.bayesian_priors.label'),
+					sublabel: $_('modeBadge.bayesian_priors.sublabel'),
 					tone: 'warning' as const,
 					isFallback: true,
-					explanation:
-						'Текущая версия (v0.1.0-rc2) использует Pure Transfer. ' +
-						'Полная Bayesian-регрессия с informative priors реализуется в v0.1.1. ' +
-						'Прогноз надёжен, но не максимально точен для большого recipient dataset.',
+					explanation: $_('modeBadge.bayesian_priors.explanation'),
 				};
 		}
 	});
@@ -115,7 +107,7 @@
 			<p class="mode-badge-explanation">{modeInfo.explanation}</p>
 			{#if warnings.length > 0}
 				<details class="mode-badge-warnings">
-					<summary>Дополнительные предупреждения</summary>
+					<summary>{$_('modeBadge.warnings_summary')}</summary>
 					<ul>
 						{#each warnings as w}
 							<li>{w}</li>

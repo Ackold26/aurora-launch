@@ -24,6 +24,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
+  import { _ } from 'svelte-i18n';
   import {
     getProject,
     compareVersions,
@@ -32,7 +33,9 @@
     type VersionDiff,
   } from '$ipc/projects';
   import ForecastHistorySkeleton from '$lib/components/skeletons/ForecastHistorySkeleton.svelte';
+  import EmptyState from '$lib/components/EmptyState.svelte';
   import { formatTimeAgo } from '$lib/utils/time';
+  import { goto } from '$app/navigation';
 
   interface Props {
     projectUuid: string;
@@ -131,15 +134,15 @@
   }
 </script>
 
-<section class="forecast-history" aria-label="История прогнозов">
+<section class="forecast-history" aria-label={$_("forecastHistory.section_label")}>
   <header class="history-header">
-    <h2>История версий</h2>
+    <h2>{$_("history.title")}</h2>
     {#if !loading && detail && sortedVersions.length > 0}
       <div class="selection-bar" role="status" aria-live="polite">
         {#if selectionCount === 0}
-          <span class="hint">Выделите 2 версии для сравнения</span>
+          <span class="hint">{$_("history.select_hint_0")}</span>
         {:else if selectionCount === 1}
-          <span class="hint">Выделена 1 — выберите вторую</span>
+          <span class="hint">{$_("history.select_hint_1")}</span>
         {:else}
           <button
             type="button"
@@ -147,7 +150,7 @@
             onclick={runCompare}
             disabled={comparing || !canCompare}
           >
-            {comparing ? 'Сравнение…' : 'Сравнить'}
+            {comparing ? $_("history.comparing") : $_("history.compare_btn")}
           </button>
           <button
             type="button"
@@ -155,7 +158,7 @@
             onclick={clearSelection}
             disabled={comparing}
           >
-            Очистить
+            {$_("history.clear_selection")}
           </button>
         {/if}
       </div>
@@ -165,9 +168,15 @@
   {#if loading}
     <ForecastHistorySkeleton />
   {:else if error}
-    <p class="error-state" role="alert">Не удалось загрузить историю: {error}</p>
+    <p class="error-state" role="alert">{$_("history.load_error", { values: { reason: error } })}</p>
   {:else if sortedVersions.length === 0}
-    <p class="empty-state">У проекта пока нет сохранённых версий.</p>
+    <EmptyState
+      icon="📋"
+      title={$_("forecastHistory.empty_title")}
+      body={$_("forecastHistory.empty_body")}
+      primaryAction={{ label: $_("forecastHistory.empty_cta_primary"), onClick: () => goto('/wizard') }}
+      secondaryAction={{ label: $_("forecastHistory.empty_cta_secondary"), onClick: () => goto('/') }}
+    />
   {:else}
     <ol class="timeline" role="listbox" aria-multiselectable="true">
       {#each sortedVersions as v (v.version_id)}
@@ -182,7 +191,7 @@
             type="button"
             class="select-toggle"
             aria-pressed={isSelected}
-            aria-label={`Версия ${v.revision} — ${isSelected ? 'снять выделение' : 'выделить'}`}
+            aria-label={$_("history.version_select_label", { values: { revision: v.revision, action: isSelected ? $_("history.action_deselect") : $_("history.action_select") } })}
             onclick={() => toggleSelection(v.version_id)}
           >
             <span class="checkbox-glyph" aria-hidden="true">{isSelected ? '✓' : ' '}</span>
@@ -201,11 +210,11 @@
             {/if}
             {#if expertMode}
               <dl class="expert-details">
-                <dt>Hash:</dt>
+                <dt>{$_("history.expert.hash_label")}</dt>
                 <dd class="mono">{shortHash(v.composite_bundle_hash)}</dd>
-                <dt>Файлов:</dt>
+                <dt>{$_("history.expert.files_label")}</dt>
                 <dd>{v.file_count}</dd>
-                <dt>ID:</dt>
+                <dt>{$_("history.expert.id_label")}</dt>
                 <dd class="mono">{v.version_id}</dd>
               </dl>
             {/if}
@@ -216,19 +225,19 @@
   {/if}
 
   {#if compareError}
-    <p class="error-state" role="alert">Ошибка сравнения: {compareError}</p>
+    <p class="error-state" role="alert">{$_("history.compare_error", { values: { reason: compareError } })}</p>
   {/if}
 
   {#if diff}
-    <section class="diff-pane" aria-label="Различия между версиями">
-      <h3>Различия</h3>
+    <section class="diff-pane" aria-label={$_("forecastHistory.diff_region_label")}>
+      <h3>{$_("history.diff.title")}</h3>
       <div class="diff-summary">
         {#if diff.files_changed.length === 0 && diff.files_only_in_a.length === 0 && diff.files_only_in_b.length === 0}
-          <p class="identical">Версии идентичны — содержимое не отличается.</p>
+          <p class="identical">{$_("history.diff.identical")}</p>
         {:else}
           <div class="diff-grid">
             <div class="diff-column" data-kind="changed">
-              <h4>Изменены ({diff.files_changed.length})</h4>
+              <h4>{$_("history.diff.changed", { values: { count: diff.files_changed.length } })}</h4>
               {#if diff.files_changed.length > 0}
                 <ul>
                   {#each diff.files_changed as f}<li class="mono">{f}</li>{/each}
@@ -238,7 +247,7 @@
               {/if}
             </div>
             <div class="diff-column" data-kind="only-a">
-              <h4>Только в ранней ({diff.files_only_in_a.length})</h4>
+              <h4>{$_("history.diff.only_earlier", { values: { count: diff.files_only_in_a.length } })}</h4>
               {#if diff.files_only_in_a.length > 0}
                 <ul>
                   {#each diff.files_only_in_a as f}<li class="mono">{f}</li>{/each}
@@ -248,7 +257,7 @@
               {/if}
             </div>
             <div class="diff-column" data-kind="only-b">
-              <h4>Только в поздней ({diff.files_only_in_b.length})</h4>
+              <h4>{$_("history.diff.only_later", { values: { count: diff.files_only_in_b.length } })}</h4>
               {#if diff.files_only_in_b.length > 0}
                 <ul>
                   {#each diff.files_only_in_b as f}<li class="mono">{f}</li>{/each}
@@ -259,7 +268,7 @@
             </div>
           </div>
           {#if expertMode}
-            <p class="diff-unchanged-count">Без изменений: {diff.files_unchanged.length} файл(ов)</p>
+            <p class="diff-unchanged-count">{$_("history.diff.unchanged_count", { values: { count: diff.files_unchanged.length } })}</p>
           {/if}
         {/if}
       </div>
@@ -305,7 +314,9 @@
     border: 1px solid transparent;
     font-size: var(--typography-fontSize-ui-sm, 0.875rem);
     cursor: pointer;
-    transition: background-color 120ms ease, border-color 120ms ease;
+    transition:
+      background-color var(--motion-duration-normal, 160ms) var(--motion-easing-standard, ease),
+      border-color     var(--motion-duration-normal, 160ms) var(--motion-easing-standard, ease);
   }
 
   .btn-primary {
@@ -349,7 +360,9 @@
     border: 1px solid var(--border-subtle, #e5e7eb);
     border-radius: 8px;
     background: var(--surface-base, white);
-    transition: border-color 120ms ease, background-color 120ms ease;
+    transition:
+      border-color     var(--motion-duration-normal, 160ms) var(--motion-easing-standard, ease),
+      background-color var(--motion-duration-normal, 160ms) var(--motion-easing-standard, ease);
   }
 
   .timeline-row.selected {
@@ -438,15 +451,10 @@
     font-family: var(--font-mono, monospace);
   }
 
-  .empty-state,
-  .error-state {
-    color: var(--text-muted, #6b7280);
-    padding: var(--spacing-4, 1rem);
-    text-align: center;
-  }
-
   .error-state {
     color: var(--color-danger, #dc2626);
+    padding: var(--spacing-4, 1rem);
+    text-align: center;
   }
 
   .diff-pane {
