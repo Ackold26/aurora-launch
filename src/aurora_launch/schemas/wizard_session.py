@@ -48,40 +48,30 @@ class ColumnMapping(BaseModel):
 
 
 class WizardAnchorsDraft(BaseModel):
-    """Draft RecipientAnchors данные собранные customer'ом на step 4.
+    """Draft anchors customer'a с step 4. SO-1 simplification.
 
-    Похоже на RecipientAnchorsPayload из forecast_bundle.py, но wizard
-    позволяет partial fill (customer ещё не закончил) — поэтому все поля
-    Optional. На моменте save_bundle wizard валидирует полную форму.
+    AnchorsForm UI (Phase 1.C.5) использует pattern picker (rampup/sustain/
+    decline/custom) + intensity 1-10 вместо 12 sliders. Customer выбирает
+    бизнес-сценарий за ~30 сек.
+
+    Production-grade RecipientAnchorsPayload (forecast_bundle.py) с
+    market_size / pricing_index / elasticity создаётся orchestrator'ом
+    при start_forecast на основе этого draft + proxy bundle metadata.
     """
 
     model_config = _FROZEN
 
-    market_size: float | None = None
-    market_size_cv: float = Field(ge=0.0, default=0.10)
-    pricing_index: float | None = None
-    elasticity: float | None = None
+    pattern: Literal["rampup", "sustain", "decline", "custom"] = "sustain"
+    intensity: int = Field(ge=1, le=10, default=5)
+    awareness_target_pct: float | None = Field(default=None, ge=0.0, le=100.0)
+    custom_trajectory: list[float] | None = None  # 12 values если pattern='custom'
+    notes: str | None = None
 
-    # Trajectory pattern picker (SO-1): customer выбирает predefined +
-    # intensity 1-10 вместо ручного per-period слайдеров. Custom mode =
-    # manual числа.
-    planned_share_pattern: Literal["rampup", "sustain", "decline", "custom"] = "sustain"
-    planned_share_intensity: int = Field(ge=1, le=10, default=5)
-    planned_share_custom: list[float] | None = None  # only when pattern='custom'
-
-    distribution_pattern: Literal["rampup", "sustain", "decline", "custom"] = "sustain"
-    distribution_intensity: int = Field(ge=1, le=10, default=8)
-    distribution_custom: list[float] | None = None
-
-    has_seasonality: bool = False
-    seasonality_pattern: Literal["flat", "yearly", "custom"] = "flat"
-    seasonality_custom: list[float] | None = None
-
-    @field_validator("market_size", "pricing_index", "elasticity", "market_size_cv")
+    @field_validator("awareness_target_pct")
     @classmethod
     def _finite_scalar(cls, v: float | None) -> float | None:
         if v is not None and not math.isfinite(v):
-            raise ValueError(f"value must be finite, got {v!r}")
+            raise ValueError(f"awareness_target_pct must be finite, got {v!r}")
         return v
 
 

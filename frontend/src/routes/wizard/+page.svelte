@@ -8,7 +8,7 @@
   import { fly } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
 
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
   import Button from '$lib/components/Button.svelte';
@@ -18,9 +18,13 @@
   import ProgressBar from '$lib/components/ProgressBar.svelte';
   import ForecastCone from '$lib/components/ForecastCone.svelte';
   import PatternSuggestionCard from '$lib/components/PatternSuggestionCard.svelte';
+  import ColumnMappingTable from '$lib/components/ColumnMappingTable.svelte';
+  import ProxyPickerCard from '$lib/components/ProxyPickerCard.svelte';
+  import AnchorsForm from '$lib/components/AnchorsForm.svelte';
   import { ipc } from '$ipc/client';
   import type {
-    SimilarityDimensionScores
+    SimilarityDimensionScores,
+    WizardAnchorsDraft
   } from '$types/aurora-schemas';
   import type {
     ForecastProgressEvent,
@@ -31,6 +35,9 @@
   import { determineVerdict } from '$lib/utils/verdict';
   import { track } from '$lib/services/telemetry';
   import { composeForecastJson } from '$lib/ipc/forecast';
+  import { wizardSession } from '$lib/stores/wizardSession.svelte';
+  import { autoMapColumns } from '$lib/utils/auto_map_columns';
+  import { validIntensity } from '$lib/utils/trajectory_patterns';
 
   const STEPS = [
     'import',
@@ -47,11 +54,50 @@
   let importedAdapter = $state<string | null>(null);
   let importedRecordCount = $state<number | null>(null);
   let importing = $state(false);
-  let mappingDone = $state(false);
-  let selectedProxy = $state<string | null>(null);
+
+  // Phase 1.C.2: column mapping state
+  let sourceColumns = $state<string[]>([]);
+  let suggestedMapping = $state<Record<string, string>>({});
+  let previewRows = $state<Array<Record<string, unknown>>>([]);
+  let columnMapping = $state(new Map<string, string | null>());
+
+  // Phase 1.C.3: proxy picker bindable
+  let proxyPickerPath = $state<string | null>(null);
+  let proxyPickerLabel = $state<string | null>(null);
+
   let similarityScore = $state<number | null>(null);
   let similarityDim = $state<SimilarityDimensionScores | null>(null);
-  let anchorsDone = $state(false);
+
+  // Phase 1.C.5: anchors draft — shape совпадает с AnchorsForm Props и
+  // Pydantic WizardAnchorsDraft (после SO-1 simplification). Все required —
+  // initial defaults обеспечивают валидность сразу.
+  type AnchorsDraft = {
+    pattern: 'rampup' | 'sustain' | 'decline' | 'custom';
+    intensity: number;
+    awareness_target_pct: number | null;
+    custom_trajectory: number[] | null;
+    notes: string | null;
+  };
+  let anchorsDraft = $state<AnchorsDraft | null>({
+    pattern: 'sustain',
+    intensity: 5,
+    awareness_target_pct: null,
+    custom_trajectory: null,
+    notes: null,
+  });
+
+  // Phase 1.C.6: derived completion flags
+  const mappingDone = $derived(
+    columnMapping.size > 0 &&
+      Array.from(columnMapping.values()).every((v) => v !== null && v !== '')
+  );
+  const anchorsDone = $derived(
+    anchorsDraft !== null && validIntensity(anchorsDraft.intensity)
+  );
+
+  // Phase 1.C.6: recovery dialog state
+  let showRecoveryDialog = $state(false);
+
   let forecastHandleId = $state<string | null>(null);
   let forecastStatus = $state<{ progress: number | null; elapsedMs: number; etaMs: number | null }>(
     { progress: null, elapsedMs: 0, etaMs: null }
@@ -100,11 +146,116 @@
       : []
   );
 
+  // ─── Phase 1.C.6: Session recovery + autosave ─────────────────────────────
+
+  onMount(async () => {
+    await wizardSession.loadDraft();
+    if (wizardSession.pendingDraft) {
+      showRecoveryDialog = true;
+    }
+  });
+
+  function applyRecoveredSession() {
+    wizardSession.acceptRecovery();
+    const s = wizardSession.session;
+    step = s.step ?? 0;
+    importedFile = s.imported_file_path ?? null;
+    importedAdapter = s.imported_adapter_id ?? null;
+    importedRecordCount = s.imported_record_count ?? null;
+    sourceColumns = s.imported_columns ?? [];
+    // Восстанавливаем mapping из array → Map
+    const restored = new Map<string, string | null>();
+    for (const m of s.column_mapping ?? []) {
+      restored.set(m.source_column, m.canonical_field || null);
+    }
+    columnMapping = restored;
+    proxyPickerPath = s.selected_proxy_path ?? null;
+    proxyPickerLabel = s.selected_proxy_label ?? null;
+    if (s.similarity_result) {
+      // Pydantic dimensions хранится как generic dict[str, float]; runtime
+      // shape совместима с SimilarityDimensionScores (та же 8 dimensions
+      // produced Rust IPC). Cast через unknown для bypass strict structural.
+      similarityDim = (s.similarity_result.dimensions ?? null) as unknown as
+        | SimilarityDimensionScores
+        | null;
+      similarityScore = s.similarity_result.score ?? null;
+    }
+    if (s.anchors_draft) {
+      anchorsDraft = {
+        pattern: s.anchors_draft.pattern ?? 'sustain',
+        intensity: s.anchors_draft.intensity ?? 5,
+        awareness_target_pct: s.anchors_draft.awareness_target_pct ?? null,
+        custom_trajectory: s.anchors_draft.custom_trajectory ?? null,
+        notes: s.anchors_draft.notes ?? null,
+      };
+    }
+    forecastCompleted = s.forecast_completed ?? false;
+    forecastHorizon = s.forecast_horizon ?? 26;
+    certSigned = s.cert_signed ?? false;
+    savedBundlePath = s.saved_bundle_path ?? null;
+    showRecoveryDialog = false;
+    pushToast({
+      level: 'info',
+      title: 'Сеанс восстановлен',
+      body: `Продолжаем с шага ${(step ?? 0) + 1} из ${STEPS.length}`,
+    });
+  }
+
+  async function dismissRecovery() {
+    await wizardSession.dismissRecovery();
+    showRecoveryDialog = false;
+  }
+
+  /** Persist текущее состояние step в session (вызывается перед навигацией). */
+  function persistCurrentStep() {
+    wizardSession.update((s) => {
+      s.step = step;
+      // Step 1 — mapping
+      s.column_mapping = Array.from(columnMapping.entries()).map(
+        ([source, canonical]) => ({
+          source_column: source,
+          canonical_field: canonical ?? '',
+        })
+      );
+      s.mapping_done = mappingDone;
+      // Step 2 — proxy
+      s.selected_proxy_path = proxyPickerPath;
+      s.selected_proxy_label = proxyPickerLabel;
+      // Step 3 — similarity. Cast SimilarityDimensionScores (concrete shape)
+      // в generic dict[str, float] (Pydantic storage type) — same runtime data.
+      if (similarityDim !== null && similarityScore !== null) {
+        s.similarity_result = {
+          dimensions: similarityDim as unknown as Record<string, number>,
+          score: similarityScore,
+          verdict: verdict ?? 'Insufficient',
+          computed_at: new Date().toISOString(),
+        };
+      }
+      // Step 4 — anchors
+      s.anchors_draft = anchorsDraft;
+      s.anchors_done = anchorsDone;
+      // Step 5 — forecast horizon
+      s.forecast_horizon = forecastHorizon;
+      s.forecast_completed = forecastCompleted;
+      // Step 6 — cert
+      s.cert_signed = certSigned;
+      s.saved_bundle_path = savedBundlePath;
+    });
+  }
+
   function next() {
+    persistCurrentStep();
     if (step < STEPS.length - 1) step += 1;
+    wizardSession.update((s) => {
+      s.step = step;
+    });
   }
   function prev() {
+    persistCurrentStep();
     if (step > 0) step -= 1;
+    wizardSession.update((s) => {
+      s.step = step;
+    });
   }
 
   async function pickImport() {
@@ -123,19 +274,37 @@
         const result = await ipc.parseDataFile({ path: selected, max_records: 100 });
         importedAdapter = result.adapter_id;
         importedRecordCount = result.record_count;
+
+        // Phase 1.C.2: column mapping init
+        sourceColumns = result.source_columns ?? [];
+        suggestedMapping = result.suggested_mapping ?? {};
+        previewRows = result.preview_rows ?? [];
+        // auto-fill mapping (adapter suggested + heuristic fallback)
+        columnMapping = autoMapColumns(sourceColumns, suggestedMapping);
+
+        // Phase 1.C.6: persist в session immediately
+        wizardSession.update((s) => {
+          s.imported_file_path = selected;
+          s.imported_adapter_id = result.adapter_id;
+          s.imported_record_count = result.record_count;
+          s.imported_columns = sourceColumns;
+        });
+
         pushToast({
           level: 'success',
-          title: `Parsed via ${result.adapter_id}`,
-          body: `${result.record_count} records detected`
+          title: `Файл распознан: ${result.adapter_id}`,
+          body: `${result.record_count} записей · ${sourceColumns.length} колонок`,
         });
       } catch (e) {
         pushToast({
           level: 'danger',
-          title: 'Import failed',
-          body: String(e)
+          title: 'Не удалось разобрать файл',
+          body: String(e),
         });
         importedAdapter = null;
         importedRecordCount = null;
+        sourceColumns = [];
+        columnMapping = new Map();
       } finally {
         importing = false;
       }
@@ -311,6 +480,18 @@
         return;
       }
 
+      // Phase 1.C.6: real anchors из AnchorsForm (заменяет null заглушку).
+      // Inspector M-09 теперь reproducible с реальной анкорной конфигурацией.
+      const anchorsPayload: Record<string, unknown> | null = anchorsDraft
+        ? {
+            pattern: anchorsDraft.pattern,
+            intensity: anchorsDraft.intensity,
+            awareness_target_pct: anchorsDraft.awareness_target_pct,
+            custom_trajectory: anchorsDraft.custom_trajectory,
+            notes: anchorsDraft.notes,
+          }
+        : null;
+
       const composed = await composeForecastJson({
         horizon_weeks: forecastHorizon,
         weekly_points: forecastPoints.map((p) => ({
@@ -324,11 +505,7 @@
         methodology_signature: forecastMethodologySignature ?? '',
         n_recipient: 0, // pre-launch
         warnings: forecastWarnings,
-        // Anchors / spend_plan пока null — wizard ещё не имеет UI для них.
-        // Inspector fall back на preview-mode для таких bundle (M-09).
-        // Когда добавится anchors UI (отдельная задача), сюда передадутся
-        // реальные значения.
-        anchors: null,
+        anchors: anchorsPayload,
         spend_plan: null,
         produced_at: new Date().toISOString(),
       });
@@ -346,6 +523,14 @@
         title: 'Bundle сохранён',
         body: `${targetPath} (${composed.byte_size} байт forecast.json)`,
       });
+
+      // Phase 1.C.6: persist session с saved bundle path + flush критично
+      // прямо сейчас (не debounced — следующий restart должен увидеть).
+      wizardSession.update((s) => {
+        s.saved_bundle_path = targetPath;
+        s.cert_signed = certSigned;
+      });
+      await wizardSession.flush();
     } catch (e) {
       saveError = e instanceof Error ? e.message : String(e);
       pushToast({ level: 'danger', title: 'Ошибка сохранения', body: saveError });
@@ -401,21 +586,31 @@
     {:else if step === 1}
       <Card title={$_('wizard.step.mapping')}>
         {#snippet children()}
-          <p>Сопоставьте колонки источника с каноническими полями (бренд / период / продажи).</p>
-          <Button onclick={() => (mappingDone = true)} variant={mappingDone ? 'secondary' : 'primary'}>
-            {#snippet children()}{mappingDone ? 'Done ✓' : 'Apply mapping'}{/snippet}
-          </Button>
+          {#if sourceColumns.length === 0}
+            <p class="empty-hint">
+              Сначала импортируйте файл на предыдущем шаге, чтобы Aurora узнала
+              его структуру.
+            </p>
+          {:else}
+            <p>
+              Aurora распознала <strong>{sourceColumns.length}</strong> колонок
+              в файле. Проверьте сопоставление с каноническими полями
+              (бренд / период / продажи) и при необходимости поправьте.
+            </p>
+            <ColumnMappingTable
+              {sourceColumns}
+              {suggestedMapping}
+              {previewRows}
+              bind:mapping={columnMapping}
+            />
+          {/if}
         {/snippet}
       </Card>
     {:else if step === 2}
-      <Card title={$_('wizard.step.proxy')}>
-        {#snippet children()}
-          <p>Выберите proxy-бренд из синдицированных данных или загрузите свой.</p>
-          <Button onclick={() => (selectedProxy = 'Demo Proxy')} variant={selectedProxy ? 'secondary' : 'primary'}>
-            {#snippet children()}{selectedProxy ?? 'Pick proxy'}{/snippet}
-          </Button>
-        {/snippet}
-      </Card>
+      <ProxyPickerCard
+        bind:selectedPath={proxyPickerPath}
+        bind:selectedLabel={proxyPickerLabel}
+      />
     {:else if step === 3}
       <Card title={$_('wizard.step.similarity')}>
         {#snippet children()}
@@ -434,14 +629,7 @@
         {/snippet}
       </Card>
     {:else if step === 4}
-      <Card title={$_('wizard.step.anchors')}>
-        {#snippet children()}
-          <p>Установите якорные параметры запуска: market size, distribution velocity, pricing index, creative quality.</p>
-          <Button onclick={() => (anchorsDone = true)} variant={anchorsDone ? 'secondary' : 'primary'}>
-            {#snippet children()}{anchorsDone ? 'Anchors set ✓' : 'Set anchors'}{/snippet}
-          </Button>
-        {/snippet}
-      </Card>
+      <AnchorsForm bind:draft={anchorsDraft} horizon_periods={forecastHorizon} />
     {:else if step === 5}
       <Card title={$_('wizard.step.forecast')}>
         {#snippet children()}
@@ -526,12 +714,59 @@
     {:else}
       <!-- Block 3 HIGH-7 fix: Sacred Lime invariant — ONE per screen.
            On step 7 (cert) the body has variant="sigil" "Sign certificate";
-           finish button must be variant="primary" to avoid 2 sigil buttons. -->
-      <Button variant="primary" onclick={() => pushToast({ level: 'success', title: $_('wizard.finish') })}>
+           finish button must be variant="primary" to avoid 2 sigil buttons.
+           Phase 1.C.6: reset session — wizard завершён, draft не нужен. -->
+      <Button
+        variant="primary"
+        onclick={async () => {
+          await wizardSession.reset();
+          pushToast({ level: 'success', title: $_('wizard.finish') });
+        }}
+      >
         {#snippet children()}{$_('wizard.finish')}{/snippet}
       </Button>
     {/if}
   </footer>
+
+  <!-- Phase 1.C.6 / UX-3: recovery dialog appears после reload, если
+       незаконченный draft найден в _kv_store. -->
+  {#if showRecoveryDialog && wizardSession.pendingDraft}
+    <div
+      class="recovery-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="recovery-title"
+    >
+      <div class="recovery-modal">
+        <h2 id="recovery-title">Восстановить незаконченный сеанс?</h2>
+        <p>
+          Aurora нашла черновик мастера, сохранённый
+          {#if wizardSession.pendingDraft.last_saved_at}
+            <strong
+              >{new Date(
+                wizardSession.pendingDraft.last_saved_at
+              ).toLocaleString('ru-RU')}</strong
+            >
+          {/if}.
+        </p>
+        <p class="recovery-details">
+          Прогресс: шаг {(wizardSession.pendingDraft.step ?? 0) + 1} из
+          {STEPS.length}{#if wizardSession.pendingDraft.imported_file_path}
+            · файл <code
+              >{wizardSession.pendingDraft.imported_file_path.split(/[\\/]/).pop()}</code
+            >{/if}
+        </p>
+        <div class="recovery-actions">
+          <Button variant="primary" onclick={applyRecoveredSession}>
+            {#snippet children()}Восстановить{/snippet}
+          </Button>
+          <Button variant="ghost" onclick={dismissRecovery}>
+            {#snippet children()}Начать заново{/snippet}
+          </Button>
+        </div>
+      </div>
+    </div>
+  {/if}
 </section>
 
 <style>
@@ -648,5 +883,68 @@
     justify-content: space-between;
     border-top: 1px solid var(--border-subtle);
     padding-top: var(--spacing-4);
+  }
+
+  /* Phase 1.C.6: empty state когда Step 1 reached без import */
+  .empty-hint {
+    color: var(--text-muted);
+    font-style: italic;
+    margin: 0;
+  }
+
+  /* Phase 1.C.6 / UX-3: recovery dialog modal */
+  .recovery-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: var(--spacing-4);
+  }
+
+  .recovery-modal {
+    background: var(--bg-surface, #ffffff);
+    border-radius: var(--radius-md, 8px);
+    padding: var(--spacing-6, 24px);
+    max-width: 480px;
+    width: 100%;
+    box-shadow: var(--shadow-lg, 0 10px 40px rgba(0, 0, 0, 0.2));
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-3, 12px);
+  }
+
+  .recovery-modal h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 1.25rem;
+  }
+
+  .recovery-details {
+    font-size: 0.9em;
+    color: var(--text-muted);
+    margin: 0;
+  }
+
+  .recovery-details code {
+    background: var(--surface-soft, rgba(0, 0, 0, 0.05));
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+  }
+
+  .recovery-actions {
+    display: flex;
+    gap: var(--spacing-3, 12px);
+    justify-content: flex-end;
+    margin-top: var(--spacing-2, 8px);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .recovery-backdrop {
+      animation: none;
+    }
   }
 </style>

@@ -97,21 +97,13 @@ export interface WizardSession {
   last_saved_at: string;
 }
 
-/** Draft RecipientAnchors данные собранные customer'ом на step 4. */
+/** Draft anchors customer'a с step 4. SO-1 simplification. */
 export interface WizardAnchorsDraft {
-  market_size?: number | null;
-  market_size_cv?: number;
-  pricing_index?: number | null;
-  elasticity?: number | null;
-  planned_share_pattern?: "rampup" | "sustain" | "decline" | "custom";
-  planned_share_intensity?: number;
-  planned_share_custom?: number[] | null;
-  distribution_pattern?: "rampup" | "sustain" | "decline" | "custom";
-  distribution_intensity?: number;
-  distribution_custom?: number[] | null;
-  has_seasonality?: boolean;
-  seasonality_pattern?: "flat" | "yearly" | "custom";
-  seasonality_custom?: number[] | null;
+  pattern?: "rampup" | "sustain" | "decline" | "custom";
+  intensity?: number;
+  awareness_target_pct?: number | null;
+  custom_trajectory?: number[] | null;
+  notes?: string | null;
 }
 
 /** Snapshot similarity результата (chosen proxy → recipient) cached в session. */
