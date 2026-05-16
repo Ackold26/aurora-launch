@@ -466,9 +466,15 @@
     border: 1px solid var(--border-default, #d1d5db);
     border-radius: 3px;
     background: var(--bg-surface, white);
+    /* WCAG AA fix (A11Y-W05): palette-hint inherits text-muted (~3.6:1 on white).
+       kbd has its own white bg so must set its own foreground for 4.5:1. */
+    color: var(--text-secondary, #4a4d57);
   }
   .palette-hint-label {
     user-select: none;
+    /* WCAG AA fix (A11Y-W06): inherits text-muted (~3.6:1) from parent button.
+       Override to text-secondary (~7.6:1) for xs font-size compliance. */
+    color: var(--text-secondary, #4a4d57);
   }
 
   .app-header {

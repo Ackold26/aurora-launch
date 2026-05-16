@@ -412,7 +412,7 @@
 
   .pattern-use {
     font-size: var(--typography-fontSize-ui-xs, 0.75rem);
-    color: var(--text-muted, #6b7280);
+    color: var(--text-secondary, #4a4d57);
     font-style: italic;
   }
 
@@ -436,7 +436,7 @@
 
   .intensity-hint {
     font-size: var(--typography-fontSize-ui-xs, 0.75rem);
-    color: var(--text-muted, #6b7280);
+    color: var(--text-secondary, #4a4d57);
   }
 
   /* ── SVG preview ────────────────────────────────────────────────────────── */
@@ -465,7 +465,7 @@
   }
 
   .axis-label {
-    fill: var(--text-muted, #6b7280);
+    fill: var(--text-secondary, #4a4d57);
     font-size: 10px;
     font-family: var(--font-mono, monospace);
   }
@@ -501,7 +501,7 @@
 
   .custom-period {
     font-size: var(--typography-fontSize-ui-xs, 0.75rem);
-    color: var(--text-muted, #6b7280);
+    color: var(--text-secondary, #4a4d57);
   }
 
   .custom-input {
@@ -531,7 +531,7 @@
 
   .field-optional {
     font-weight: 400;
-    color: var(--text-muted, #6b7280);
+    color: var(--text-secondary, #4a4d57);
   }
 
   .field-input {

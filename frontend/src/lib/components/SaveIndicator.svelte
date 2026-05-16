@@ -93,12 +93,13 @@
     color: var(--color-warning, #f59e0b);
   }
 
-  /* unsaved */
+  /* unsaved — WCAG AA fix (A11Y-W04): --text-muted (#7a7a90) at xs font is
+     ~3.6:1 on light bg. Use --text-secondary (#4A4D57) which is ~7.6:1. */
   [data-state='unsaved'] .dot {
-    background: var(--text-muted, #7a7a90);
+    background: var(--text-secondary, #4a4d57);
   }
   [data-state='unsaved'] .save-label {
-    color: var(--text-muted, #7a7a90);
+    color: var(--text-secondary, #4a4d57);
   }
 
   /* Pulse animation — only if user allows motion (INV-14) */
