@@ -8,6 +8,7 @@ pub mod bundle;
 pub mod crash_recovery;
 pub mod feedback;
 pub mod forecast;
+pub mod handshake;
 pub mod license;
 pub mod methodology_cert;
 pub mod projects;

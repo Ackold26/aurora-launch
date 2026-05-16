@@ -77,6 +77,10 @@ pub struct SidecarManager {
     /// но lock prevents partial-line interleaving в Rust user code).
     child: Arc<Mutex<Option<CommandChild>>>,
     auth_token: String,
+    /// Этап 2.8: результат handshake-negotiate. None = ещё не выполнен или
+    /// упал на спавне. Some(r) = Python sidecar ответил, r.compatible —
+    /// флаг для UI. Запрашивается через get_handshake_status IPC.
+    handshake_state: Arc<Mutex<Option<NegotiationResult>>>,
 }
 
 impl SidecarManager {
@@ -87,6 +91,7 @@ impl SidecarManager {
             pending: Arc::new(Mutex::new(HashMap::new())),
             child: Arc::new(Mutex::new(None)),
             auth_token: token,
+            handshake_state: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -111,19 +116,37 @@ impl SidecarManager {
             pending: Arc::new(Mutex::new(HashMap::new())),
             child: Arc::new(Mutex::new(Some(child))),
             auth_token: token,
+            handshake_state: Arc::new(Mutex::new(None)),
         });
 
         // Protocol version handshake — fire-and-forget background task. Result
-        // logged; do not block spawn() return on Python sidecar boot. If
-        // handshake fails (timeout / mismatch) — subsequent invoke() calls
-        // surface the underlying issue naturally.
+        // stored в manager.handshake_state + emitted как event для UI banner.
+        // Этап 2.8: до этой правки только log::warn — UI ничего не знал.
         let manager_for_handshake = Arc::clone(&manager);
+        let app_for_handshake = app.clone();
         tokio::spawn(async move {
             // Short delay даёт sidecar время инициализировать method registry
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
             match manager_for_handshake.negotiate_protocol().await {
-                Ok(_) => {}
-                Err(e) => log::warn!("[sidecar handshake] failed: {e}"),
+                Ok(result) => {
+                    // Уведомляем UI о результате handshake — UI решает показывать
+                    // ли блокирующий banner если result.compatible == false.
+                    if let Err(e) = app_for_handshake.emit("sidecar://handshake_complete", &result)
+                    {
+                        log::warn!("[sidecar handshake] emit failed: {e}");
+                    }
+                }
+                Err(e) => {
+                    log::warn!("[sidecar handshake] failed: {e}");
+                    // Synthesize failure state so UI знает что handshake не прошёл
+                    let failure = NegotiationResult {
+                        compatible: false,
+                        reason: Some(format!("Handshake transport failure: {e}")),
+                        advice: Some("Перезапустите Aurora Launch. Если повторится — переустановите".into()),
+                    };
+                    let _ = app_for_handshake.emit("sidecar://handshake_complete", &failure);
+                    *manager_for_handshake.handshake_state.lock().await = Some(failure);
+                }
             }
         });
 
@@ -287,7 +310,16 @@ impl SidecarManager {
                 rust_version
             );
         }
+        // Этап 2.8: сохраняем для get_handshake_status IPC + предотвращаем
+        // потерю результата (background task может умереть до emit).
+        *self.handshake_state.lock().await = Some(result.clone());
         Ok(result)
+    }
+
+    /// Этап 2.8: текущее состояние handshake для UI polling.
+    /// None если spawn только что произошёл и task ещё не выполнился.
+    pub async fn handshake_status(&self) -> Option<NegotiationResult> {
+        self.handshake_state.lock().await.clone()
     }
 }
 

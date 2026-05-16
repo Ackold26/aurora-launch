@@ -19,6 +19,7 @@
   import Badge from '$lib/components/Badge.svelte';
   import SaveIndicator from '$lib/components/SaveIndicator.svelte';
   import CommandPalette from '$lib/components/CommandPalette.svelte';
+  import HandshakeIncompatibleModal from '$lib/components/HandshakeIncompatibleModal.svelte';
 
   let { children } = $props();
 
@@ -305,6 +306,9 @@
 
   <!-- PA-A04 fix: CommandPalette mounted globally; Cmd+K toggle wired в onKey. -->
   <CommandPalette {commands} open={commandPaletteOpen} onClose={closeCommandPalette} />
+
+  <!-- Этап 2.8: blocking modal на handshake mismatch (Rust↔Python sidecar) -->
+  <HandshakeIncompatibleModal />
 
   {#if feedbackOpen}
     <div
