@@ -10,7 +10,7 @@
 // Mocked в Vitest tests via `setupMockIpc()` helper — see tests/unit/ipc.mock.ts.
 
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
-import type { BundleManifest, SimilarityDimensionScores } from '$types/aurora-schemas';
+import type { BundleManifest, SimilarityDimensionScores, WizardSession } from '$types/aurora-schemas';
 
 export interface AuroraError {
   kind: string;
@@ -331,6 +331,21 @@ export const ipc = {
     }),
   dismissRefreshTrigger: (projectUuid: string) =>
     invoke<{ dismissed: boolean }>('dismiss_refresh_trigger', { project_uuid: projectUuid }),
+
+  // Phase 1.C — Wizard session persistence (BTA-2 + UX-3 recovery)
+  wizardSessionSave: (session: WizardSession) =>
+    invoke<{ saved: boolean; saved_at?: string }>('wizard_session_save', {
+      session: session as unknown as Record<string, unknown>,
+    }),
+  wizardSessionLoad: () =>
+    invoke<{ session: WizardSession | null }>('wizard_session_load', {}),
+  wizardSessionClear: () =>
+    invoke<{ cleared: boolean }>('wizard_session_clear', {}),
+  listSampleBundles: () =>
+    invoke<{ bundles: Array<{ id: string; path: string; label: string; exists: boolean }> }>(
+      'list_sample_bundles',
+      {},
+    ),
 };
 
 /** Этап 2.8: результат negotiate-handshake между Rust shell и Python sidecar. */
