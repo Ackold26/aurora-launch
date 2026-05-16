@@ -38,6 +38,16 @@ def _SidecarStorageError():
     return SidecarStorageError
 
 
+def _SidecarSecurityError():
+    from aurora_launch.sidecar.methods import SidecarSecurityError
+    return SidecarSecurityError
+
+
+def _get_allowed_roots():
+    from aurora_launch.sidecar.methods import _get_allowed_roots as _gar
+    return _gar()
+
+
 # ─── Diagnostic ───────────────────────────────────────────────────────────────
 
 
@@ -374,13 +384,26 @@ def _import_aurora_bundle(params: dict[str, Any]) -> dict[str, Any]:
       - granularity: str = "monthly"
     Returns: {"project_uuid": str, "version_id": int}
     """
+    from aurora_launch.engines.path_security import (
+        PathSecurityError,
+        validate_safe_path,
+    )
     from aurora_launch.persistence import migration_from_zip
 
     SidecarStorageError = _SidecarStorageError()
+    SidecarSecurityError = _SidecarSecurityError()
     bundle_path_raw = str(params.get("bundle_path", "")).strip()
     if not bundle_path_raw:
         raise ValueError("bundle_path must be non-empty")
     bundle_path = Path(bundle_path_raw)
+
+    # Phase 2.C H-4: validate against symlink/junction/traversal before open.
+    try:
+        bundle_path = validate_safe_path(
+            bundle_path, _get_allowed_roots(), is_write=False
+        )
+    except PathSecurityError as e:
+        raise SidecarSecurityError(str(e)) from e
 
     project_name = params.get("project_name") or None
     granularity = str(params.get("granularity", "monthly"))
@@ -514,6 +537,12 @@ def _save_bundle(params: dict[str, Any]) -> dict[str, Any]:
         BundleZipReader,
         BundleZipWriter,
     )
+    from aurora_launch.engines.path_security import (
+        PathSecurityError,
+        validate_safe_path,
+    )
+
+    SidecarSecurityError = _SidecarSecurityError()
 
     # POST_PILOT_BACKLOG B4-MED-4 close (2026-05-10): explicit nullable
     # source_path. Rust IPC теперь sends null когда нет existing bundle;
@@ -525,6 +554,25 @@ def _save_bundle(params: dict[str, Any]) -> dict[str, Any]:
     expected_revision = params.get("expected_revision")
     extra_files = params.get("extra_files") or {}
     new_version = params.get("aurora_app_version")
+
+    # Phase 2.C H-4 + HE-1: validate write target before open.
+    try:
+        target_path = validate_safe_path(
+            target_path, _get_allowed_roots(), is_write=True
+        )
+    except PathSecurityError as e:
+        raise SidecarSecurityError(str(e)) from e
+
+    # Validate source read path only when it actually exists (will be read).
+    # source_path that does not exist → fresh-write branch below; no security
+    # check needed for a non-existent path that won't be opened.
+    if source_path is not None and source_path.exists():
+        try:
+            source_path = validate_safe_path(
+                source_path, _get_allowed_roots(), is_write=False
+            )
+        except PathSecurityError as e:
+            raise SidecarSecurityError(str(e)) from e
 
     if source_path is None or not source_path.exists():
         # Initial save — no source bundle, write fresh

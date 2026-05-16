@@ -31,6 +31,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Optional
 
+from aurora_launch.engines.path_security import (
+    PathSecurityError,
+    validate_safe_path,
+)
 from aurora_launch.schemas.auto_refresh import (
     DataSourceConfig,
     RefreshConsentSetting,
@@ -236,6 +240,24 @@ class DataSourceWatcher:
         assert config.path is not None  # validated by schema
 
         folder = Path(config.path)
+
+        # Phase 2.C H-4: validate folder path against symlink/junction/traversal.
+        # Folders are "read" context: use is_write=False — folder must exist and
+        # be under allowed roots. If folder doesn't exist or is outside roots,
+        # log warning and treat as "no trigger" (same as non-existent folder).
+        from aurora_launch.sidecar.methods import _get_allowed_roots
+        try:
+            validate_safe_path(folder, _get_allowed_roots(), is_write=False)
+        except PathSecurityError as exc:
+            logger.warning(
+                "DataSourceWatcher[%s]: folder path rejected by security policy "
+                "(%s) — source_kind=%r skipped",
+                self._project_uuid,
+                exc,
+                source_kind,
+            )
+            return None
+
         max_mtime = _scan_folder_max_mtime(folder)
 
         # Update last_checked_at regardless of whether new data found

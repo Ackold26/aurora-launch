@@ -80,11 +80,81 @@ _integrity_cancel_flags: dict[str, threading.Event] = {}
 _optimize_threads: dict[str, threading.Thread] = {}
 _optimize_cancel_flags: dict[str, threading.Event] = {}
 
+# ─── Phase 2.B: bounded concurrent task caps (H-1) ───────────────────────────
+# Customer запускающий 10 forecasts одновременно — DoS local machine. Cap
+# защищает от resource exhaustion + UX-5: customer получает empathetic
+# «подождите 20-30 секунд» вместо crash/timeout.
+MAX_CONCURRENT_FORECASTS = 2
+MAX_CONCURRENT_OPTIMIZE = 1
+MAX_CONCURRENT_INTEGRITY = 1
+
+
+class SidecarBusyError(RuntimeError):
+    """Raised when concurrent task cap reached.
+
+    Frontend ловит и показывает empathetic toast (UX-5) — non-blocking
+    error, customer понимает situation.
+    """
+
+    def __init__(self, kind: str, current: int, cap: int) -> None:
+        super().__init__(
+            f"Aurora завершает предыдущий {kind} ({current}/{cap} активны). "
+            f"Подождите 20-30 секунд и попробуйте снова."
+        )
+        self.kind = kind
+        self.current = current
+        self.cap = cap
+
+
+def _check_capacity(kind: str, threads_dict: dict[str, threading.Thread], cap: int) -> None:
+    """Raises SidecarBusyError если number alive threads >= cap.
+
+    Считает только живые threads — completed threads автоматически очищаются
+    через finally blocks в runner(). Это race-safe: между check и spawn
+    может пробежать другой thread, но cap+1 в peak допустимо (не SLA
+    violation).
+    """
+    alive = sum(1 for t in threads_dict.values() if t.is_alive())
+    if alive >= cap:
+        raise SidecarBusyError(kind, alive, cap)
+
+
 # ─── ProjectDB singleton ──────────────────────────────────────────────────────
 
 
 class SidecarStorageError(RuntimeError):
     """Raised when ProjectDB singleton initialization fails."""
+
+
+class SidecarSecurityError(ValueError):
+    """Raised when a user-supplied path violates security policy (Phase 2.C H-4)."""
+
+
+def _get_allowed_roots() -> list[Path]:
+    """Return allowed file I/O roots для path security.
+
+    Mirrors Tauri capabilities scope (capabilities/default.json):
+    $APPDATA / $DOCUMENT / $DOWNLOAD / $TEMP. Customer files должны быть
+    в одном из этих.
+    """
+    roots: list[Path] = []
+    if appdata := os.environ.get("APPDATA"):
+        roots.append(Path(appdata))
+    if userprofile := os.environ.get("USERPROFILE"):
+        roots.append(Path(userprofile) / "Documents")
+        roots.append(Path(userprofile) / "Downloads")
+    if home := os.environ.get("HOME"):  # Unix
+        roots.append(Path(home) / "Documents")
+        roots.append(Path(home) / "Downloads")
+        roots.append(Path(home) / ".aurora")
+    # Tmp/test isolation — pytest tmp_path mostly /tmp або %TEMP%
+    if tmp := os.environ.get("TEMP"):
+        roots.append(Path(tmp))
+    if tmpdir := os.environ.get("TMPDIR"):
+        roots.append(Path(tmpdir))
+    # Linux fallback
+    roots.append(Path("/tmp"))
+    return roots
 
 
 _PROJECT_DB: Any = None  # ProjectDB | None — typed as Any to avoid top-level import

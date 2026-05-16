@@ -209,13 +209,20 @@ class LocalOptimizerClient(OptimizerClient):
     """
 
     def __init__(self) -> None:
+        from pathlib import Path
+
+        from aurora_launch.engines.path_security import (
+            PathSecurityError,
+            validate_safe_path,
+        )
+        from aurora_launch.sidecar.methods import _get_allowed_roots
+
         db_path_str = os.environ.get(OPTIMIZER_DB_PATH_ENV)
         if not db_path_str:
             raise OptimizerNotConfigured(
                 f"Env var {OPTIMIZER_DB_PATH_ENV!r} is not set. "
                 "Aurora MMM Optimizer cross-product validation is not available."
             )
-        from pathlib import Path
 
         db_path = Path(db_path_str)
         # Audit B-01 (этап 4.5): is_file() check — без него customer мог
@@ -226,6 +233,15 @@ class LocalOptimizerClient(OptimizerClient):
                 f"Optimizer DB not found или не является файлом: {db_path}. "
                 f"Ensure {OPTIMIZER_DB_PATH_ENV!r} points to a valid Optimizer SQLite file (не директория)."
             )
+
+        # Phase 2.C H-4: validate DB path against symlink/junction/traversal.
+        try:
+            db_path = validate_safe_path(db_path, _get_allowed_roots(), is_write=False)
+        except PathSecurityError as exc:
+            raise OptimizerNotConfigured(
+                f"Optimizer DB path rejected by security policy: {exc}"
+            ) from exc
+
         self._db_path = db_path
         logger.info("LocalOptimizerClient: using Optimizer DB at %s", db_path)
 
