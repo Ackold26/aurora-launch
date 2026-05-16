@@ -389,7 +389,9 @@
   </div>
 {:else}
   <section class="inspector">
-    <nav class="tabs" role="tablist">
+    <!-- 4.3 a11y: <nav> + role=tablist некорректно (nav семантически landmark
+         навигации, не tablist). Меняем на <div> с role=tablist. -->
+    <div class="tabs" role="tablist">
       {#each TABS as t}
         <button
           role="tab"
@@ -401,7 +403,7 @@
           {$_(`inspector.tab.${t}`)}
         </button>
       {/each}
-    </nav>
+    </div>
 
     <div class="tab-panels">
       {#if visited.has('metadata')}
@@ -595,20 +597,21 @@
 
 <!-- M-09 Reproduce-in-Python modal -->
 {#if reproduceModalOpen}
+  <!-- 4.3 a11y: backdrop dismiss через event.target check вместо stopPropagation
+       на content div'е — освобождает content div от non-interactive
+       click/keydown handlers. -->
   <div
     class="reproduce-modal-backdrop"
     role="dialog"
     aria-modal="true"
     aria-labelledby="reproduce-modal-title"
-    onclick={() => (reproduceModalOpen = false)}
+    onclick={(e) => { if (e.target === e.currentTarget) reproduceModalOpen = false; }}
     onkeydown={(e) => { if (e.key === 'Escape') reproduceModalOpen = false; }}
     tabindex="-1"
   >
     <div
       class="reproduce-modal-content"
       role="document"
-      onclick={(e) => e.stopPropagation()}
-      onkeydown={(e) => e.stopPropagation()}
     >
       <header class="reproduce-modal-header">
         <h2 id="reproduce-modal-title">🐍 Воспроизвести прогноз в Python</h2>
@@ -653,7 +656,17 @@
       {#if reproduceLoading}
         <Skeleton width="100%" height="320px" rounded />
       {:else}
-        <pre class="reproduce-code" tabindex="0"><code>{reproduceScript}</code></pre>
+        <!-- 4.3 a11y: tabindex=0 на <pre> INTENTIONAL для keyboard scroll
+             через стрелки (для customer'ов с keyboard-only navigation).
+             svelte-check считает <pre> non-interactive, но WCAG позволяет
+             tabindex=0 для scrollable content (RegEx 2.1.1). -->
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <pre
+          class="reproduce-code"
+          tabindex="0"
+          role="region"
+          aria-label="Сгенерированный Python-скрипт"
+        ><code>{reproduceScript}</code></pre>
       {/if}
     </div>
   </div>

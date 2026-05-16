@@ -470,8 +470,10 @@
     transition: color var(--motion-fast) var(--easing-smooth);
   }
 
-  .app-nav a:hover,
-  .app-nav a[aria-current='page'] {
+  /* 4.3 a11y cleanup: aria-current='page' selector unused — app-nav links
+     не получают этот атрибут (route awareness через page state). Оставляем
+     только :hover. Когда добавится route-aware аттрибут — вернуть. */
+  .app-nav a:hover {
     color: var(--text-primary);
     background: color-mix(in srgb, var(--accent) 12%, transparent);
   }

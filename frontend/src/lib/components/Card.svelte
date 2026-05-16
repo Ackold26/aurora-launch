@@ -25,11 +25,14 @@
   }: Props = $props();
 </script>
 
+<!-- 4.3 a11y: explicit role чтобы svelte-check не мигал warning'ом
+     (динамический this не понимается статическим анализом). -->
 <svelte:element
   this={interactive ? 'button' : 'article'}
   class="card card-{accent}"
   class:interactive
   type={interactive ? 'button' : undefined}
+  role={interactive ? 'button' : 'article'}
   onclick={interactive ? (e: MouseEvent) => onclick?.(e) : undefined}
 >
   {#if title || subtitle || actions}

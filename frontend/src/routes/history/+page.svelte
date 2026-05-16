@@ -196,7 +196,6 @@
     color: var(--text-primary);
   }
 
-  .muted {
-    color: var(--text-muted);
-  }
+  /* 4.3 a11y cleanup: .muted был removed когда history page переписали
+     на более явные классы. Удаляем dead selector. */
 </style>
