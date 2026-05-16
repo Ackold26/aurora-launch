@@ -239,5 +239,7 @@
   "refresh.settings.frequency": "Check frequency:",
   "refresh.settings.freq.daily": "Daily",
   "refresh.settings.freq.weekly": "Weekly",
-  "refresh.settings.freq.monthly": "Monthly"
+  "refresh.settings.freq.monthly": "Monthly",
+
+  "notification_banner.dismiss": "Dismiss"
 }

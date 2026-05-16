@@ -1966,6 +1966,19 @@ def _shutdown(_params: dict[str, Any]) -> dict[str, Any]:
         if ithread is not None:
             ithread.join(timeout=_SHUTDOWN_PER_FORECAST_TIMEOUT_S)
 
+    # H-3 (audit 4.5 / Phase 1.A): drain optimize_budget threads — раньше пропущены.
+    # Без этого budget optimizer mid-search мог продолжать после _PROJECT_DB.close()
+    # → SQLite use-after-free risk. Same cooperative cancel-flag + join pattern.
+    optimize_handles = list(_optimize_threads.keys())
+    for ohandle in optimize_handles:
+        oflag = _optimize_cancel_flags.get(ohandle)
+        if oflag is not None:
+            oflag.set()
+    for ohandle in optimize_handles:
+        othread = _optimize_threads.get(ohandle)
+        if othread is not None:
+            othread.join(timeout=_SHUTDOWN_PER_FORECAST_TIMEOUT_S)
+
     # Stop periodic GC thread (S-07).
     _GC_STOP_EVENT.set()
     global _GC_THREAD  # noqa: PLW0603

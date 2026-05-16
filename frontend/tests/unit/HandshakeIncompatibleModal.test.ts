@@ -55,6 +55,8 @@ describe('HandshakeIncompatibleModal', () => {
     render(HandshakeIncompatibleModal);
     await flushAsync();
 
+    // Refactored: level='error' uses alertdialog; verify neither role is present.
+    expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
@@ -69,6 +71,7 @@ describe('HandshakeIncompatibleModal', () => {
     render(HandshakeIncompatibleModal);
     await flushAsync();
 
+    expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
@@ -86,7 +89,9 @@ describe('HandshakeIncompatibleModal', () => {
 
     render(HandshakeIncompatibleModal);
 
-    const dialog = await screen.findByRole('dialog');
+    // Refactored: level='error' renders role=alertdialog (more semantically
+    // correct for blocking error modal than generic 'dialog').
+    const dialog = await screen.findByRole('alertdialog');
     expect(dialog.getAttribute('aria-modal')).toBe('true');
     expect(dialog.getAttribute('aria-labelledby')).toBe('handshake-modal-title');
     expect(screen.getByText(/Sidecar version 0\.0\.5 too old/)).toBeTruthy();
@@ -104,7 +109,8 @@ describe('HandshakeIncompatibleModal', () => {
     render(HandshakeIncompatibleModal);
 
     expect(await screen.findByText(/Generic incompatibility/)).toBeTruthy();
-    const dialog = screen.getByRole('dialog');
+    // Refactored: level='error' renders role=alertdialog.
+    const dialog = screen.getByRole('alertdialog');
     expect(dialog.querySelectorAll('.advice').length).toBe(0);
   });
 
