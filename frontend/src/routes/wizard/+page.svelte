@@ -30,6 +30,7 @@
   import { pushToast } from '$lib/stores/toast';
   import { determineVerdict } from '$lib/utils/verdict';
   import { track } from '$lib/services/telemetry';
+  import { composeForecastJson } from '$lib/ipc/forecast';
 
   const STEPS = [
     'import',
@@ -60,8 +61,23 @@
   >([]);
   let forecastHorizon = $state(26);
   let forecastCompleted = $state(false);
+  let forecastEngineMode = $state<
+    | 'pure_transfer'
+    | 'transfer_with_bias_check'
+    | 'ols_with_proxy_priors'
+    | 'bayesian_with_proxy_priors'
+    | null
+  >(null);
+  let forecastMethodologySignature = $state<string | null>(null);
+  let forecastGranularity = $state<'monthly' | 'weekly'>('monthly');
+  let forecastWarnings = $state<string[]>([]);
   let unlistenFns: UnlistenFn[] = [];
   let certSigned = $state(false);
+
+  // 1.3d: save flow для wizard'a (raньше не было save вообще)
+  let savingBundle = $state(false);
+  let savedBundlePath = $state<string | null>(null);
+  let saveError = $state<string | null>(null);
 
   // Block 3 HIGH-10 fix: import from $lib/utils/verdict (SSOT).
   // Was inlined hardcoded literals — drift risk if Python thresholds change.
@@ -198,9 +214,18 @@
         if (payload.forecast_handle !== forecastHandleId) return;
         forecastCompleted = true;
         forecastStatus = { ...forecastStatus, progress: 1 };
+        // 1.3d: захватываем metadata для compose_forecast_json в save flow
+        const summary = payload.forecast;
+        if (summary) {
+          forecastEngineMode = summary.engine_mode;
+          forecastMethodologySignature = summary.methodology_signature;
+          forecastGranularity = summary.granularity;
+          forecastWarnings = summary.warnings ?? [];
+        }
+        const totalPeriods = payload.horizon_weeks ?? payload.horizon_periods ?? forecastHorizon;
         // TELEMETRY-P16: forecast_complete
         track('forecast_complete', {
-          horizon_periods: payload.horizon_weeks,
+          horizon_periods: totalPeriods,
           elapsed_ms: payload.elapsed_ms,
         });
         pushToast({
@@ -261,6 +286,71 @@
       pushToast({ level: 'info', title: $_('forecast.cancelling') });
     } catch (e) {
       pushToast({ level: 'danger', title: 'Cancel failed', body: String(e) });
+    }
+  }
+
+  // 1.3d: Save flow для wizard — собирает forecast.json и кладёт в .aurora.
+  // До этой правки wizard вообще не сохранял bundle (только проводил forecast
+  // в памяти), поэтому Inspector M-09 reproduce работал в preview-режиме.
+  async function saveBundle() {
+    if (!forecastCompleted || forecastPoints.length === 0) {
+      pushToast({ level: 'danger', title: 'Сначала дождитесь окончания прогноза' });
+      return;
+    }
+    savingBundle = true;
+    saveError = null;
+    try {
+      const { save } = await import('@tauri-apps/plugin-dialog');
+      const targetPath = await save({
+        title: 'Сохранить bundle Aurora Launch',
+        filters: [{ name: 'Aurora bundle', extensions: ['aurora'] }],
+        defaultPath: 'launch-forecast.aurora',
+      });
+      if (!targetPath || typeof targetPath !== 'string') {
+        // Customer cancelled save dialog
+        return;
+      }
+
+      const composed = await composeForecastJson({
+        horizon_weeks: forecastHorizon,
+        weekly_points: forecastPoints.map((p) => ({
+          week_index: p.weekIndex,
+          point: p.point,
+          ci_lower: p.ciLower,
+          ci_upper: p.ciUpper,
+        })),
+        engine_mode: forecastEngineMode ?? 'pure_transfer',
+        granularity: forecastGranularity,
+        methodology_signature: forecastMethodologySignature ?? '',
+        n_recipient: 0, // pre-launch
+        warnings: forecastWarnings,
+        // Anchors / spend_plan пока null — wizard ещё не имеет UI для них.
+        // Inspector fall back на preview-mode для таких bundle (M-09).
+        // Когда добавится anchors UI (отдельная задача), сюда передадутся
+        // реальные значения.
+        anchors: null,
+        spend_plan: null,
+        produced_at: new Date().toISOString(),
+      });
+
+      await ipc.saveBundleViaSidecar({
+        handleId: 'wizard-new',
+        targetPath,
+        extraFilesBase64: { 'forecast.json': composed.forecast_json_base64 },
+      });
+
+      savedBundlePath = targetPath;
+      track('version_save', { revision: 0 });
+      pushToast({
+        level: 'success',
+        title: 'Bundle сохранён',
+        body: `${targetPath} (${composed.byte_size} байт forecast.json)`,
+      });
+    } catch (e) {
+      saveError = e instanceof Error ? e.message : String(e);
+      pushToast({ level: 'danger', title: 'Ошибка сохранения', body: saveError });
+    } finally {
+      savingBundle = false;
     }
   }
 </script>
@@ -395,6 +485,28 @@
             </Button>
           {:else}
             <p>✓ Сертификат подписан (dev режим — local key)</p>
+            <!-- 1.3d: save .aurora bundle с forecast.json -->
+            {#if !savedBundlePath}
+              <div class="save-row">
+                <Button
+                  variant="primary"
+                  loading={savingBundle}
+                  disabled={!forecastCompleted}
+                  onclick={saveBundle}
+                >
+                  {#snippet children()}Сохранить .aurora{/snippet}
+                </Button>
+                <p class="save-hint">
+                  Bundle позволит Inspector → M-09 «Воспроизвести в Python»
+                  работать с реальным forecast.json.
+                </p>
+              </div>
+            {:else}
+              <p class="saved-banner">✓ Bundle сохранён: <code>{savedBundlePath}</code></p>
+            {/if}
+            {#if saveError}
+              <p class="save-error">Ошибка: {saveError}</p>
+            {/if}
           {/if}
         {/snippet}
       </Card>
@@ -427,6 +539,36 @@
     gap: var(--spacing-6);
     max-width: 1024px;
     margin: 0 auto;
+  }
+
+  /* 1.3d: save bundle на cert step */
+  .save-row {
+    margin-top: var(--spacing-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-2);
+  }
+
+  .save-hint {
+    color: var(--text-muted);
+    font-size: var(--typography-fontSize-ui-sm);
+    margin: 0;
+  }
+
+  .saved-banner {
+    margin-top: var(--spacing-3);
+    color: var(--state-success-base, #2e7d32);
+  }
+
+  .saved-banner code {
+    background: var(--surface-soft, rgba(0,0,0,0.04));
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  .save-error {
+    margin-top: var(--spacing-3);
+    color: var(--state-danger-base, #c62828);
   }
 
   .stepper {

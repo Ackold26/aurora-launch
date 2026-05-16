@@ -141,8 +141,19 @@ export interface ForecastProgressEvent {
 
 export interface ForecastCompletedEvent {
   forecast_handle: string;
+  /** Legacy emission path. Orchestrated path заполняет также horizon_periods. */
   horizon_weeks: number;
+  horizon_periods?: number;
   elapsed_ms: number;
+  /** 1.3d: orchestrated path emits full summary (см. methods.py:1409). */
+  forecast?: {
+    horizon_periods: number;
+    granularity: 'monthly' | 'weekly';
+    methodology_signature: string;
+    engine_mode: 'pure_transfer' | 'transfer_with_bias_check' | 'ols_with_proxy_priors' | 'bayesian_with_proxy_priors';
+    warnings: string[];
+    points: Array<{ point_forecast: number; ci_lower: number; ci_upper: number }>;
+  };
 }
 
 export interface ForecastFailedEvent {
