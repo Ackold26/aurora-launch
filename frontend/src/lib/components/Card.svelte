@@ -25,14 +25,15 @@
   }: Props = $props();
 </script>
 
-<!-- 4.3 a11y: explicit role чтобы svelte-check не мигал warning'ом
-     (динамический this не понимается статическим анализом). -->
+<!-- Audit H-07 (этап 4.5): svelte-check не понимает что `<button>` и
+     `<article>` имеют implicit role. svelte-ignore directive безопаснее
+     чем добавлять redundant role attribute. -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <svelte:element
   this={interactive ? 'button' : 'article'}
   class="card card-{accent}"
   class:interactive
   type={interactive ? 'button' : undefined}
-  role={interactive ? 'button' : 'article'}
   onclick={interactive ? (e: MouseEvent) => onclick?.(e) : undefined}
 >
   {#if title || subtitle || actions}

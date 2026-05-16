@@ -238,8 +238,10 @@
        Не блокирует UI — показывается только при наличии update. -->
   <UpdateAvailableBanner />
   <!-- ROADMAP §3.5: auto-refresh banner. Opt-in only (152-FZ).
-       Reads consent from sidecar; shows prompt on first-run or new data. -->
-  <RefreshAvailableBanner />
+       Reads consent from sidecar; shows prompt on first-run or new data.
+       Audit H-03 fix (этап 4.5): передаём projectUuid из активного bundle —
+       без этого 'available' branch в banner'е никогда не fires. -->
+  <RefreshAvailableBanner projectUuid={$activeBundle?.manifest?.project_id ?? ''} />
   <header class="app-header">
     <div class="brand">
       <span class="logo" aria-hidden="true">◆</span>
