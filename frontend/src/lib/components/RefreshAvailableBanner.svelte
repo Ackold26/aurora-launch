@@ -70,6 +70,30 @@
     void init();
   });
 
+  // M-06 fix: opt-in prompt rate limiting через localStorage.
+  // Без этого banner всплывал при каждом cold start пока customer не нажал
+  // explicit opt-in/opt-out — раздражение для пользователя который просто
+  // открывает Aurora посмотреть прогноз. 7-day cooldown между prompts.
+  const OPT_IN_SNOOZE_KEY = 'aurora.refresh.opt_in.snooze_until';
+  const OPT_IN_SNOOZE_MS = 7 * 24 * 60 * 60 * 1000; // 7 дней
+  const OPT_IN_NEVER_MS = 100 * 365 * 24 * 60 * 60 * 1000; // ≈ never
+
+  function _isOptInSnoozed(): boolean {
+    if (typeof window === 'undefined' || !window.localStorage) return false;
+    const raw = window.localStorage.getItem(OPT_IN_SNOOZE_KEY);
+    if (!raw) return false;
+    const until = Number.parseInt(raw, 10);
+    return Number.isFinite(until) && Date.now() < until;
+  }
+
+  function _snoozeOptIn(durationMs: number): void {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    window.localStorage.setItem(
+      OPT_IN_SNOOZE_KEY,
+      String(Date.now() + durationMs),
+    );
+  }
+
   async function init() {
     if (forceConsent !== undefined) {
       consent = forceConsent;
@@ -83,6 +107,11 @@
     }
 
     if (consent === null) {
+      // M-06: первый-раз prompt с rate limiting. Если customer уже dismissed
+      // recently — не показываем снова до истечения cooldown.
+      if (_isOptInSnoozed()) {
+        return;
+      }
       bannerState = 'opt-in';
       return;
     }
@@ -129,6 +158,8 @@
     try {
       await ipc.setRefreshConsent(false, 'weekly');
       bannerState = 'idle';
+      // M-06: customer explicit opt-out → не показывать prompt снова (длинный snooze)
+      _snoozeOptIn(OPT_IN_NEVER_MS);
     } catch (e) {
       console.warn('[refresh-banner] setRefreshConsent(false) failed:', e);
     }
@@ -171,6 +202,15 @@
     } catch (e) {
       console.warn('[refresh-banner] neverAsk setRefreshConsent failed:', e);
     }
+    // M-06: explicit «Никогда» — long snooze (effectively never)
+    _snoozeOptIn(OPT_IN_NEVER_MS);
+    bannerState = 'dismissed';
+  }
+
+  function handleOptInLater() {
+    // M-06: customer dismissed opt-in prompt → 7-day snooze (не «never»).
+    // Через неделю purposeful re-prompt — customer мог не понять или забыть.
+    _snoozeOptIn(OPT_IN_SNOOZE_MS);
     bannerState = 'dismissed';
   }
 
@@ -181,7 +221,9 @@
 
   function handleDismiss() {
     if (bannerState === 'opt-in') {
-      void handleOptOut();
+      // M-06 fix: dismiss opt-in prompt = 7-day snooze (НЕ permanent opt-out).
+      // Permanent decline только через explicit «Никогда» button.
+      handleOptInLater();
     } else {
       void handleLater();
     }

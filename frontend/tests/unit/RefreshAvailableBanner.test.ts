@@ -199,3 +199,63 @@ describe('RefreshAvailableBanner', () => {
     expect(screen.queryByRole('status')).toBeNull();
   });
 });
+
+
+describe('M-06: opt-in prompt rate limiting (localStorage snooze)', () => {
+  const SNOOZE_KEY = 'aurora.refresh.opt_in.snooze_until';
+
+  beforeEach(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(SNOOZE_KEY);
+    }
+    cleanup();
+  });
+
+  it('opt-in banner НЕ показывается если snooze_until > now', () => {
+    // Set snooze в будущее (через 1 час)
+    window.localStorage.setItem(
+      SNOOZE_KEY,
+      String(Date.now() + 60 * 60 * 1000),
+    );
+
+    render(RefreshAvailableBanner, {
+      props: { forceConsent: null }, // consent=null = first-run state
+    });
+
+    // banner НЕ rendered (silent skip)
+    expect(screen.queryByText(/Автоматическое обновление прогнозов/i)).toBeNull();
+  });
+
+  it('opt-in banner показывается если snooze_until истёк', () => {
+    // Snooze в прошлом
+    window.localStorage.setItem(
+      SNOOZE_KEY,
+      String(Date.now() - 60 * 60 * 1000),
+    );
+
+    render(RefreshAvailableBanner, {
+      props: { forceConsent: null },
+    });
+
+    // Banner показывается (cooldown expired)
+    expect(screen.queryByText(/Автоматическое обновление прогнозов/i)).not.toBeNull();
+  });
+
+  it('opt-in banner показывается если snooze key отсутствует (first ever)', () => {
+    render(RefreshAvailableBanner, {
+      props: { forceConsent: null },
+    });
+
+    expect(screen.queryByText(/Автоматическое обновление прогнозов/i)).not.toBeNull();
+  });
+
+  it('malformed snooze value — fail-open (показывается banner)', () => {
+    window.localStorage.setItem(SNOOZE_KEY, 'NaN-or-junk');
+
+    render(RefreshAvailableBanner, {
+      props: { forceConsent: null },
+    });
+
+    expect(screen.queryByText(/Автоматическое обновление прогнозов/i)).not.toBeNull();
+  });
+});
