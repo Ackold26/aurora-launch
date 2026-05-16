@@ -245,7 +245,7 @@
   }
 
   .nb-modal--prompt {
-    border-top: 3px solid var(--color-ui-accent-primary, #6366f1);
+    border-top: 3px solid var(--color-ui-accent-primary, #2E5BFF);
   }
 
   /* ── Banner strip (info / warning) ───────────────────────────────────── */
@@ -259,8 +259,8 @@
   }
 
   .nb-banner--info {
-    background: color-mix(in srgb, var(--color-ui-accent-primary, #6366f1) 12%, var(--bg-surface, #fff));
-    border-bottom-color: color-mix(in srgb, var(--color-ui-accent-primary, #6366f1) 30%, transparent);
+    background: color-mix(in srgb, var(--color-ui-accent-primary, #2E5BFF) 12%, var(--bg-surface, #fff));
+    border-bottom-color: color-mix(in srgb, var(--color-ui-accent-primary, #2E5BFF) 30%, transparent);
   }
 
   .nb-banner--warning {
@@ -338,8 +338,8 @@
   }
 
   :global(.nb-actions .nb-btn--primary) {
-    background: var(--color-ui-accent-primary, #6366f1);
-    border-color: var(--color-ui-accent-primary, #6366f1);
+    background: var(--color-ui-accent-primary, #2E5BFF);
+    border-color: var(--color-ui-accent-primary, #2E5BFF);
     color: #fff;
   }
 

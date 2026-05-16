@@ -604,6 +604,7 @@ import aurora_launch.sidecar.methods_project  # noqa: E402, F401
 import aurora_launch.sidecar.methods_integrity  # noqa: E402, F401
 import aurora_launch.sidecar.methods_consent  # noqa: E402, F401
 import aurora_launch.sidecar.methods_cross_product  # noqa: E402, F401
+import aurora_launch.sidecar.methods_license  # noqa: E402, F401  Phase 2.A
 
 # Re-export symbols that external modules (server.py, tests) import from here
 # for backward-compatibility with the pre-split layout.

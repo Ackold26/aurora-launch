@@ -1,4 +1,5 @@
 // License store — central source for has_feature gates во всём UI.
+// Phase 2.A: подключён к real sidecar get_license_status (раньше Rust stub).
 import { writable, derived, get } from 'svelte/store';
 
 import { ipc } from '$ipc/client';
@@ -38,6 +39,42 @@ export function hasFeatureSync(feature: string): boolean {
   const usable = $status.state === 'active' || $status.state === 'grace';
   return usable && $status.enabled_features.includes(feature);
 }
+
+/**
+ * UX-4: empathetic human-readable message для каждого license state.
+ * НЕ «No license. Features blocked» — а warm tone объясняющий что customer
+ * может сделать. Используется в Settings → License panel и paywall modals.
+ */
+export function licenseUserMessage(status: LicenseStatus): string {
+  switch (status.state) {
+    case 'active':
+      if (status.tier === 'dev_bypass') {
+        return 'Разработческая сборка — все функции доступны без лицензии.';
+      }
+      return `Лицензия активна${status.tier ? ` (${status.tier})` : ''}. Все возможности тарифа открыты.`;
+    case 'grace':
+      return 'Связь с сервером Aurora временно недоступна. Работаете в офлайн-режиме — функции продолжают работать до 7 дней.';
+    case 'expired':
+      return 'Срок действия вашей лицензии истёк. Все данные сохранены — продлите подписку в личном кабинете, чтобы продолжить работу.';
+    case 'invalid':
+      return 'Не удалось проверить лицензию. Возможно, файл лицензии повреждён — обратитесь в поддержку Aurora.';
+    case 'no_license':
+      return 'Лицензия не найдена. Введите ключ активации в Настройках или запросите пробный период на auroraai.pro.';
+    case 'degraded':
+      return 'Локальная служба проверки лицензии недоступна. Перезапустите приложение или обратитесь в поддержку, если ошибка повторяется.';
+    default:
+      return status.detail || 'Состояние лицензии неизвестно.';
+  }
+}
+
+/**
+ * UX-4: проверка нужно ли показывать warning banner. True если state
+ * требует внимания customer'a (expired / invalid / no_license / degraded).
+ * Grace — НЕ warning (UX: customer должен спокойно работать в offline).
+ */
+export const needsAttention = derived(licenseStatus, ($s) =>
+  ['expired', 'invalid', 'no_license', 'degraded'].includes($s.state)
+);
 
 /** Constants mirroring `aurora_launch.engines.license_validator` */
 export const FEATURE_LAUNCH_PROXY_SINGLE = 'launch_proxy_single';
