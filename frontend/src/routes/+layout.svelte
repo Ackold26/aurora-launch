@@ -95,6 +95,13 @@
       action: () => goto('/history'),
     },
     {
+      id: 'nav-optimize',
+      label: $_('palette.nav.optimize'),
+      description: $_('palette.nav.optimize.desc'),
+      category: $_('palette.category.nav'),
+      action: () => goto('/optimize'),
+    },
+    {
       id: 'nav-settings',
       label: $_('palette.nav.settings'),
       description: $_('palette.nav.settings.desc'),
@@ -245,7 +252,7 @@
       if (!targetPath) {
         const { save } = await import('@tauri-apps/plugin-dialog');
         const picked = await save({
-          title: 'Сохранить Aurora bundle',
+          title: 'Сохранить файл проекта',
           defaultPath: 'project.aurora',
           filters: [{ name: 'Aurora bundle', extensions: ['aurora'] }],
         });
@@ -319,13 +326,14 @@
       <a href="/inspector">{$_('nav.inspector')}</a>
       <a href="/compare">{$_('nav.compare')}</a>
       <a href="/history">{$_('nav.history')}</a>
+      <a href="/optimize">{$_('nav.optimize')}</a>
       <a href="/settings">{$_('nav.settings')}</a>
     </nav>
 
     <div class="header-meta">
       {#if $activeBundle}
         <!-- M-08: revision badge tooltip explains optimistic concurrency role -->
-        <abbr title="Текущая ревизия открытого bundle. Monotonic счётчик — растёт на 1 при каждом сохранении. Защищает от потери чужих правок в multi-process сценариях.">
+        <abbr title="Версия файла проекта. Увеличивается при каждом сохранении — защищает от конфликтов при параллельной работе.">
           <Badge variant="info" size="sm">
             {#snippet children()}r{$activeBundle.revision}{/snippet}
           </Badge>
@@ -337,7 +345,7 @@
           class="save-btn"
           onclick={triggerSave}
           disabled={saving || !$isDirty}
-          aria-label="Сохранить bundle (Ctrl+S)"
+          aria-label="Сохранить файл проекта (Ctrl+S)"
           title="Ctrl+S"
         >
           {saving ? 'Сохранение…' : 'Сохранить'}

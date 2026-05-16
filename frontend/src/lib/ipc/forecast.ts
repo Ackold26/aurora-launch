@@ -294,3 +294,42 @@ export async function optimizeBudget(params: {
 }): Promise<OptimizeBudgetResult> {
   return invoke<OptimizeBudgetResult>('optimize_budget', params);
 }
+
+/** Request cancellation of a running budget optimisation job. */
+export async function cancelOptimizeBudget(optimizeHandle: string): Promise<void> {
+  return invoke<void>('cancel_optimize_budget', { optimizeHandle });
+}
+
+// ─── Optimize Budget event listener helpers ───────────────────────────────────
+
+export interface OptimizeBudgetCompletedEvent {
+  optimize_handle: string;
+  best: BestSpendPlan;
+  alternatives: SpendPlanAlternative[];
+}
+
+export interface OptimizeBudgetFailedEvent {
+  optimize_handle: string;
+  error: string;
+  kind: string;
+}
+
+/** Subscribe to the optimize_budget completion event. Returns an unlisten function. */
+export function onOptimizeBudgetCompleted(
+  callback: (event: OptimizeBudgetCompletedEvent) => void
+): Promise<import('@tauri-apps/api/event').UnlistenFn> {
+  return listen<OptimizeBudgetCompletedEvent>(
+    'sidecar://optimize_budget_completed',
+    (e) => callback(e.payload)
+  );
+}
+
+/** Subscribe to the optimize_budget failure event. Returns an unlisten function. */
+export function onOptimizeBudgetFailed(
+  callback: (event: OptimizeBudgetFailedEvent) => void
+): Promise<import('@tauri-apps/api/event').UnlistenFn> {
+  return listen<OptimizeBudgetFailedEvent>(
+    'sidecar://optimize_budget_failed',
+    (e) => callback(e.payload)
+  );
+}

@@ -61,19 +61,19 @@
   <div class="entries">
     <Card title={$_('welcome.cta.sample')} interactive onclick={openSample}>
       {#snippet children()}
-        <p>60 секунд от установки до первого прогноза. Synthetic FMCG bundle с заранее посчитанной похожестью и прогнозом.</p>
+        <p>60 секунд от установки до первого прогноза — готовый пример FMCG-бренда с рассчитанной похожестью и прогнозом продаж.</p>
       {/snippet}
     </Card>
 
     <Card title={$_('welcome.cta.import')} interactive onclick={importExisting}>
       {#snippet children()}
-        <p>Открыть существующий <code>.aurora</code> файл из предыдущей работы или из Aurora Data Studio.</p>
+        <p>Открыть файл проекта <code>.aurora</code> из предыдущей работы или из Aurora Data Studio.</p>
       {/snippet}
     </Card>
 
     <Card title={$_('welcome.cta.new')} interactive onclick={newLaunch} accent="info">
       {#snippet children()}
-        <p>Запустить мастер — 7 шагов: импорт → сопоставление → proxy → похожесть → якоря → прогноз → сертификат.</p>
+        <p>Создать новый прогноз за 7 шагов: импорт данных → сопоставление → прокси-бренд → похожесть → параметры → прогноз → сертификат.</p>
       {/snippet}
     </Card>
   </div>
