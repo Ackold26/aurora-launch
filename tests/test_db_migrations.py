@@ -281,8 +281,8 @@ class TestMigrationIdempotency:
 
 
 # ---------------------------------------------------------------------------
-# Test 4 — synthetic future migration skeleton (dry-run v004, since v003
-# became real in Phase 1.B.1 — kv_store)
+# Test 4 — synthetic future migration skeleton (dry-run v005, since v004
+# became real in Phase 2.D.2 — telemetry_redaction_tier)
 # ---------------------------------------------------------------------------
 
 
@@ -290,12 +290,12 @@ class TestFutureMigrationSkeleton:
     """ROADMAP 2.5 / Test 4: confirm that adding a new SQL file to migrations/
     is all it takes to extend the schema. Uses a temp copy of migrations dir.
 
-    Synthetic version bumped to v004 since v003 (kv_store) became real в
-    Phase 1.B.1 для ConsentManager persistence.
+    Synthetic version bumped to v005 since v004 (telemetry_redaction_tier)
+    became real in Phase 2.D.2 HE-6.
     """
 
     def test_new_sql_migration_bumps_schema_version(self, tmp_path: Path) -> None:
-        """Copy real migrations dir, add synthetic v004, run migrator on a
+        """Copy real migrations dir, add synthetic v005, run migrator on a
         bare connection.
 
         Validates the extensible skeleton: anyone adding a new SQL file
@@ -304,42 +304,42 @@ class TestFutureMigrationSkeleton:
         mig_copy = tmp_path / "migrations"
         shutil.copytree(MIGRATIONS_DIR, mig_copy)
 
-        # Write synthetic v004 migration (next after real v003 _kv_store)
-        (mig_copy / "v004_test_column.sql").write_text(
+        # Write synthetic v005 migration (next after real v004 _telemetry_redaction_tier)
+        (mig_copy / "v005_test_column.sql").write_text(
             dedent("""
                 -- Test migration: add optional tag to projects
                 ALTER TABLE projects ADD COLUMN _test_tag TEXT;
                 INSERT OR REPLACE INTO schema_version (version, applied_at)
-                VALUES (4, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+                VALUES (5, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
             """),
             encoding="utf-8",
         )
 
-        # Build a real DB that is already at v1 + v2 + v3 (use real migrations)
-        conn = sqlite3.connect(str(tmp_path / "test_v004.db"))
+        # Build a real DB that is already at v1 + v2 + v3 + v4 (use real migrations)
+        conn = sqlite3.connect(str(tmp_path / "test_v005.db"))
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode = WAL")
         conn.execute("PRAGMA foreign_keys = ON")
 
         try:
-            # Apply real v001 + v002 + v003 first
+            # Apply real v001 + v002 + v003 + v004 first
             real_mig_dir = MIGRATIONS_DIR
             apply_pending_migrations(conn, real_mig_dir)
             assert get_current_version(conn) == CURRENT_SCHEMA_VERSION
 
-            # Now apply real + synthetic v004 from the copy
+            # Now apply real + synthetic v005 from the copy
             applied = apply_pending_migrations(conn, mig_copy)
             assert len(applied) == 1, f"Expected 1 new migration applied, got {len(applied)}"
-            assert applied[0].version == 4
+            assert applied[0].version == 5
 
-            assert get_current_version(conn) == 4
+            assert get_current_version(conn) == 5
 
-            # v004 table alteration must have taken effect
+            # v005 table alteration must have taken effect
             cols = [
                 r[1]
                 for r in conn.execute("PRAGMA table_info(projects)").fetchall()
             ]
-            assert "_test_tag" in cols, "Column _test_tag must exist after v004 migration"
+            assert "_test_tag" in cols, "Column _test_tag must exist after v005 migration"
         finally:
             conn.close()
 

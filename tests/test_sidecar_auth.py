@@ -18,6 +18,7 @@ import pytest
 from aurora_launch.sidecar.auth import (
     AuthError,
     EXPECTED_TOKEN_HEX_LEN,
+    _is_valid_token,
     check_auth,
 )
 
@@ -126,3 +127,90 @@ class TestAuthEnvVarLoad:
         token = secrets.token_hex(32)
         monkeypatch.setenv(auth_module.ENV_VAR, token)
         assert auth_module.load_token_from_env() == token
+
+
+class TestStdinTokenChannelHE2:
+    """Phase 2.D.1 HE-2: prefer stdin first line, fallback env var."""
+
+    def test_valid_token_predicate(self):
+        from aurora_launch.sidecar import auth as auth_module
+
+        assert auth_module._is_valid_token(secrets.token_hex(32))
+
+    def test_invalid_shape_rejected(self):
+        from aurora_launch.sidecar import auth as auth_module
+
+        assert not auth_module._is_valid_token("")
+        assert not auth_module._is_valid_token("deadbeef")  # too short
+        assert not auth_module._is_valid_token("G" * 64)  # not hex
+        assert not auth_module._is_valid_token("a" * 65)  # too long
+
+    def test_stdin_token_preferred_over_env(self, monkeypatch, capsys):
+        """Если оба source имеют валидный token — stdin priority."""
+        from aurora_launch.sidecar import auth as auth_module
+
+        stdin_token = secrets.token_hex(32)
+        env_token = secrets.token_hex(32)
+        assert stdin_token != env_token
+
+        monkeypatch.setenv(auth_module.ENV_VAR, env_token)
+        monkeypatch.setattr(
+            auth_module, "_read_first_line_stdin", lambda timeout: stdin_token
+        )
+
+        loaded = auth_module.load_token_from_stdin_or_env()
+        assert loaded == stdin_token  # stdin wins
+
+    def test_env_fallback_when_stdin_empty(self, monkeypatch, capsys):
+        """stdin timeout/empty → env fallback с deprecation warning (Linux/macOS)."""
+        from aurora_launch.sidecar import auth as auth_module
+
+        env_token = secrets.token_hex(32)
+        monkeypatch.setenv(auth_module.ENV_VAR, env_token)
+        monkeypatch.setattr(
+            auth_module, "_read_first_line_stdin", lambda timeout: None
+        )
+
+        loaded = auth_module.load_token_from_stdin_or_env()
+        assert loaded == env_token
+
+    def test_invalid_stdin_token_falls_back_to_env(self, monkeypatch, capsys):
+        """Stdin содержит мусор → fallback env (с warning к stderr)."""
+        from aurora_launch.sidecar import auth as auth_module
+
+        env_token = secrets.token_hex(32)
+        monkeypatch.setenv(auth_module.ENV_VAR, env_token)
+        monkeypatch.setattr(
+            auth_module, "_read_first_line_stdin", lambda timeout: "garbage"
+        )
+
+        loaded = auth_module.load_token_from_stdin_or_env()
+        assert loaded == env_token
+        captured = capsys.readouterr()
+        assert "stdin token invalid" in captured.err
+
+    def test_both_missing_exits_2(self, monkeypatch):
+        """Fail-closed: оба channels missing → exit 2."""
+        from aurora_launch.sidecar import auth as auth_module
+
+        monkeypatch.delenv(auth_module.ENV_VAR, raising=False)
+        monkeypatch.setattr(
+            auth_module, "_read_first_line_stdin", lambda timeout: None
+        )
+
+        with pytest.raises(SystemExit) as ex:
+            auth_module.load_token_from_stdin_or_env()
+        assert ex.value.code == 2
+
+    def test_backward_compat_alias(self, monkeypatch):
+        """load_token_from_env() — alias на новый combined loader."""
+        from aurora_launch.sidecar import auth as auth_module
+
+        env_token = secrets.token_hex(32)
+        monkeypatch.setenv(auth_module.ENV_VAR, env_token)
+        monkeypatch.setattr(
+            auth_module, "_read_first_line_stdin", lambda timeout: None
+        )
+
+        # Alias должен работать — existing server.py не сломается
+        assert auth_module.load_token_from_env() == env_token

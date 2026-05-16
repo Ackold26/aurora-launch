@@ -74,8 +74,28 @@ pub async fn init_local_storage(app_handle: &AppHandle) -> AuroraResult<()> {
             event_type TEXT NOT NULL,
             timestamp TEXT NOT NULL,
             payload_json TEXT NOT NULL,
-            uploaded_at TEXT
+            uploaded_at TEXT,
+            redaction_tier TEXT
+                CHECK(redaction_tier IN ('basic', 'strict', 'paranoid'))
+                DEFAULT 'basic',
+            redaction_pending INTEGER NOT NULL DEFAULT 0
         )",
+        [],
+    )?;
+    // Phase 2.D.2 HE-6: add columns to existing telemetry_events tables
+    // (idempotent — ALTER TABLE fails silently if column already exists)
+    let _ = conn.execute(
+        "ALTER TABLE telemetry_events ADD COLUMN redaction_tier TEXT
+            CHECK(redaction_tier IN ('basic', 'strict', 'paranoid')) DEFAULT 'basic'",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE telemetry_events ADD COLUMN redaction_pending INTEGER NOT NULL DEFAULT 0",
+        [],
+    );
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_telemetry_redaction_pending
+            ON telemetry_events(redaction_pending) WHERE redaction_pending = 1",
         [],
     )?;
 

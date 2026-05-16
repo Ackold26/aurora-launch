@@ -299,6 +299,10 @@ export const ipc = {
   getTelemetryOptIn: () => invoke<boolean>('get_telemetry_opt_in'),
   setTelemetryOptIn: (enabled: boolean) =>
     invoke<void>('set_telemetry_opt_in', { enabled }),
+  // Phase 2.D.2 HE-6: tiered redaction
+  getRedactionTier: () => invoke<string>('get_redaction_tier'),
+  setRedactionTier: (tier: string) =>
+    invoke<{ pending_count: number }>('set_redaction_tier', { tier }),
 
   // feedback
   captureFeedback: (input: FeedbackInput) =>

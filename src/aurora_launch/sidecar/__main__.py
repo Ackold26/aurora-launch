@@ -3,7 +3,9 @@
 - `aurora-sidecar.exe / aurora-sidecar` (PyInstaller-built binary in production)
 
 Block 4 audit D1: long-running daemon spawned by Rust at app startup.
-Reads launch-time auth token from env (`AURORA_SIDECAR_AUTH_TOKEN`).
+
+Phase 2.D.1 HE-2: auth token читается через combined loader (stdin first
+line preferred, env var fallback). Reduces env exposure surface.
 """
 
 from __future__ import annotations

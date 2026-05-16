@@ -40,7 +40,7 @@ from aurora_launch.persistence.blob_store import BlobStore, BlobStoreError
 _log = logging.getLogger(__name__)
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
-CURRENT_SCHEMA_VERSION = 3  # bump as migrations are added (v003: _kv_store)
+CURRENT_SCHEMA_VERSION = 4  # bump as migrations are added (v004: telemetry_redaction_tier)
 
 # GC runs automatically on open if last run was more than this many seconds ago.
 GC_INTERVAL_SECONDS: int = 7 * 24 * 3600  # 7 days

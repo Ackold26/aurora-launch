@@ -184,21 +184,22 @@ _GC_STOP_EVENT: threading.Event = threading.Event()
 # this dict via a late-import accessor (_get_sample_bundle_paths()).
 # Audit A-06 fix: renamed misleading `afala_afalaza` к `venarus_baseline` since
 # the file IS Венарус data — original key suggested wrong proxy mapping.
+#
+# Paths are resolved from AURORA_SAMPLE_DATA_DIR env var (set by developer on
+# their own machine).  Falls back to ~/Aurora/sample-data which will not exist
+# on end-user machines; _load_sample_bundle raises FileNotFoundError gracefully.
+# Example (PowerShell):
+#   $env:AURORA_SAMPLE_DATA_DIR = "D:\path\to\XLSX"
+_AURORA_SAMPLE_DIR = Path(
+    os.environ.get("AURORA_SAMPLE_DATA_DIR", "~/Aurora/sample-data")
+).expanduser()
+
 _SAMPLE_BUNDLE_PATHS: dict[str, Path] = {
-    "kagotsel_venarus": Path(
-        "C:/Users/ackol/Desktop/Аврора - материалы для обучения и тестирования"
-        "/Эконометрика - тестовые файлы/XLSX"
-        "/Кагоцел РФ+_данные для эконометрики + наши данные 29.08.xlsx"
-    ),
-    "venarus_baseline": Path(
-        "C:/Users/ackol/Desktop/Аврора - материалы для обучения и тестирования"
-        "/Эконометрика - тестовые файлы/XLSX"
-        "/Венарус_данные для эконометрики для модели + наши данные.xlsx"
-    ),
-    "multi_proxy": Path(
-        "C:/Users/ackol/Desktop/Аврора - материалы для обучения и тестирования"
-        "/Эконометрика - тестовые файлы/XLSX/MMX 2021-2025 исходник.xlsx"
-    ),
+    "kagotsel_venarus": _AURORA_SAMPLE_DIR
+    / "Кагоцел РФ+_данные для эконометрики + наши данные 29.08.xlsx",
+    "venarus_baseline": _AURORA_SAMPLE_DIR
+    / "Венарус_данные для эконометрики для модели + наши данные.xlsx",
+    "multi_proxy": _AURORA_SAMPLE_DIR / "MMX 2021-2025 исходник.xlsx",
 }
 
 
