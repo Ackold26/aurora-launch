@@ -113,11 +113,22 @@ export interface ParseDataFileInput {
   max_records?: number;
 }
 
+export interface CanonicalFieldRegistryEntry {
+  id: string;
+  label_ru: string;
+  group: 'identity' | 'period' | 'sales' | 'media' | 'category';
+}
+
 export interface ParseDataFileResult {
   adapter_id: string;
   adapter_metadata: Record<string, unknown>;
   record_count: number;
   records: Array<Record<string, unknown>>;
+  // Phase 1.C.2 — column mapping UI support
+  source_columns: string[];
+  suggested_mapping: Record<string, string>;
+  preview_rows: Array<Record<string, unknown>>;
+  available_canonical_fields: CanonicalFieldRegistryEntry[];
 }
 
 export interface AdapterInfo {
