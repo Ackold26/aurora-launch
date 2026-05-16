@@ -91,6 +91,7 @@ pub fn run() {
             commands::forecast::generate_reproduce_script,
             commands::forecast::explain_forecast,
             commands::forecast::compare_forecast_versions,
+            commands::forecast::compose_forecast_json,
             // methodology_cert commands (Block 2C)
             commands::methodology_cert::verify_bundle_signature,
             commands::methodology_cert::generate_local_dev_signature,

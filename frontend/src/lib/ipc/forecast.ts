@@ -57,8 +57,19 @@ export interface ForecastProgressEvent {
 
 export interface ForecastCompletedEvent {
   forecast_handle: string;
-  horizon_periods: number;
+  /** Legacy emission path использует horizon_weeks; orchestrated — horizon_weeks тоже. */
+  horizon_weeks?: number;
+  horizon_periods?: number;
   elapsed_ms: number;
+  /** Orchestrated path: full summary с points + engine_mode + methodology_signature + warnings + granularity. */
+  forecast?: {
+    horizon_periods: number;
+    granularity: 'monthly' | 'weekly';
+    methodology_signature: string;
+    engine_mode: 'pure_transfer' | 'transfer_with_bias_check' | 'ols_with_proxy_priors' | 'bayesian_with_proxy_priors';
+    warnings: string[];
+    points: Array<{ point_forecast: number; ci_lower: number; ci_upper: number }>;
+  };
   forecast_data?: unknown;
 }
 
@@ -205,4 +216,36 @@ export async function explainForecast(
   // B-3 fix: Rust команда explain_forecast объявляет `params: serde_json::Value`
   // → Tauri ожидает `{ params: {...} }` wrapper. Без wrapper deserialize error.
   return invoke<Explanation>('explain_forecast', { params: inputs });
+}
+
+// ─── Этап 1.3d: compose forecast.json для bundle write ──────────────────────
+
+export interface ComposeForecastJsonParams {
+  horizon_weeks: number;
+  weekly_points: Array<{ week_index: number; point: number; ci_lower: number; ci_upper: number }>;
+  engine_mode?: 'pure_transfer' | 'transfer_with_bias_check' | 'ols_with_proxy_priors' | 'bayesian_with_proxy_priors';
+  granularity?: 'monthly' | 'weekly';
+  methodology_signature?: string;
+  n_recipient?: number;
+  warnings?: string[];
+  anchors?: Record<string, unknown> | null;
+  spend_plan?: Record<string, number[]> | null;
+  coverage_target?: number;
+  seed?: number;
+  produced_at?: string;
+}
+
+export interface ComposeForecastJsonResult {
+  forecast_json_base64: string;
+  schema_version: string;
+  byte_size: number;
+}
+
+/** Compose canonical forecast.json bytes для bundle write (этап 1.3d). */
+export async function composeForecastJson(
+  params: ComposeForecastJsonParams
+): Promise<ComposeForecastJsonResult> {
+  // Rust команда compose_forecast_json объявляет `params: serde_json::Value`
+  // → Tauri требует `{ params: {...} }` wrapper (тот же паттерн что explain_forecast).
+  return invoke<ComposeForecastJsonResult>('compose_forecast_json', { params });
 }

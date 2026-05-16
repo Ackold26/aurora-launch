@@ -192,6 +192,20 @@ pub async fn explain_forecast(
     sidecar.invoke("explain_forecast", params).await
 }
 
+/// Compose forecast.json bytes for bundle write (этап 1.3d).
+///
+/// Wizard вызывает это после forecast_completed event'a, получает base64
+/// и кладёт в extra_files["forecast.json"] при save_bundle. Это закрывает
+/// gap «forecast.json в bundle никем не пишется» и делает M-09 reproduce
+/// побитово точным для wizard-bundles.
+#[tauri::command]
+pub async fn compose_forecast_json(
+    sidecar: State<'_, std::sync::Arc<crate::sidecar::SidecarManager>>,
+    params: serde_json::Value,
+) -> AuroraResult<serde_json::Value> {
+    sidecar.invoke("compose_forecast_json", params).await
+}
+
 /// Semantic forecast version diff (audit #7.8).
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ForecastVersionDiffInput {
