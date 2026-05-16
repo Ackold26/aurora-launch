@@ -20,6 +20,7 @@
   import SaveIndicator from '$lib/components/SaveIndicator.svelte';
   import CommandPalette from '$lib/components/CommandPalette.svelte';
   import HandshakeIncompatibleModal from '$lib/components/HandshakeIncompatibleModal.svelte';
+  import UpdateAvailableBanner from '$lib/components/UpdateAvailableBanner.svelte';
 
   let { children } = $props();
 
@@ -232,6 +233,9 @@
 </script>
 
 <div class="app-layout" data-theme={$resolvedTheme}>
+  <!-- Этап 2.9: non-blocking update banner. Best-effort check at startup.
+       Не блокирует UI — показывается только при наличии update. -->
+  <UpdateAvailableBanner />
   <header class="app-header">
     <div class="brand">
       <span class="logo" aria-hidden="true">◆</span>
@@ -347,7 +351,8 @@
 <style>
   .app-layout {
     display: grid;
-    grid-template-rows: auto 1fr auto;
+    /* update-banner (auto, collapses to 0 when hidden) + header + main + footer */
+    grid-template-rows: auto auto 1fr auto;
     height: 100vh;
     background: var(--bg-main);
     color: var(--text-primary);

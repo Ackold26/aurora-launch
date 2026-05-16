@@ -209,5 +209,15 @@
   "palette.category.nav": "Навигация",
   "palette.category.help": "Помощь",
   "palette.category.settings": "Настройки",
-  "app.footer.shortcut_hint": "{shortcut} — все команды"
+  "app.footer.shortcut_hint": "{shortcut} — все команды",
+
+  "updater.banner.aria_label": "Доступно обновление Aurora Launch",
+  "updater.banner.available": "Доступна новая версия Aurora Launch ({version}). Обновите сейчас или позже.",
+  "updater.banner.install_now": "Скачать и установить",
+  "updater.banner.later": "Позже",
+  "updater.banner.dismiss_aria": "Скрыть уведомление об обновлении",
+  "updater.banner.downloading": "Скачивание обновления…",
+  "updater.banner.ready": "Обновление установлено. Перезапустите приложение.",
+  "updater.banner.relaunch": "Перезапустить",
+  "updater.banner.error": "Не удалось проверить обновление. Попробуйте позже."
 }
