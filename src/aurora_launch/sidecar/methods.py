@@ -30,6 +30,7 @@ cooperative pattern (D5: NO SIGINT, NO terminate).
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 import time
@@ -38,6 +39,8 @@ from collections.abc import Callable
 from datetime import UTC
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from aurora_launch import __version__
 from aurora_launch.sidecar import events
@@ -1743,6 +1746,145 @@ def _cancel_integrity_check(params: dict[str, Any]) -> dict[str, Any]:
     return {"cancelled": True, "integrity_handle": handle}
 
 
+# ─── ROADMAP §3.4: cross-product validation ───────────────────────────────────
+
+
+@register("validate_against_optimizer")
+def _validate_against_optimizer(params: dict[str, Any]) -> dict[str, Any] | None:
+    """Cross-product calibration: compare Launch forecast against Optimizer actuals.
+
+    ROADMAP §3.4 — «Перекрёстная сверка между Launch Planner и Optimizer».
+
+    Params:
+      - launch_forecast_value: float — Launch point forecast (units/revenue)
+      - proxy_brand_code: str — brand_code of the proxy brand in Optimizer
+      - horizon_weeks: int — forecast horizon (default 12); used for confidence calc
+      - period_start: str | null — ISO date; defaults to 52 weeks ago
+      - period_end: str | null — ISO date; defaults to today
+
+    Returns dict with ``available: true`` and CrossProductValidation fields on
+    success, or ``available: false`` + ``reason`` on graceful degradation
+    (Optimizer not configured, brand not found, zero actuals).
+    """
+    from datetime import date as _date
+    from datetime import datetime, timedelta, timezone
+
+    from aurora_launch.schemas.cross_product import (
+        CrossProductValidation,
+        OptimizerHistoryQuery,
+    )
+    from aurora_launch.services.optimizer_client import OptimizerNotConfigured
+
+    # ── Resolve optimizer client from DI container ─────────────────────────
+    svc = get_services()
+    client = svc.get_optimizer_client()
+
+    if client is None:
+        logger.warning(
+            "validate_against_optimizer: no OptimizerClient in ServiceContainer — "
+            "cross-product validation is not available"
+        )
+        return {"available": False, "reason": "optimizer_not_configured"}
+
+    # ── Parse params ──────────────────────────────────────────────────────
+    try:
+        launch_value = float(params["launch_forecast_value"])
+        proxy_brand_code = str(params["proxy_brand_code"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"validate_against_optimizer: invalid params — {exc}") from exc
+
+    horizon_weeks = int(params.get("horizon_weeks", 12))
+
+    today = datetime.now(tz=timezone.utc).date()
+    period_start_raw = params.get("period_start")
+    period_end_raw = params.get("period_end")
+    period_end = _date.fromisoformat(str(period_end_raw)) if period_end_raw else today
+    period_start = (
+        _date.fromisoformat(str(period_start_raw))
+        if period_start_raw
+        else period_end - timedelta(weeks=52)
+    )
+
+    # ── Query Optimizer ────────────────────────────────────────────────────
+    query = OptimizerHistoryQuery(
+        brand_code=proxy_brand_code,
+        period_start=period_start,
+        period_end=period_end,
+    )
+
+    try:
+        history = client.get_history(query)
+    except OptimizerNotConfigured as exc:
+        logger.warning("validate_against_optimizer: OptimizerNotConfigured — %s", exc)
+        return {"available": False, "reason": "optimizer_not_configured"}
+
+    if history is None:
+        logger.warning(
+            "validate_against_optimizer: brand_code=%r not found in Optimizer",
+            proxy_brand_code,
+        )
+        return {"available": False, "reason": "brand_not_found", "brand_code": proxy_brand_code}
+
+    if not history.weekly_actuals:
+        logger.warning(
+            "validate_against_optimizer: brand_code=%r returned 0 weekly actuals",
+            proxy_brand_code,
+        )
+        return {"available": False, "reason": "no_actuals", "brand_code": proxy_brand_code}
+
+    # ── Compute mean actuals over comparison window ────────────────────────
+    optimizer_actual = sum(w.sales for w in history.weekly_actuals) / len(history.weekly_actuals)
+
+    if optimizer_actual == 0.0:
+        logger.warning(
+            "validate_against_optimizer: mean actuals=0 for brand_code=%r — cannot compute deviation",
+            proxy_brand_code,
+        )
+        return {"available": False, "reason": "zero_actuals", "brand_code": proxy_brand_code}
+
+    deviation_pct = (launch_value - optimizer_actual) / optimizer_actual * 100.0
+
+    # ── Deviation severity (mirrors CrossProductValidation.severity_consistent) ─
+    abs_dev = abs(deviation_pct)
+    if abs_dev < 15.0:
+        severity: str = "low"
+    elif abs_dev < 35.0:
+        severity = "medium"
+    else:
+        severity = "high"
+
+    # ── Confidence: n_observations relative to horizon ────────────────────
+    n = history.n_observations
+    if n >= horizon_weeks:
+        confidence = 1.0
+    elif n < 4:
+        confidence = 0.3
+    else:
+        # Linear interpolation between 0.3 (n=4) and 1.0 (n=horizon_weeks)
+        confidence = 0.3 + 0.7 * (n - 4) / max(horizon_weeks - 4, 1)
+    confidence = round(min(max(confidence, 0.0), 1.0), 4)
+
+    # ── Build validated schema object ─────────────────────────────────────
+    result = CrossProductValidation(
+        proxy_brand=proxy_brand_code,
+        launch_forecast_value=launch_value,
+        optimizer_actual_value=round(optimizer_actual, 4),
+        deviation_pct=round(deviation_pct, 4),
+        deviation_severity=severity,  # type: ignore[arg-type]
+        confidence=confidence,
+    )
+
+    return {
+        "available": True,
+        "proxy_brand": result.proxy_brand,
+        "launch_forecast_value": result.launch_forecast_value,
+        "optimizer_actual_value": result.optimizer_actual_value,
+        "deviation_pct": result.deviation_pct,
+        "deviation_severity": result.deviation_severity,
+        "confidence": result.confidence,
+    }
+
+
 # ─── Lifecycle ────────────────────────────────────────────────────────────────
 
 
@@ -1862,6 +2004,168 @@ def _shutdown(_params: dict[str, Any]) -> dict[str, Any]:
         "forecasts_joined": forecasts_joined,
         "forecasts_timed_out": forecasts_timed_out,
     }
+
+
+# ─── ROADMAP §4.4 — Budget Optimizer ────────────────────────────────────────
+
+# Dict for in-flight optimize_budget tasks (handle → thread).
+_optimize_threads: dict[str, threading.Thread] = {}
+_optimize_cancel_flags: dict[str, threading.Event] = {}
+
+
+@register("optimize_budget")
+def _optimize_budget(params: dict[str, Any]) -> dict[str, Any]:
+    """Spawn a budget optimization task in a background thread.
+
+    Long-running (30-60 s for n_iterations=500+) — returns a handle
+    immediately; result is delivered synchronously when the thread finishes.
+
+    Unlike start_forecast (which emits events per period), optimize_budget
+    uses a simpler blocking-in-thread pattern: the thread stores the result
+    in a shared result-container; the caller polls via
+    ``get_optimize_status`` or waits for the ``optimize_budget_completed``
+    or ``optimize_budget_failed`` events.
+
+    Inputs (params):
+      - proxy_data: dict — same shape as the proxy_data field accepted by
+        start_forecast (posterior_samples + media_cols + normalization).
+      - anchors_data: dict — RecipientAnchors fields.
+      - request: dict — BudgetSearchRequest fields
+          (total_budget, channel_caps, horizon_periods, granularity,
+           n_iterations, seed).
+      - timeout_seconds: float (default 120.0) — hard-cap for the runner
+        thread; the main thread joins up to this limit.
+
+    Returns immediately:
+      - optimize_handle: str (UUID)
+
+    Events emitted by the background thread:
+      - optimize_budget_completed: {optimize_handle, best: dict,
+                                    alternatives: list[dict]}
+      - optimize_budget_failed: {optimize_handle, error: str, kind: str}
+
+    Design note: ProjectDB is NOT used — all proxy + anchors data passed
+    inline so the caller controls what gets optimized (matches start_forecast
+    pattern for legacy / inline data paths).
+    """
+    from aurora_launch.engines.budget_optimizer import find_best_spend_plan
+    from aurora_launch.engines.launch_orchestrator import (
+        LaunchOrchestrator,
+        make_proxy_bundle,
+    )
+    from aurora_launch.engines.pure_transfer_engine import RecipientAnchors
+    from aurora_launch.schemas.budget_optimization import BudgetSearchRequest, ChannelCap
+
+    handle = str(uuid.uuid4())
+    cancel = threading.Event()
+    _optimize_cancel_flags[handle] = cancel
+
+    # ── Parse inputs (main thread, before spawning) ───────────────────────────
+    try:
+        proxy_data: dict[str, Any] = dict(params.get("proxy_data") or {})
+        anchors_data: dict[str, Any] = dict(params.get("anchors_data") or {})
+        request_data: dict[str, Any] = dict(params.get("request") or {})
+        timeout_s: float = float(params.get("timeout_seconds", 120.0))
+
+        # Validate request schema eagerly (fail fast before spawning thread)
+        raw_caps = request_data.get("channel_caps") or {}
+        caps_parsed = {
+            ch: ChannelCap.model_validate(v) if isinstance(v, dict) else v
+            for ch, v in raw_caps.items()
+        }
+        request = BudgetSearchRequest(
+            total_budget=float(request_data.get("total_budget", 0)),
+            channel_caps=caps_parsed,
+            horizon_periods=int(request_data.get("horizon_periods", 12)),
+            granularity=str(request_data.get("granularity", "monthly")),
+            n_iterations=int(request_data.get("n_iterations", 100)),
+            seed=int(request_data.get("seed", 42)),
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"optimize_budget: invalid params: {exc}") from exc
+
+    def runner() -> None:
+        try:
+            # Build proxy bundle from raw dict
+            proxy = make_proxy_bundle(
+                posterior_samples=proxy_data.get("posterior_samples", {}),
+                media_cols=list(proxy_data.get("media_cols", [])),
+                normalization=proxy_data.get("normalization"),
+                config=proxy_data.get("config"),
+                proxy_brand_id=proxy_data.get("proxy_brand_id"),
+                n_proxy_observations=int(proxy_data.get("n_proxy_observations", 0)),
+            )
+            anchors = RecipientAnchors.model_validate(anchors_data)
+            orchestrator = LaunchOrchestrator()
+
+            def forecast_fn(spend_plan: dict[str, list[float]]) -> object:
+                if cancel.is_set():
+                    raise RuntimeError("optimize_budget cancelled")
+                return orchestrator.forecast_recipient(
+                    proxy=proxy,
+                    anchors=anchors,
+                    spend_plan=spend_plan,
+                    horizon_periods=request.horizon_periods,
+                    granularity=request.granularity,  # type: ignore[arg-type]
+                    forecast_budget_seconds=max(5.0, timeout_s / max(1, request.n_iterations)),
+                )
+
+            best, alternatives = find_best_spend_plan(
+                forecast_fn=forecast_fn,
+                request=request,
+            )
+
+            events.emit(
+                "optimize_budget_completed",
+                {
+                    "optimize_handle": handle,
+                    "best": best.model_dump(),
+                    "alternatives": [a.model_dump() for a in alternatives],
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            try:
+                events.emit(
+                    "optimize_budget_failed",
+                    {
+                        "optimize_handle": handle,
+                        "error": str(exc),
+                        "kind": type(exc).__name__,
+                    },
+                )
+            except (OSError, ValueError):
+                pass
+        finally:
+            _optimize_cancel_flags.pop(handle, None)
+            _optimize_threads.pop(handle, None)
+
+    thread = threading.Thread(
+        target=runner,
+        name=f"aurora-optimize-{handle[:8]}",
+        daemon=True,
+    )
+    _optimize_threads[handle] = thread
+    thread.start()
+
+    return {"optimize_handle": handle}
+
+
+@register("cancel_optimize_budget")
+def _cancel_optimize_budget(params: dict[str, Any]) -> dict[str, Any]:
+    """Cooperative cancel for a running optimize_budget task.
+
+    Sets the cancel flag; the runner exits at its next cancellation boundary
+    (per-split forecast call check). Mirrors cancel_forecast (D5 pattern).
+
+    Params: optimize_handle: str
+    Returns: {"cancelled": bool}
+    """
+    handle = str(params.get("optimize_handle", ""))
+    flag = _optimize_cancel_flags.get(handle)
+    if flag is not None:
+        flag.set()
+        return {"cancelled": True}
+    return {"cancelled": False}
 
 
 # Audit H-4 (этап 2.10): регистрация reset callback должна произойти после
