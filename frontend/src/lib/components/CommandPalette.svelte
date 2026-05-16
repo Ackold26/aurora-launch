@@ -141,6 +141,15 @@
                 onClose();
               }}
               onmouseenter={() => (selectedIndex = i)}
+              onkeydown={(e) => {
+                // 4.3 a11y: keyboard equivalent для click handler.
+                // Combobox listbox model: Enter активирует selected option.
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  void cmd.action();
+                  onClose();
+                }
+              }}
             >
               {#if cmd.icon}
                 <span class="palette-item-icon" aria-hidden="true">{cmd.icon}</span>
@@ -256,11 +265,11 @@
     padding: var(--spacing-4);
   }
 
+  /* 4.3 a11y cleanup: .palette-item-button был removed когда мы перешли
+     на ARIA listbox model (button → li с role=option). Стили мигрировали
+     на .palette-item напрямую. */
   .palette-item {
     margin: 0;
-  }
-
-  .palette-item-button {
     display: flex;
     align-items: center;
     gap: var(--spacing-2);
@@ -276,7 +285,7 @@
     transition: background var(--motion-fast) var(--easing-smooth);
   }
 
-  .palette-item.selected .palette-item-button {
+  .palette-item.selected {
     background: color-mix(in srgb, var(--accent) 18%, transparent);
   }
 
@@ -334,7 +343,7 @@
     .palette {
       animation: none;
     }
-    .palette-item-button {
+    .palette-item {
       transition: none;
     }
   }

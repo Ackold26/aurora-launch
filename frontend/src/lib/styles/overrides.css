@@ -37,6 +37,16 @@
   --typography-fontFamily-uiDisplay: 'Manrope', 'Inter', system-ui, sans-serif;
   --font-display: var(--typography-fontFamily-uiDisplay);
 
+  /* 4.3 ROADMAP_POST_V0_1_0: proper font fallback chain для кириллицы.
+     tokens.css имеет bare `Inter` / `JetBrains Mono` без fallback. Если
+     основной шрифт не загрузится → browser default. На Linux может не быть
+     кириллических глифов → tofu. Покрываем все 3 OS + universal sans-serif. */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    'Roboto', 'Helvetica Neue', 'Arial', 'Cantarell', 'Ubuntu',
+    'Liberation Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Consolas', 'SF Mono',
+    'Menlo', 'DejaVu Sans Mono', 'Liberation Mono', monospace;
+
   /* P-10 surface-skeleton tokens — shimmer background */
   --surface-skeleton: color-mix(in srgb, var(--bg-surface) 70%, var(--text-muted) 30%);
   --surface-skeleton-shimmer: color-mix(in srgb, var(--surface-skeleton) 70%, #FFFFFF 30%);
