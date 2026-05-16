@@ -134,12 +134,37 @@ def set_services_for_testing(svc: ServiceContainer) -> None:
         _services = svc
 
 
+# Audit H-4 (этап 2.10): reset должен также обнулять module-level
+# singletons в methods.py чтобы test isolation была полной. Через
+# callback-registration избегаем circular import (services.py не должна
+# импортировать methods.py).
+_external_reset_callbacks: list[Any] = []
+
+
+def register_reset_callback(cb: Any) -> None:
+    """Регистрирует функцию которая будет вызвана при reset_services_for_testing.
+
+    Используется methods.py чтобы зарегистрировать обнуление _PROJECT_DB /
+    _AUTOSAVE module-level vars. Идемпотентно — повторная регистрация той же
+    функции игнорируется.
+    """
+    if cb not in _external_reset_callbacks:
+        _external_reset_callbacks.append(cb)
+
+
 def reset_services_for_testing() -> None:
-    """Restore the default (empty) ServiceContainer.
+    """Restore the default (empty) ServiceContainer + reset external module-level singletons.
 
     Idempotent — safe to call even if set_services_for_testing() was never
-    called.
+    called. Также вызывает все registered reset_callbacks (см. register_reset_callback)
+    чтобы methods.py обнулил _PROJECT_DB / _AUTOSAVE / _GC_THREAD module-level vars.
     """
     global _services  # noqa: PLW0603
     with _services_lock:
         _services = ServiceContainer()
+    # Внешние reset callbacks (best-effort, не падаем на failed callback)
+    for cb in _external_reset_callbacks:
+        try:
+            cb()
+        except Exception:
+            pass

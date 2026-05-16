@@ -68,6 +68,21 @@
 
     // Продакшн путь: fire-and-forget best-effort check.
     void checkForUpdate();
+
+    // Audit A-3 (этап 2.10): periodic re-check каждые 4 часа.
+    // dismiss-per-session не покрывает customer'ов которые работают 8+ часов
+    // без перезапуска — критический security update должен показаться повторно.
+    const RECHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 часа
+    const intervalId = window.setInterval(() => {
+      // Если customer уже dismissed previous version — re-check может
+      // обнаружить НОВУЮ (или ту же) version. Reset dismissedThisSession,
+      // чтобы banner появился вновь только если есть update.
+      if (bannerState === 'idle' || bannerState === 'error') {
+        dismissedThisSession = false;
+        void checkForUpdate();
+      }
+    }, RECHECK_INTERVAL_MS);
+    return () => window.clearInterval(intervalId);
   });
 
   async function checkForUpdate() {
@@ -98,6 +113,12 @@
     if (!_updateHandle || bannerState === 'downloading') return;
     bannerState = 'downloading';
     downloadProgress = 0;
+    // Audit A-1 (этап 2.10): plugin-updater event payload `chunkLength` —
+    // delta size текущего chunk, НЕ накопленный bytes. Без локального
+    // accumulator progress bar показывал размер последнего chunk относительно
+    // total, прыгал случайно. Накапливаем сами.
+    let downloadedBytes = 0;
+    let totalBytes = 0;
 
     try {
       await _updateHandle.downloadAndInstall(
@@ -105,18 +126,27 @@
           event: string;
           data?: { chunkLength?: number; contentLength?: number | null };
         }) => {
-          if (progress.event === 'Progress') {
-            const chunkLen = progress.data?.chunkLength ?? 0;
-            const totalLen = progress.data?.contentLength ?? 0;
-            if (totalLen > 0) {
+          if (progress.event === 'Started') {
+            totalBytes = progress.data?.contentLength ?? 0;
+            downloadedBytes = 0;
+          } else if (progress.event === 'Progress') {
+            downloadedBytes += progress.data?.chunkLength ?? 0;
+            // contentLength может прийти и с Progress event'ами — обновляем
+            // если total ещё неизвестен.
+            if (totalBytes === 0) {
+              totalBytes = progress.data?.contentLength ?? 0;
+            }
+            if (totalBytes > 0) {
               downloadProgress = Math.min(
                 100,
-                Math.round((chunkLen / totalLen) * 100),
+                Math.round((downloadedBytes / totalBytes) * 100),
               );
             } else {
               // Неизвестный размер — индикатор пульсирует (-1 = indeterminate).
               downloadProgress = -1;
             }
+          } else if (progress.event === 'Finished') {
+            downloadProgress = 100;
           }
         },
       );

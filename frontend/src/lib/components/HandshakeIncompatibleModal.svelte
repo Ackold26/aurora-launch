@@ -16,6 +16,8 @@
 
   let result = $state<HandshakeResult | null>(null);
   let unlisten: UnlistenFn | null = null;
+  // Audit A-2 (этап 2.10): bind для auto-focus + focus trap.
+  let reloadButton: HTMLButtonElement | undefined = $state();
 
   onMount(async () => {
     // Сначала event listener — handshake может прилететь именно сейчас.
@@ -43,22 +45,53 @@
     if (unlisten) unlisten();
   });
 
-  function reload() {
-    window.location.reload();
+  // Audit H-1 (этап 2.10): window.location.reload() перезагружает только
+  // webview, оставляя живой incompatible Python sidecar — после reload
+  // modal появится снова с тем же handshake-mismatch. relaunch() убивает
+  // оба процесса и стартует заново. Если plugin-process недоступен (test
+  // environment) — fallback на reload().
+  async function reload() {
+    try {
+      const { relaunch } = await import('@tauri-apps/plugin-process');
+      await relaunch();
+    } catch (e) {
+      console.warn('[HandshakeModal] relaunch unavailable, fallback to reload:', e);
+      window.location.reload();
+    }
+  }
+
+  // Audit A-2 (этап 2.10): focus trap для блокирующего modal'a.
+  // Customer не может Tab за пределы — Tab возвращается на reload-button.
+  function trapFocus(event: KeyboardEvent) {
+    if (event.key === 'Tab' && reloadButton) {
+      event.preventDefault();
+      reloadButton.focus();
+    }
   }
 
   // Показываем только когда есть результат И он incompatible.
   // result === null (handshake ещё не дошёл) — не показываем (UI работает
   // как обычно, дожидаясь handshake; если sidecar медленный это нормально).
   const incompatible = $derived(result !== null && !result.compatible);
+
+  // Audit A-2: auto-focus reload button когда modal появляется.
+  $effect(() => {
+    if (incompatible && reloadButton) {
+      reloadButton.focus();
+    }
+  });
 </script>
 
 {#if incompatible && result}
+  <!-- Audit A-2 (этап 2.10): keydown listener на backdrop ловит Tab из любого
+       focus targeted внутри modal'a — focus trap. -->
   <div
     class="handshake-modal-backdrop"
     role="dialog"
     aria-modal="true"
     aria-labelledby="handshake-modal-title"
+    onkeydown={trapFocus}
+    tabindex="-1"
   >
     <div class="handshake-modal">
       <h2 id="handshake-modal-title">Несовместимая версия Aurora Launch</h2>
@@ -73,7 +106,12 @@
         быть повреждены.
       </p>
       <div class="actions">
-        <button class="primary" type="button" onclick={reload}>
+        <button
+          class="primary"
+          type="button"
+          onclick={reload}
+          bind:this={reloadButton}
+        >
           Перезапустить приложение
         </button>
       </div>

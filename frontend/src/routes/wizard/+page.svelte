@@ -488,10 +488,12 @@
             <!-- 1.3d: save .aurora bundle с forecast.json -->
             {#if !savedBundlePath}
               <div class="save-row">
+                <!-- Audit H-3 (этап 2.10): disable если points=[] на случай
+                     forecast_completed без предшествующих progress events. -->
                 <Button
                   variant="primary"
                   loading={savingBundle}
-                  disabled={!forecastCompleted}
+                  disabled={!forecastCompleted || forecastPoints.length === 0}
                   onclick={saveBundle}
                 >
                   {#snippet children()}Сохранить .aurora{/snippet}
