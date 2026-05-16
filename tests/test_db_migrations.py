@@ -281,59 +281,65 @@ class TestMigrationIdempotency:
 
 
 # ---------------------------------------------------------------------------
-# Test 4 — synthetic future migration skeleton (dry-run v003)
+# Test 4 — synthetic future migration skeleton (dry-run v004, since v003
+# became real in Phase 1.B.1 — kv_store)
 # ---------------------------------------------------------------------------
 
 
 class TestFutureMigrationSkeleton:
     """ROADMAP 2.5 / Test 4: confirm that adding a new SQL file to migrations/
-    is all it takes to extend the schema. Uses a temp copy of migrations dir."""
+    is all it takes to extend the schema. Uses a temp copy of migrations dir.
+
+    Synthetic version bumped to v004 since v003 (kv_store) became real в
+    Phase 1.B.1 для ConsentManager persistence.
+    """
 
     def test_new_sql_migration_bumps_schema_version(self, tmp_path: Path) -> None:
-        """Copy real migrations dir, add v003, run migrator on a bare connection.
+        """Copy real migrations dir, add synthetic v004, run migrator on a
+        bare connection.
 
-        This validates the extensible skeleton: anyone adding a new SQL file
+        Validates the extensible skeleton: anyone adding a new SQL file
         in the future gets automatic pick-up on next app launch.
         """
         mig_copy = tmp_path / "migrations"
         shutil.copytree(MIGRATIONS_DIR, mig_copy)
 
-        # Write synthetic v003 migration
-        (mig_copy / "v003_test_column.sql").write_text(
+        # Write synthetic v004 migration (next after real v003 _kv_store)
+        (mig_copy / "v004_test_column.sql").write_text(
             dedent("""
                 -- Test migration: add optional tag to projects
                 ALTER TABLE projects ADD COLUMN _test_tag TEXT;
                 INSERT OR REPLACE INTO schema_version (version, applied_at)
-                VALUES (3, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+                VALUES (4, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
             """),
             encoding="utf-8",
         )
 
-        # Build a real DB that is already at v1 + v2 (use real migrations)
-        conn = sqlite3.connect(str(tmp_path / "test_v003.db"))
+        # Build a real DB that is already at v1 + v2 + v3 (use real migrations)
+        conn = sqlite3.connect(str(tmp_path / "test_v004.db"))
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode = WAL")
         conn.execute("PRAGMA foreign_keys = ON")
 
         try:
-            # Apply real v001 + v002 first
+            # Apply real v001 + v002 + v003 first
             real_mig_dir = MIGRATIONS_DIR
             apply_pending_migrations(conn, real_mig_dir)
             assert get_current_version(conn) == CURRENT_SCHEMA_VERSION
 
-            # Now apply real + synthetic v003 from the copy
+            # Now apply real + synthetic v004 from the copy
             applied = apply_pending_migrations(conn, mig_copy)
             assert len(applied) == 1, f"Expected 1 new migration applied, got {len(applied)}"
-            assert applied[0].version == 3
+            assert applied[0].version == 4
 
-            assert get_current_version(conn) == 3
+            assert get_current_version(conn) == 4
 
-            # v003 table alteration must have taken effect
+            # v004 table alteration must have taken effect
             cols = [
                 r[1]
                 for r in conn.execute("PRAGMA table_info(projects)").fetchall()
             ]
-            assert "_test_tag" in cols, "Column _test_tag must exist after v003 migration"
+            assert "_test_tag" in cols, "Column _test_tag must exist after v004 migration"
         finally:
             conn.close()
 
@@ -377,3 +383,120 @@ class TestFutureSchemaGuard:
 
         with pytest.raises(ProjectDBError, match="newer than supported"):
             _open_db(db_path, blob_store)
+
+
+# ---------------------------------------------------------------------------
+# Test 6 — v003 _kv_store + kv_get/kv_set methods (Phase 1.B.1 C-2 fix)
+# ---------------------------------------------------------------------------
+
+
+class TestKvStoreV003:
+    """Phase 1.B.1 / C-2 audit fix: v003 migration creates _kv_store table +
+    ProjectDB.kv_get/kv_set methods provide real persistence для
+    ConsentManager (auto-refresh §3.5), wizard recovery (1.C BTA-2), tip
+    dismissals (UX-3), telemetry tier (Phase 2.D.2).
+    """
+
+    def test_kv_store_table_created_after_v003(
+        self, tmp_path: Path, blob_store: BlobStore
+    ) -> None:
+        """Fresh DB должен иметь таблицу _kv_store (создаётся v003 migration)."""
+        db_path = tmp_path / "kv.db"
+        db = _open_db(db_path, blob_store)
+        try:
+            row = db._conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='_kv_store'"
+            ).fetchone()
+            assert row is not None, "_kv_store table должна существовать после v003"
+        finally:
+            db.close()
+
+    def test_kv_set_then_get_round_trip(
+        self, tmp_path: Path, blob_store: BlobStore
+    ) -> None:
+        db = _open_db(tmp_path / "kv.db", blob_store)
+        try:
+            db.kv_set("test_key", {"foo": "bar", "n": 42})
+            result = db.kv_get("test_key")
+            assert result == {"foo": "bar", "n": 42}
+        finally:
+            db.close()
+
+    def test_kv_get_missing_returns_none(
+        self, tmp_path: Path, blob_store: BlobStore
+    ) -> None:
+        db = _open_db(tmp_path / "kv.db", blob_store)
+        try:
+            assert db.kv_get("never_set") is None
+        finally:
+            db.close()
+
+    def test_kv_set_updates_existing_key(
+        self, tmp_path: Path, blob_store: BlobStore
+    ) -> None:
+        """INSERT OR REPLACE pattern: повторный set перезаписывает значение."""
+        db = _open_db(tmp_path / "kv.db", blob_store)
+        try:
+            db.kv_set("counter", {"value": 1})
+            db.kv_set("counter", {"value": 99})
+            assert db.kv_get("counter") == {"value": 99}
+        finally:
+            db.close()
+
+    def test_kv_set_non_dict_raises_type_error(
+        self, tmp_path: Path, blob_store: BlobStore
+    ) -> None:
+        """Defensive type check: ProjectDB только dict хранит, не arbitrary JSON."""
+        db = _open_db(tmp_path / "kv.db", blob_store)
+        try:
+            with pytest.raises(TypeError, match="kv_set value must be dict"):
+                db.kv_set("bad", "not a dict")  # type: ignore[arg-type]
+        finally:
+            db.close()
+
+    def test_kv_delete_returns_true_if_existed(
+        self, tmp_path: Path, blob_store: BlobStore
+    ) -> None:
+        db = _open_db(tmp_path / "kv.db", blob_store)
+        try:
+            db.kv_set("ephemeral", {"x": 1})
+            assert db.kv_delete("ephemeral") is True
+            assert db.kv_get("ephemeral") is None
+            # Repeat delete on missing key → False
+            assert db.kv_delete("ephemeral") is False
+        finally:
+            db.close()
+
+    def test_kv_persistence_across_db_close_reopen(
+        self, tmp_path: Path, blob_store: BlobStore
+    ) -> None:
+        """The actual C-2 fix verification: данные переживают close + reopen.
+        Раньше ConsentManager использовал _DbKvShim который проглатывал
+        AttributeError — после restart consent был None."""
+        db_path = tmp_path / "persist.db"
+        db1 = _open_db(db_path, blob_store)
+        db1.kv_set("consent", {"enabled": True, "frequency": "weekly"})
+        db1.close()
+
+        db2 = _open_db(db_path, blob_store)
+        try:
+            assert db2.kv_get("consent") == {"enabled": True, "frequency": "weekly"}
+        finally:
+            db2.close()
+
+    def test_kv_get_invalid_json_returns_none(
+        self, tmp_path: Path, blob_store: BlobStore
+    ) -> None:
+        """Если в _kv_store попал invalid JSON (corruption) — graceful None,
+        не crash. Логирование через _log.warning."""
+        db = _open_db(tmp_path / "kv.db", blob_store)
+        try:
+            # Bypass normal kv_set → write garbage directly
+            db._conn.execute(
+                "INSERT INTO _kv_store (key, value_json, updated_at) "
+                "VALUES ('garbage', '{not valid json', '2026-01-01T00:00:00Z')"
+            )
+            db._conn.commit()
+            assert db.kv_get("garbage") is None
+        finally:
+            db.close()

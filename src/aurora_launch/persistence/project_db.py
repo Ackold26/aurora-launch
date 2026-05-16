@@ -40,7 +40,7 @@ from aurora_launch.persistence.blob_store import BlobStore, BlobStoreError
 _log = logging.getLogger(__name__)
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
-CURRENT_SCHEMA_VERSION = 2  # bump as migrations are added
+CURRENT_SCHEMA_VERSION = 3  # bump as migrations are added (v003: _kv_store)
 
 # GC runs automatically on open if last run was more than this many seconds ago.
 GC_INTERVAL_SECONDS: int = 7 * 24 * 3600  # 7 days
@@ -754,6 +754,63 @@ class ProjectDB:
                 """,
                 (now, collected),
             )
+
+    # ---- KV store (v003 schema, Phase 1.B.1) -------------------------------
+
+    def kv_get(self, key: str) -> dict[str, Any] | None:
+        """Read JSON-сериализованное значение по ключу из _kv_store.
+
+        Returns None если ключ не найден ИЛИ если JSON не валидный (logged).
+        Используется ConsentManager (§3.5), wizardSession (§1.C), tip
+        dismissals (UX-3), telemetry tier (Phase 2.D.2).
+
+        C-2 fix (audit 4.5 / Phase 1.B.1): без этого метода ConsentManager
+        вызывал self._db.kv_get → AttributeError → молчаливое проглатывание
+        в except Exception: pass. После rejection persistence не работала
+        между перезапусками sidecar.
+        """
+        row = self._conn.execute(
+            "SELECT value_json FROM _kv_store WHERE key = ?", (key,)
+        ).fetchone()
+        if row is None:
+            return None
+        try:
+            value = json.loads(row["value_json"])
+            if not isinstance(value, dict):
+                _log.warning("kv_get: value for %r is not a dict (%s)", key, type(value).__name__)
+                return None
+            return value
+        except json.JSONDecodeError as exc:
+            _log.warning("kv_get: invalid JSON for key %r: %s", key, exc)
+            return None
+
+    def kv_set(self, key: str, value: dict[str, Any]) -> None:
+        """Запись JSON-сериализованного dict по ключу. INSERT OR REPLACE.
+
+        Атомарно через _write_lock + _tx (по образцу остальных write-методов).
+        Raises TypeError если value не dict (defensive type check).
+        """
+        if not isinstance(value, dict):
+            raise TypeError(f"kv_set value must be dict, got {type(value).__name__}")
+        value_json = json.dumps(value, ensure_ascii=False, sort_keys=True)
+        now = _utc_now_iso()
+        with self._write_lock, self._tx():
+            self._conn.execute(
+                """
+                INSERT INTO _kv_store (key, value_json, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value_json = excluded.value_json,
+                    updated_at = excluded.updated_at
+                """,
+                (key, value_json, now),
+            )
+
+    def kv_delete(self, key: str) -> bool:
+        """Удалить запись по ключу. Returns True если запись существовала."""
+        with self._write_lock, self._tx():
+            cur = self._conn.execute("DELETE FROM _kv_store WHERE key = ?", (key,))
+            return cur.rowcount > 0
 
     def _maybe_gc_on_open(self) -> None:
         """Run gc_orphan_blobs() on open if last GC was more than GC_INTERVAL_SECONDS ago.
