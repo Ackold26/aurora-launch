@@ -92,6 +92,7 @@ pub fn run() {
             commands::forecast::explain_forecast,
             commands::forecast::compare_forecast_versions,
             commands::forecast::compose_forecast_json,
+            commands::handshake::get_handshake_status,
             // methodology_cert commands (Block 2C)
             commands::methodology_cert::verify_bundle_signature,
             commands::methodology_cert::generate_local_dev_signature,

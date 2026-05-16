@@ -291,8 +291,19 @@ export const ipc = {
       revision: number;
       manifest: BundleManifest;
       composite_hash: string;
-    }>('save_bundle', input as unknown as Record<string, unknown>)
+    }>('save_bundle', input as unknown as Record<string, unknown>),
+
+  // Этап 2.8: handshake-status (Rust↔Python compat)
+  getHandshakeStatus: () =>
+    invoke<HandshakeResult | null>('get_handshake_status')
 };
+
+/** Этап 2.8: результат negotiate-handshake между Rust shell и Python sidecar. */
+export interface HandshakeResult {
+  compatible: boolean;
+  reason?: string | null;
+  advice?: string | null;
+}
 
 export interface SaveBundleInput {
   handleId: string;
