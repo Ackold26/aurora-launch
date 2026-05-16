@@ -40,9 +40,9 @@ describe('TrustScore', () => {
     expect(screen.getByText('Низкий')).toBeTruthy();
   });
 
-  it('score 30 → "Не подтверждён"', () => {
+  it('score 30 → "Пока не рассчитан"', () => {
     render(TrustScore, defaultProps({ score: 30 }));
-    expect(screen.getByText('Не подтверждён')).toBeTruthy();
+    expect(screen.getByText('Пока не рассчитан')).toBeTruthy();
   });
 
   // ---------- clamping ----------
@@ -95,9 +95,9 @@ describe('TrustScore', () => {
 
   // ---------- aria ----------
 
-  it('ARIA label "Trust score: 87 из 100" present', () => {
+  it('ARIA label "Уровень доверия: 87 из 100" present', () => {
     render(TrustScore, defaultProps({ score: 87 }));
-    expect(screen.getByLabelText('Trust score: 87 из 100')).toBeTruthy();
+    expect(screen.getByLabelText('Уровень доверия: 87 из 100')).toBeTruthy();
   });
 
   // ---------- verdict override ----------

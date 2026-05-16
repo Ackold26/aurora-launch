@@ -68,7 +68,7 @@
   {#snippet children()}
     <h2 id="handshake-modal-title" class="modal-title">Несовместимая версия Aurora Launch</h2>
     <p class="reason">
-      {result?.reason ?? 'Sidecar (Python) не подходит к текущему shell (Rust).'}
+      {result?.reason ?? 'Внутренний сервис расчётов не совместим с этой версией Aurora.'}
     </p>
     {#if result?.advice}
       <p class="advice">{result.advice}</p>

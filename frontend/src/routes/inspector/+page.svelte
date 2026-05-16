@@ -561,7 +561,7 @@
                   </article>
                 {:else if explanationError}
                   <p class="explanation-error" role="alert">
-                    Не удалось сгенерировать объяснение: {explanationError}
+                    Не удалось подготовить объяснение прогноза: {explanationError}
                   </p>
                 {/if}
                 <!-- M-09 Reproduce-in-Python — magic moment per audit. -->
@@ -570,7 +570,7 @@
                     type="button"
                     class="reproduce-btn"
                     onclick={openReproduceModal}
-                    title="Сгенерировать Python скрипт что воспроизведёт этот прогноз бит-в-бит"
+                    title="Воспроизвести прогноз в Python"
                   >
                     <span aria-hidden="true">🐍</span>
                     Воспроизвести в Python
@@ -672,8 +672,7 @@
         Запустите <code>python {reproduceFilename}</code>.
         {#if reproduceIsPreview}
           <strong class="reproduce-preview-badge">⚠️ Превью v0.1.0:</strong>
-          anchors и план затрат пока заглушки — для точного воспроизведения
-          подставьте свои значения. Bit-exact wiring придёт в v0.1.1.
+          параметры запуска и план медиа пока приближённые — скорректируйте их вручную. Точное воспроизведение появится в следующем обновлении.
         {:else}
           Прогноз будет идентичным до бита.
         {/if}

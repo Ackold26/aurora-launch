@@ -124,7 +124,7 @@ describe('HandshakeIncompatibleModal', () => {
 
     render(HandshakeIncompatibleModal);
 
-    expect(await screen.findByText(/не подходит к текущему shell/)).toBeTruthy();
+    expect(await screen.findByText(/Внутренний сервис расчётов не совместим/)).toBeTruthy();
   });
 
   it('shows reload action button', async () => {

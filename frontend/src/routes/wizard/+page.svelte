@@ -196,8 +196,8 @@
     showRecoveryDialog = false;
     pushToast({
       level: 'info',
-      title: 'Сеанс восстановлен',
-      body: `Продолжаем с шага ${(step ?? 0) + 1} из ${STEPS.length}`,
+      title: 'Продолжаем с того места',
+      body: `Шаг ${(step ?? 0) + 1} из ${STEPS.length}`,
     });
   }
 
@@ -292,13 +292,13 @@
 
         pushToast({
           level: 'success',
-          title: `Файл распознан: ${result.adapter_id}`,
+          title: `Файл загружен (${result.adapter_id})`,
           body: `${result.record_count} записей · ${sourceColumns.length} колонок`,
         });
       } catch (e) {
         pushToast({
           level: 'danger',
-          title: 'Не удалось разобрать файл',
+          title: 'Не удалось прочитать файл',
           body: String(e),
         });
         importedAdapter = null;
@@ -463,7 +463,7 @@
   // в памяти), поэтому Inspector M-09 reproduce работал в preview-режиме.
   async function saveBundle() {
     if (!forecastCompleted || forecastPoints.length === 0) {
-      pushToast({ level: 'danger', title: 'Сначала дождитесь окончания прогноза' });
+      pushToast({ level: 'danger', title: 'Дождитесь завершения прогноза' });
       return;
     }
     savingBundle = true;
@@ -471,7 +471,7 @@
     try {
       const { save } = await import('@tauri-apps/plugin-dialog');
       const targetPath = await save({
-        title: 'Сохранить bundle Aurora Launch',
+        title: 'Сохранить файл проекта Aurora Launch',
         filters: [{ name: 'Aurora bundle', extensions: ['aurora'] }],
         defaultPath: 'launch-forecast.aurora',
       });
@@ -520,8 +520,8 @@
       track('version_save', { revision: 0 });
       pushToast({
         level: 'success',
-        title: 'Bundle сохранён',
-        body: `${targetPath} (${composed.byte_size} байт forecast.json)`,
+        title: 'Файл проекта сохранён',
+        body: `${targetPath} (${composed.byte_size} байт)`,
       });
 
       // Phase 1.C.6: persist session с saved bundle path + flush критично
@@ -533,7 +533,7 @@
       await wizardSession.flush();
     } catch (e) {
       saveError = e instanceof Error ? e.message : String(e);
-      pushToast({ level: 'danger', title: 'Ошибка сохранения', body: saveError });
+      pushToast({ level: 'danger', title: 'Не удалось сохранить файл', body: saveError });
     } finally {
       savingBundle = false;
     }
@@ -544,7 +544,7 @@
   <!-- WCAG 2.4.2 / axe page-has-heading-one: visually hidden h1 for screen
        readers. The stepper serves as the visual page landmark, but AT users
        benefit from a top-level heading identifying the page. -->
-  <h1 class="visually-hidden">Мастер прогноза</h1>
+  <h1 class="visually-hidden">Создание прогноза</h1>
   <header class="wizard-header">
     <!-- Block 3 HIGH-8 fix: aria-current="step" announces active step to
          screen readers per WCAG 4.1.2. The stepper is a progress indicator
@@ -573,16 +573,16 @@
       <PatternSuggestionCard />
       <Card headingLevel={2} title={$_('wizard.step.import')}>
         {#snippet children()}
-          <p>Импортируйте DSM/Mediascope файлы или используйте Aurora Data Studio экспорт.</p>
+          <p>Загрузите файл DSM/Mediascope или экспорт из Aurora Data Studio.</p>
           <div class="row">
             <Button variant="primary" onclick={pickImport} loading={importing}>
-              {#snippet children()}Choose file{/snippet}
+              {#snippet children()}Выбрать файл{/snippet}
             </Button>
             {#if importedFile}<code>{importedFile}</code>{/if}
           </div>
           {#if importedAdapter}
             <div class="import-summary">
-              <strong>Adapter:</strong> {importedAdapter}
+              <strong>Формат:</strong> {importedAdapter}
               {#if importedRecordCount !== null}
                 · <strong>{importedRecordCount}</strong> records
               {/if}
@@ -595,8 +595,7 @@
         {#snippet children()}
           {#if sourceColumns.length === 0}
             <p class="empty-hint">
-              Сначала импортируйте файл на предыдущем шаге, чтобы Aurora узнала
-              его структуру.
+              Сначала загрузите файл на шаге 1 — Aurora определит его структуру автоматически.
             </p>
           {:else}
             <p>
@@ -623,7 +622,7 @@
         {#snippet children()}
           {#if !similarityDim}
             <Button variant="primary" onclick={computeSimilarity}>
-              {#snippet children()}Compute{/snippet}
+              {#snippet children()}Рассчитать похожесть{/snippet}
             </Button>
           {:else}
             <div class="similarity-row">
@@ -642,7 +641,7 @@
         {#snippet children()}
           {#if !forecastHandleId}
             <Button variant="sigil" size="lg" onclick={startForecast}>
-              {#snippet children()}Start forecast{/snippet}
+              {#snippet children()}Запустить прогноз{/snippet}
             </Button>
           {:else}
             <div class="forecast-running">
@@ -673,13 +672,13 @@
     {:else if step === 6}
       <Card headingLevel={2} title={$_('wizard.step.cert')}>
         {#snippet children()}
-          <p>Methodology Cert закрепляет reproducibility — Ed25519 подпись от Aurora AI.</p>
+          <p>Сертификат методологии фиксирует параметры прогноза — Aurora AI подписывает его криптографически.</p>
           {#if !certSigned}
             <Button variant="sigil" size="lg" onclick={() => (certSigned = true)}>
               {#snippet children()}Sign certificate{/snippet}
             </Button>
           {:else}
-            <p>✓ Сертификат подписан (dev режим — local key)</p>
+            <p>✓ Сертификат подписан</p>
             <!-- 1.3d: save .aurora bundle с forecast.json -->
             {#if !savedBundlePath}
               <div class="save-row">
@@ -691,15 +690,14 @@
                   disabled={!forecastCompleted || forecastPoints.length === 0}
                   onclick={saveBundle}
                 >
-                  {#snippet children()}Сохранить .aurora{/snippet}
+                  {#snippet children()}Сохранить файл проекта{/snippet}
                 </Button>
                 <p class="save-hint">
-                  Bundle позволит Inspector → M-09 «Воспроизвести в Python»
-                  работать с реальным forecast.json.
+                  Сохраните файл проекта, чтобы проверить расчёт в Python или вернуться к нему позже.
                 </p>
               </div>
             {:else}
-              <p class="saved-banner">✓ Bundle сохранён: <code>{savedBundlePath}</code></p>
+              <p class="saved-banner">✓ Файл проекта сохранён: <code>{savedBundlePath}</code></p>
             {/if}
             {#if saveError}
               <p class="save-error">Ошибка: {saveError}</p>
