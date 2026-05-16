@@ -241,11 +241,56 @@ export interface ComposeForecastJsonResult {
   byte_size: number;
 }
 
-/** Compose canonical forecast.json bytes для bundle write (этап 1.3d). */
+/** Compose canonical forecast.json bytes для bundle write (этап 1.3д). */
 export async function composeForecastJson(
   params: ComposeForecastJsonParams
 ): Promise<ComposeForecastJsonResult> {
   // Rust команда compose_forecast_json объявляет `params: serde_json::Value`
   // → Tauri требует `{ params: {...} }` wrapper (тот же паттерн что explain_forecast).
   return invoke<ComposeForecastJsonResult>('compose_forecast_json', { params });
+}
+
+// ─── ROADMAP §4.4 — Budget Optimizer IPC ────────────────────────────────────
+
+export interface ChannelCap {
+  min?: number;
+  max: number;
+}
+
+export interface BudgetSearchRequest {
+  total_budget: number;
+  channel_caps: Record<string, ChannelCap>;
+  horizon_periods: number;
+  granularity?: 'monthly' | 'weekly';
+  n_iterations?: number;
+  seed?: number;
+}
+
+export interface BestSpendPlan {
+  channel_split: Record<string, number[]>;
+  expected_total_sales: number;
+  ci_lower: number;
+  ci_upper: number;
+  methodology_signature: string;
+  n_iterations_used: number;
+}
+
+export interface SpendPlanAlternative extends BestSpendPlan {
+  rank: number;
+}
+
+export interface OptimizeBudgetResult {
+  optimize_handle: string;
+}
+
+/** Spawn a budget optimization task (ROADMAP §4.4). Returns a handle immediately;
+ * listen for `sidecar://optimize_budget_completed` or `sidecar://optimize_budget_failed`
+ * events to receive the result. */
+export async function optimizeBudget(params: {
+  proxy_data: Record<string, unknown>;
+  anchors_data: Record<string, unknown>;
+  request: BudgetSearchRequest;
+  timeout_seconds?: number;
+}): Promise<OptimizeBudgetResult> {
+  return invoke<OptimizeBudgetResult>('optimize_budget', params);
 }

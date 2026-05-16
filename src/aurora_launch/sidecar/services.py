@@ -42,10 +42,15 @@ class ServiceContainer:
     autosave_manager: Any = field(default=None)
     # GC thread is managed directly in methods.py; exposed here for test reset.
     gc_thread: Any = field(default=None)
+    # Cross-product integration (ROADMAP §3.4): OptimizerClient | None.
+    # None = graceful degradation (Optimizer not available on this machine).
+    # Tests inject MockOptimizerClient via set_services_for_testing().
+    optimizer_client: Any = field(default=None)
 
     # Per-slot locks (not part of DI interface; internal to thread-safety).
     _project_db_lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
     _autosave_lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
+    _optimizer_lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
     # ---------------------------------------------------------------------------
     # project_db accessor
@@ -84,6 +89,26 @@ class ServiceContainer:
             self.autosave_manager = mgr
 
     # ---------------------------------------------------------------------------
+    # optimizer_client accessor (ROADMAP §3.4)
+    # ---------------------------------------------------------------------------
+
+    def get_optimizer_client(self) -> Any:
+        """Return optimizer_client if set; None if cross-product validation is not configured."""
+        if self.optimizer_client is not None:
+            return self.optimizer_client
+        with self._optimizer_lock:
+            return self.optimizer_client  # may still be None — caller handles gracefully
+
+    def set_optimizer_client(self, client: Any) -> None:
+        """Set the optimizer_client slot.
+
+        Pass an OptimizerClient instance (MockOptimizerClient or LocalOptimizerClient).
+        Pass None to disable cross-product validation gracefully.
+        """
+        with self._optimizer_lock:
+            self.optimizer_client = client
+
+    # ---------------------------------------------------------------------------
     # Reset helpers (tests)
     # ---------------------------------------------------------------------------
 
@@ -97,6 +122,8 @@ class ServiceContainer:
             self.project_db = None
         with self._autosave_lock:
             self.autosave_manager = None
+        with self._optimizer_lock:
+            self.optimizer_client = None
         self.gc_thread = None
 
 
