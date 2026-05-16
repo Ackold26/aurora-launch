@@ -2168,6 +2168,162 @@ def _cancel_optimize_budget(params: dict[str, Any]) -> dict[str, Any]:
     return {"cancelled": False}
 
 
+# ─── Auto-Refresh (ROADMAP §3.5) ──────────────────────────────────────────────
+#
+# Per-session in-memory dismissed set.  When the user clicks «Позже» the
+# project UUID is added here; watcher.check_for_updates() returns [] for
+# dismissed projects in this session.  Restarting the sidecar resets the set
+# — intentional so "Later" means "later this session", not "forever".
+_dismissed_refresh: set[str] = set()
+
+# Module-level ConsentManager singleton (lazy-init on first call).
+_consent_manager: Any = None
+_consent_lock = threading.Lock()
+
+
+def _get_consent_manager() -> Any:
+    """Return ConsentManager singleton (lazy-init).
+
+    DI-aware: tests may set the singleton directly.
+    Store backend: ProjectDB's kv_get/kv_set methods when available,
+    else in-memory dict shim.
+    """
+    global _consent_manager  # noqa: PLW0603
+    if _consent_manager is not None:
+        return _consent_manager
+    with _consent_lock:
+        if _consent_manager is not None:
+            return _consent_manager
+        try:
+            from aurora_launch.engines.data_source_watcher import ConsentManager
+
+            db = _get_project_db()  # may be None — ConsentManager handles gracefully
+
+            class _DbKvShim:
+                """Thin shim: ProjectDB → ConsentManager kv interface."""
+
+                def __init__(self, project_db: Any) -> None:
+                    self._db = project_db
+
+                def get(self, key: str) -> Any:
+                    try:
+                        return self._db.kv_get(key)
+                    except Exception:
+                        return None
+
+                def set(self, key: str, value: Any) -> None:
+                    try:
+                        self._db.kv_set(key, value)
+                    except Exception:
+                        pass
+
+            store = _DbKvShim(db) if db is not None else None
+            _consent_manager = ConsentManager(db_store=store)
+        except Exception as exc:
+            logger.warning("_get_consent_manager init failed: %s", exc)
+            from aurora_launch.engines.data_source_watcher import ConsentManager
+
+            _consent_manager = ConsentManager(db_store=None)
+    return _consent_manager
+
+
+@register("get_refresh_consent")
+def _get_refresh_consent(params: dict[str, Any]) -> Any:
+    """Return the current RefreshConsentSetting or null (first-run).
+
+    Params: {}
+    Returns: {enabled, frequency, last_prompted_at} | null
+    """
+    mgr = _get_consent_manager()
+    setting = mgr.get()
+    if setting is None:
+        return None
+    return setting.model_dump()
+
+
+@register("set_refresh_consent")
+def _set_refresh_consent(params: dict[str, Any]) -> dict[str, Any]:
+    """Persist RefreshConsentSetting (user opt-in).
+
+    Params: { enabled: bool, frequency?: "daily"|"weekly"|"monthly" }
+    Returns: updated {enabled, frequency, last_prompted_at}
+
+    152-FZ §9: consent must be explicit (enabled=True means user clicked opt-in).
+    """
+    enabled = bool(params.get("enabled", False))
+    frequency = str(params.get("frequency", "weekly"))
+    mgr = _get_consent_manager()
+    updated = mgr.set(enabled=enabled, frequency=frequency)
+    return updated.model_dump()
+
+
+@register("check_data_source_updates")
+def _check_data_source_updates(params: dict[str, Any]) -> dict[str, Any]:
+    """Check all registered data sources for new data.
+
+    Params: {
+        project_uuid: str,
+        sources: list[{source_kind, path?, last_modified_seen?}]
+    }
+    Returns: { triggers: list[{project_uuid, reason, detected_at, source}] }
+
+    Workflow:
+    1. Consent check — if no consent or disabled, returns [] immediately.
+    2. Build DataSourceWatcher with provided source configs.
+    3. Run check_for_updates().
+    4. Return triggers (empty list if none detected).
+
+    NOTE: does NOT auto-trigger re-forecast.  Caller (frontend) shows the
+    RefreshAvailableBanner and waits for user confirmation.
+    """
+    from aurora_launch.engines.data_source_watcher import DataSourceWatcher
+    from aurora_launch.schemas.auto_refresh import DataSourceConfig
+
+    # Consent check
+    mgr = _get_consent_manager()
+    consent = mgr.get()
+    if consent is None or not consent.enabled:
+        return {"triggers": []}
+
+    project_uuid = str(params.get("project_uuid", ""))
+    raw_sources: list[dict[str, Any]] = params.get("sources", [])
+
+    db = _get_project_db()
+    watcher = DataSourceWatcher(project_uuid=project_uuid, db=db)
+
+    for raw in raw_sources:
+        try:
+            cfg = DataSourceConfig.model_validate(raw)
+            watcher.register_source(cfg)
+        except Exception as exc:
+            logger.warning(
+                "check_data_source_updates: invalid source config %r — %s", raw, exc
+            )
+
+    # Apply session dismissal
+    if project_uuid in _dismissed_refresh:
+        return {"triggers": []}
+
+    triggers = watcher.check_for_updates()
+    return {"triggers": [t.model_dump() for t in triggers]}
+
+
+@register("dismiss_refresh_trigger")
+def _dismiss_refresh_trigger(params: dict[str, Any]) -> dict[str, Any]:
+    """Suppress refresh triggers for a project for the rest of this session.
+
+    Params: { project_uuid: str }
+    Returns: { dismissed: true }
+
+    «Позже» button: user is saying "not now, remind me next session", not "never".
+    To permanently disable: call set_refresh_consent({enabled: false}).
+    """
+    project_uuid = str(params.get("project_uuid", ""))
+    _dismissed_refresh.add(project_uuid)
+    logger.debug("dismiss_refresh_trigger: %s suppressed for this session", project_uuid)
+    return {"dismissed": True}
+
+
 # Audit H-4 (этап 2.10): регистрация reset callback должна произойти после
 # определения _hard_reset_module_singletons (выше) и singletons _PROJECT_DB /
 # _AUTOSAVE. Однократная регистрация, идемпотентна.

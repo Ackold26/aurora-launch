@@ -21,6 +21,7 @@
   import CommandPalette from '$lib/components/CommandPalette.svelte';
   import HandshakeIncompatibleModal from '$lib/components/HandshakeIncompatibleModal.svelte';
   import UpdateAvailableBanner from '$lib/components/UpdateAvailableBanner.svelte';
+  import RefreshAvailableBanner from '$lib/components/RefreshAvailableBanner.svelte';
 
   let { children } = $props();
 
@@ -236,6 +237,9 @@
   <!-- Этап 2.9: non-blocking update banner. Best-effort check at startup.
        Не блокирует UI — показывается только при наличии update. -->
   <UpdateAvailableBanner />
+  <!-- ROADMAP §3.5: auto-refresh banner. Opt-in only (152-FZ).
+       Reads consent from sidecar; shows prompt on first-run or new data. -->
+  <RefreshAvailableBanner />
   <header class="app-header">
     <div class="brand">
       <span class="logo" aria-hidden="true">◆</span>

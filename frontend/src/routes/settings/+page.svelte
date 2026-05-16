@@ -10,9 +10,12 @@
   import { ipc } from '$ipc/client';
   import type { BuildInfo } from '$ipc/client';
   import { track, notifyOptInChange } from '$lib/services/telemetry';
+  import type { RefreshConsentSetting } from '$ipc/client';
 
   let telemetryOptIn = $state(false);
   let buildInfo = $state<BuildInfo | null>(null);
+  let refreshConsent = $state<RefreshConsentSetting | null>(null);
+  let refreshConsentLoading = $state(false);
 
   onMount(async () => {
     try {
@@ -24,6 +27,11 @@
       buildInfo = await ipc.getBuildInfo();
     } catch (e) {
       console.warn('build info fetch failed', e);
+    }
+    try {
+      refreshConsent = await ipc.getRefreshConsent();
+    } catch (e) {
+      console.warn('refresh consent fetch failed', e);
     }
   });
 
@@ -53,6 +61,36 @@
     setLocale(loc);
     // TELEMETRY-P16: settings_changed
     track('settings_changed', { setting_key: 'locale' });
+  }
+
+  async function toggleRefreshConsent(e: Event) {
+    const target = e.target as HTMLInputElement;
+    const enabled = target.checked;
+    refreshConsentLoading = true;
+    try {
+      refreshConsent = await ipc.setRefreshConsent(
+        enabled,
+        refreshConsent?.frequency ?? 'weekly',
+      );
+      track('settings_changed', { setting_key: 'refresh_consent' });
+    } catch (err) {
+      console.error('refresh consent toggle failed', err);
+    } finally {
+      refreshConsentLoading = false;
+    }
+  }
+
+  async function changeRefreshFrequency(freq: RefreshConsentSetting['frequency']) {
+    if (!refreshConsent) return;
+    refreshConsentLoading = true;
+    try {
+      refreshConsent = await ipc.setRefreshConsent(refreshConsent.enabled, freq);
+      track('settings_changed', { setting_key: 'refresh_frequency' });
+    } catch (err) {
+      console.error('refresh frequency change failed', err);
+    } finally {
+      refreshConsentLoading = false;
+    }
   }
 </script>
 
@@ -99,6 +137,42 @@
         </span>
       </label>
       <p class="hint">{$_('settings.telemetry.detail')}</p>
+    {/snippet}
+  </Card>
+
+  <!-- ROADMAP §3.5: Auto-refresh consent section -->
+  <Card title={$_('refresh.settings.title')}>
+    {#snippet children()}
+      <label class="switch">
+        <input
+          type="checkbox"
+          checked={refreshConsent?.enabled ?? false}
+          disabled={refreshConsentLoading}
+          onchange={toggleRefreshConsent}
+        />
+        <span class="slider" aria-hidden="true"></span>
+        <span class="switch-label">
+          {(refreshConsent?.enabled ?? false) ? $_('refresh.settings.on') : $_('refresh.settings.off')}
+        </span>
+      </label>
+      <p class="hint">{$_('refresh.settings.detail')}</p>
+
+      {#if refreshConsent?.enabled}
+        <div class="refresh-freq">
+          <span class="refresh-freq__label">{$_('refresh.settings.frequency')}</span>
+          <div class="seg">
+            {#each (['daily', 'weekly', 'monthly'] as const) as freq (freq)}
+              <button
+                class:active={refreshConsent.frequency === freq}
+                disabled={refreshConsentLoading}
+                onclick={() => changeRefreshFrequency(freq)}
+              >
+                {$_(`refresh.settings.freq.${freq}`)}
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
     {/snippet}
   </Card>
 
@@ -216,6 +290,19 @@
     font-size: var(--typography-fontSize-ui-sm);
     margin: var(--spacing-2) 0 0 0;
     max-width: 480px;
+  }
+
+  .refresh-freq {
+    margin-top: var(--spacing-3);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+    flex-wrap: wrap;
+  }
+
+  .refresh-freq__label {
+    color: var(--text-secondary);
+    font-size: var(--typography-fontSize-ui-sm);
   }
 
   .about {

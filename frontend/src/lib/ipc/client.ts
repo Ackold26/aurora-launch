@@ -204,6 +204,28 @@ export interface FeedbackEntry {
   uploaded_at: string | null;
 }
 
+// ─── Auto-Refresh types (ROADMAP §3.5) ───────────────────────────────────────
+
+export interface DataSourceConfig {
+  source_kind: 'dsm_xlsx_folder' | 'mediascope_xlsx_folder' | 'manual';
+  path?: string | null;
+  last_checked_at?: string | null;
+  last_modified_seen?: string | null;
+}
+
+export interface RefreshConsentSetting {
+  enabled: boolean;
+  frequency: 'daily' | 'weekly' | 'monthly';
+  last_prompted_at: string | null;
+}
+
+export interface RefreshTrigger {
+  project_uuid: string;
+  reason: 'new_data' | 'manual' | 'scheduled';
+  detected_at: string;
+  source: string;
+}
+
 // Override hook for tests / Storybook (Vitest setup imports & swaps).
 export type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -295,7 +317,20 @@ export const ipc = {
 
   // Этап 2.8: handshake-status (Rust↔Python compat)
   getHandshakeStatus: () =>
-    invoke<HandshakeResult | null>('get_handshake_status')
+    invoke<HandshakeResult | null>('get_handshake_status'),
+
+  // ROADMAP §3.5 — Auto-Refresh (Python sidecar methods via Rust passthrough)
+  getRefreshConsent: () =>
+    invoke<RefreshConsentSetting | null>('get_refresh_consent', {}),
+  setRefreshConsent: (enabled: boolean, frequency: RefreshConsentSetting['frequency'] = 'weekly') =>
+    invoke<RefreshConsentSetting>('set_refresh_consent', { enabled, frequency }),
+  checkDataSourceUpdates: (projectUuid: string, sources: DataSourceConfig[]) =>
+    invoke<{ triggers: RefreshTrigger[] }>('check_data_source_updates', {
+      project_uuid: projectUuid,
+      sources,
+    }),
+  dismissRefreshTrigger: (projectUuid: string) =>
+    invoke<{ dismissed: boolean }>('dismiss_refresh_trigger', { project_uuid: projectUuid }),
 };
 
 /** Этап 2.8: результат negotiate-handshake между Rust shell и Python sidecar. */
