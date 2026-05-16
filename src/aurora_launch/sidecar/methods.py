@@ -48,6 +48,11 @@ from aurora_launch.sidecar.protocol_version import (
 from aurora_launch.sidecar.protocol_version import (
     negotiate as _protocol_negotiate,
 )
+from aurora_launch.sidecar.services import (
+    get_services,
+    reset_services_for_testing,
+    set_services_for_testing,
+)
 
 # ─── Method registry ──────────────────────────────────────────────────────────
 
@@ -95,13 +100,23 @@ GC_INTERVAL_S: float = 7 * 24 * 3600.0  # 7 days
 
 
 def _get_autosave_manager() -> Any:
-    """Return module-level AutosaveManager singleton (lazy init).
+    """Return AutosaveManager singleton (lazy init).
+
+    DI-aware (ROADMAP 2.7): checks ServiceContainer first; falls back to the
+    module-level _AUTOSAVE singleton so existing call sites and tests that
+    pre-load _AUTOSAVE directly continue to work unchanged.
 
     Singleton ensures SIGTERM/atexit handlers registered ONCE per sidecar
     process. Currently no wizard session manager wires individual project
     autosave timers — those will be added в Phase Premium when wizard state
     becomes persistent. For now: signal handlers register; no active timers.
     """
+    # 1. DI container check — tests may inject a mock AutosaveManager.
+    _svc = get_services()
+    _container_mgr = _svc.get_autosave_manager()
+    if _container_mgr is not None:
+        return _container_mgr
+
     global _AUTOSAVE  # noqa: PLW0603
 
     if _AUTOSAVE is not None:
@@ -138,15 +153,27 @@ def _get_autosave_manager() -> Any:
 
 
 def _get_project_db() -> Any:
-    """Return module-level ProjectDB singleton; initialize on first call.
+    """Return ProjectDB singleton; initialize on first call.
 
-    Path resolution priority:
-      1. AURORA_PROJECT_DB_PATH env var (tests / staging override)
-      2. platformdirs.user_data_dir("Aurora Launch") if platformdirs available
-      3. ~/.aurora-launch/ fallback
+    DI-aware (ROADMAP 2.7): checks ServiceContainer first so tests can inject
+    a mock without touching global state.  Falls back to the module-level
+    _PROJECT_DB singleton for full backward-compatibility.
+
+    Path resolution priority (production path):
+      1. ServiceContainer.project_db if set (test injection)
+      2. _PROJECT_DB module-level var if already initialized
+      3. AURORA_PROJECT_DB_PATH env var (tests / staging override)
+      4. platformdirs.user_data_dir("Aurora Launch") if platformdirs available
+      5. ~/.aurora-launch/ fallback
 
     Per INV-11: explicit exception wrapping, no bare pass.
     """
+    # 1. DI container check — tests may inject a mock ProjectDB.
+    _svc = get_services()
+    _container_db = _svc.get_project_db()
+    if _container_db is not None:
+        return _container_db
+
     global _PROJECT_DB  # noqa: PLW0603
 
     if _PROJECT_DB is not None:
@@ -1801,6 +1828,11 @@ def _shutdown(_params: dict[str, Any]) -> dict[str, Any]:
                     "ProjectDB close during shutdown raised: %s", exc
                 )
             _PROJECT_DB = None
+
+    # Clear the DI container so it doesn't hold stale references to the
+    # now-closed DB / AutosaveManager after shutdown.  This mirrors the
+    # module-level var reset above and lets tests re-init cleanly.
+    get_services().clear()
 
     return {
         "shutting_down": True,
