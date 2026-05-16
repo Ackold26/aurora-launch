@@ -346,6 +346,14 @@ export const ipc = {
     }),
   dismissRefreshTrigger: (projectUuid: string) =>
     invoke<{ dismissed: boolean }>('dismiss_refresh_trigger', { project_uuid: projectUuid }),
+  // Phase 3 — persisted data sources (folder watching per-project)
+  getDataSources: (projectUuid: string) =>
+    invoke<{ sources: DataSourceConfig[] }>('get_data_sources', { project_uuid: projectUuid }),
+  setDataSources: (projectUuid: string, sources: DataSourceConfig[]) =>
+    invoke<{ saved: boolean; count: number; warning?: string }>('set_data_sources', {
+      project_uuid: projectUuid,
+      sources,
+    }),
 
   // Phase 1.C — Wizard session persistence (BTA-2 + UX-3 recovery)
   wizardSessionSave: (session: WizardSession) =>
