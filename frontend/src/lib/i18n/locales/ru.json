@@ -219,5 +219,25 @@
   "updater.banner.downloading": "Скачивание обновления…",
   "updater.banner.ready": "Обновление установлено. Перезапустите приложение.",
   "updater.banner.relaunch": "Перезапустить",
-  "updater.banner.error": "Не удалось проверить обновление. Попробуйте позже."
+  "updater.banner.error": "Не удалось проверить обновление. Попробуйте позже.",
+
+  "refresh.banner.aria_label": "Доступны новые данные для прогноза",
+  "refresh.banner.available": "Новые данные доступны для {count} проектов. Обновить прогнозы?",
+  "refresh.banner.refresh_now": "Обновить сейчас",
+  "refresh.banner.refreshing": "Обновление…",
+  "refresh.banner.later": "Позже",
+  "refresh.banner.never": "Никогда не спрашивать",
+  "refresh.optin.title": "Автоматическое обновление прогнозов",
+  "refresh.optin.detail": "Aurora может автоматически обнаруживать новые данные в указанных папках и предлагать перезапустить прогноз. Данные остаются на вашем компьютере — в интернет ничего не отправляется. Вы можете отозвать согласие в любой момент в Настройках (152-ФЗ).",
+  "refresh.optin.accept": "Включить",
+  "refresh.optin.decline": "Нет, спасибо",
+
+  "refresh.settings.title": "Автообновление прогнозов",
+  "refresh.settings.on": "Включено",
+  "refresh.settings.off": "Выключено",
+  "refresh.settings.detail": "Aurora отслеживает новые файлы в указанных папках и предлагает обновить прогноз. Только локальные папки — никаких сетевых запросов без вашего ведома. Opt-in по 152-ФЗ.",
+  "refresh.settings.frequency": "Частота проверки:",
+  "refresh.settings.freq.daily": "Ежедневно",
+  "refresh.settings.freq.weekly": "Еженедельно",
+  "refresh.settings.freq.monthly": "Ежемесячно"
 }

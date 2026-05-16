@@ -219,5 +219,25 @@
   "updater.banner.downloading": "Downloading update…",
   "updater.banner.ready": "Update installed. Restart the app to apply.",
   "updater.banner.relaunch": "Restart",
-  "updater.banner.error": "Could not check for updates. Try again later."
+  "updater.banner.error": "Could not check for updates. Try again later.",
+
+  "refresh.banner.aria_label": "New data available for forecast refresh",
+  "refresh.banner.available": "New data available for {count} project(s). Refresh forecasts?",
+  "refresh.banner.refresh_now": "Refresh now",
+  "refresh.banner.refreshing": "Refreshing…",
+  "refresh.banner.later": "Later",
+  "refresh.banner.never": "Never ask again",
+  "refresh.optin.title": "Automatic forecast refresh",
+  "refresh.optin.detail": "Aurora can detect new data files in configured folders and suggest re-running your forecast. Data stays on your computer — nothing is sent over the network. You can withdraw consent at any time in Settings (152-FZ / PDPL).",
+  "refresh.optin.accept": "Enable",
+  "refresh.optin.decline": "No thanks",
+
+  "refresh.settings.title": "Automatic forecast refresh",
+  "refresh.settings.on": "Enabled",
+  "refresh.settings.off": "Disabled",
+  "refresh.settings.detail": "Aurora watches configured folders for new XLSX exports and prompts you to refresh forecasts. Local files only — no network requests without your knowledge. Opt-in under 152-FZ / PDPL.",
+  "refresh.settings.frequency": "Check frequency:",
+  "refresh.settings.freq.daily": "Daily",
+  "refresh.settings.freq.weekly": "Weekly",
+  "refresh.settings.freq.monthly": "Monthly"
 }
