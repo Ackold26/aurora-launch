@@ -412,9 +412,14 @@ class DataSourceWatcher:
 class ConsentManager:
     """Manages the global RefreshConsentSetting stored in a key-value store.
 
-    db_store: any object with get(key) → Any and set(key, value) → None.
-    In production, pass the ProjectDB KV store.  In tests, pass a plain dict
-    wrapped in a simple shim (see tests/test_auto_refresh_consent.py).
+    db_store: any object with kv_get(key) → dict|None и kv_set(key, dict) → None
+    semantics. В production — ProjectDB напрямую (после v003 migration имеет
+    kv_get/kv_set). В тестах — простой dict-shim предоставляющий те же методы.
+
+    Phase 1.B.1 C-2 fix: до этого ConsentManager вызывал self._store.get/set
+    через _DbKvShim wrapper в methods.py — ProjectDB не имел kv_get/kv_set,
+    AttributeError проглатывался, persistence не работала. Сейчас прямой
+    вызов kv_get/kv_set + ProjectDB методы существуют → реальная persistence.
     """
 
     def __init__(self, db_store: Any = None) -> None:
@@ -436,7 +441,7 @@ class ConsentManager:
             if self._store is None:
                 return None
             try:
-                raw = self._store.get(_CONSENT_KEY)
+                raw = self._store.kv_get(_CONSENT_KEY)
                 if raw is None:
                     return None
                 self._cached = RefreshConsentSetting.model_validate(raw)
@@ -457,7 +462,7 @@ class ConsentManager:
             self._cached = setting
         if self._store is not None:
             try:
-                self._store.set(_CONSENT_KEY, setting.model_dump())
+                self._store.kv_set(_CONSENT_KEY, setting.model_dump())
             except Exception as exc:  # noqa: BLE001
                 logger.warning("ConsentManager.set persist failed: %s", exc)
         return setting

@@ -19,15 +19,16 @@ from aurora_launch.schemas.auto_refresh import RefreshConsentSetting
 
 
 class _DictStore:
-    """Simple in-memory key-value store for testing ConsentManager."""
+    """In-memory key-value store для ConsentManager tests. Mirrors
+    ProjectDB.kv_get/kv_set API (Phase 1.B.1 C-2 fix)."""
 
     def __init__(self) -> None:
         self._data: dict[str, Any] = {}
 
-    def get(self, key: str) -> Any:
+    def kv_get(self, key: str) -> Any:
         return self._data.get(key)
 
-    def set(self, key: str, value: Any) -> None:
+    def kv_set(self, key: str, value: Any) -> None:
         self._data[key] = value
 
 

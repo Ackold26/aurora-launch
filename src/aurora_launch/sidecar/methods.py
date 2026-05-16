@@ -2213,8 +2213,13 @@ def _get_consent_manager() -> Any:
     """Return ConsentManager singleton (lazy-init).
 
     DI-aware: tests may set the singleton directly.
-    Store backend: ProjectDB's kv_get/kv_set methods when available,
-    else in-memory dict shim.
+    Store backend: ProjectDB напрямую (kv_get/kv_set методы реализованы
+    после v003 migration — см. Phase 1.B.1). В тестах ConsentManager
+    может принять in-memory dict shim или None.
+
+    C-2 fix (audit 4.5 / Phase 1.B.1): убрана _DbKvShim wrapper которая
+    проглатывала AttributeError при отсутствии kv_get/kv_set. Теперь
+    ProjectDB имеет эти методы, передаём её напрямую.
     """
     global _consent_manager  # noqa: PLW0603
     if _consent_manager is not None:
@@ -2226,27 +2231,7 @@ def _get_consent_manager() -> Any:
             from aurora_launch.engines.data_source_watcher import ConsentManager
 
             db = _get_project_db()  # may be None — ConsentManager handles gracefully
-
-            class _DbKvShim:
-                """Thin shim: ProjectDB → ConsentManager kv interface."""
-
-                def __init__(self, project_db: Any) -> None:
-                    self._db = project_db
-
-                def get(self, key: str) -> Any:
-                    try:
-                        return self._db.kv_get(key)
-                    except Exception:
-                        return None
-
-                def set(self, key: str, value: Any) -> None:
-                    try:
-                        self._db.kv_set(key, value)
-                    except Exception:
-                        pass
-
-            store = _DbKvShim(db) if db is not None else None
-            _consent_manager = ConsentManager(db_store=store)
+            _consent_manager = ConsentManager(db_store=db)
         except Exception as exc:
             logger.warning("_get_consent_manager init failed: %s", exc)
             from aurora_launch.engines.data_source_watcher import ConsentManager

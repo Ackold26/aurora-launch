@@ -72,7 +72,7 @@ class TestMigrationV002:
         """Opening ProjectDB (which runs _apply_schema) should reach v002."""
         conn = project_db._conn  # noqa: SLF001
         version = get_current_version(conn)
-        assert version == 2
+        assert version == 3  # Phase 1.B.1: v003 _kv_store added
 
     def test_gc_metadata_table_exists(self, project_db: ProjectDB) -> None:
         """gc_metadata table should exist with exactly one row (id=1)."""
@@ -99,7 +99,7 @@ class TestMigrationV002:
         # Re-open — migrations already at v2, should be no-ops
         with ProjectDB(db_path, blob_store) as db2:
             version = get_current_version(db2._conn)  # noqa: SLF001
-            assert version == 2
+            assert version == 3  # Phase 1.B.1: v003 _kv_store added
             rows = db2._conn.execute(  # noqa: SLF001
                 "SELECT COUNT(*) AS n FROM gc_metadata"
             ).fetchone()
@@ -114,7 +114,7 @@ class TestMigrationV002:
         apply_pending_migrations(conn, MIGRATIONS_DIR)
 
         version = get_current_version(conn)
-        assert version == 2
+        assert version == 3  # Phase 1.B.1: v003 _kv_store added
 
         has_gc = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='gc_metadata'"
