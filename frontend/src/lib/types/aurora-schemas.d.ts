@@ -69,6 +69,68 @@ export interface RecipientAnchorsPayload {
   seasonality?: number[] | null;
 }
 
+/** Полное состояние wizard сессии — persistable + restorable. */
+export interface WizardSession {
+  /** Stable UUID для wizard session */
+  session_id: string;
+  /** Current wizard step index */
+  step?: number;
+  imported_file_path?: string | null;
+  imported_adapter_id?: string | null;
+  imported_record_count?: number | null;
+  imported_columns?: string[] | null;
+  column_mapping?: ColumnMapping[];
+  mapping_done?: boolean;
+  selected_proxy_path?: string | null;
+  selected_proxy_label?: string | null;
+  similarity_result?: WizardSimilarityResult | null;
+  anchors_draft?: WizardAnchorsDraft | null;
+  anchors_done?: boolean;
+  forecast_handle_id?: string | null;
+  forecast_completed?: boolean;
+  forecast_horizon?: number;
+  cert_signed?: boolean;
+  saved_bundle_path?: string | null;
+  /** ISO-8601 UTC timestamp */
+  created_at: string;
+  /** ISO-8601 UTC timestamp */
+  last_saved_at: string;
+}
+
+/** Draft RecipientAnchors данные собранные customer'ом на step 4. */
+export interface WizardAnchorsDraft {
+  market_size?: number | null;
+  market_size_cv?: number;
+  pricing_index?: number | null;
+  elasticity?: number | null;
+  planned_share_pattern?: "rampup" | "sustain" | "decline" | "custom";
+  planned_share_intensity?: number;
+  planned_share_custom?: number[] | null;
+  distribution_pattern?: "rampup" | "sustain" | "decline" | "custom";
+  distribution_intensity?: number;
+  distribution_custom?: number[] | null;
+  has_seasonality?: boolean;
+  seasonality_pattern?: "flat" | "yearly" | "custom";
+  seasonality_custom?: number[] | null;
+}
+
+/** Snapshot similarity результата (chosen proxy → recipient) cached в session. */
+export interface WizardSimilarityResult {
+  score: number;
+  verdict: "High" | "Medium" | "Low" | "Insufficient";
+  dimensions: Record<string, number>;
+  /** ISO-8601 UTC timestamp */
+  computed_at: string;
+}
+
+/** Сопоставление колонки XLSX к каноническому полю Aurora. */
+export interface ColumnMapping {
+  /** Имя колонки в XLSX */
+  source_column: string;
+  /** Каноническое поле Aurora (brand, period, sales, channel_spend_*) */
+  canonical_field: string;
+}
+
 /** Aggregates Aurora Launch–specific bundle metadata. */
 export interface AuroraLaunchBundleMetadata {
   schema_version?: string;

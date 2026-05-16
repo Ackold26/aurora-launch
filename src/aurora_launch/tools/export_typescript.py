@@ -195,6 +195,12 @@ def main(output: Path, print_only: bool) -> None:
         ForecastPoint,
         RecipientAnchorsPayload,
     )
+    from aurora_launch.schemas.wizard_session import (
+        ColumnMapping,
+        WizardAnchorsDraft,
+        WizardSession,
+        WizardSimilarityResult,
+    )
 
     models: list[type[BaseModel]] = [
         # Bundle / manifest contracts (engines layer)
@@ -204,6 +210,11 @@ def main(output: Path, print_only: bool) -> None:
         ForecastJsonV1,
         ForecastPoint,
         RecipientAnchorsPayload,
+        # Wizard session (Phase 1.C.1 BTA-2)
+        WizardSession,
+        WizardAnchorsDraft,
+        WizardSimilarityResult,
+        ColumnMapping,
         # Aurora Launch schemas
         AuroraLaunchBundleMetadata,  # composition root
         AnonymizationDetails,

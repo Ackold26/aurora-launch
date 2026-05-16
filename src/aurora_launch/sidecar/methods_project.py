@@ -3,7 +3,9 @@
 Handlers: get_memory_report, create_project, list_projects, get_project,
           delete_project, list_versions, compare_versions,
           compare_forecast_versions, import_aurora_bundle, load_sample_bundle,
-          save_bundle, parse_data_file, inspect_bundle_entry_json.
+          save_bundle, parse_data_file, inspect_bundle_entry_json,
+          wizard_session_save, wizard_session_load, wizard_session_clear,
+          list_sample_bundles.
 
 Helpers:  _SAMPLE_BUNDLE_PATHS dict.
 
@@ -611,3 +613,92 @@ def _inspect_bundle_entry_json(params: dict[str, Any]) -> dict[str, Any]:
     with open_lazy(bundle_path) as bundle:
         payload = bundle.get_json(entry)
     return {"payload": payload}
+
+
+# ─── Phase 1.C.1 — Wizard session persistence ──────────────────────────────────
+# Уход от россыпи state variables в +page.svelte. Wizard state persisted в
+# _kv_store (v003 migration) под ключом wizard.session.draft. Customer
+# crash / sidecar restart → recovery dialog «Восстановить незаконченный сеанс?»
+
+_WIZARD_SESSION_KEY = "wizard.session.draft"
+
+
+@register("wizard_session_save")
+def _wizard_session_save(params: dict[str, Any]) -> dict[str, Any]:
+    """Persist wizard session draft в ProjectDB._kv_store.
+
+    Params:
+      - session: dict — full WizardSession (validated frontend-side)
+
+    Returns: {"saved": true, "saved_at": iso_timestamp}
+
+    Frontend debounces save calls 500ms — это не hot path.
+    """
+    session_dict = params.get("session")
+    if not isinstance(session_dict, dict):
+        raise ValueError("wizard_session_save: 'session' must be dict")
+
+    db = _get_project_db()
+    if db is None:
+        # Graceful — no persistence available, return success так чтобы UI
+        # не блокировался. Recovery просто не будет работать.
+        return {"saved": False, "reason": "ProjectDB not initialized"}
+
+    db.kv_set(_WIZARD_SESSION_KEY, session_dict)
+    return {"saved": True, "saved_at": session_dict.get("last_saved_at")}
+
+
+@register("wizard_session_load")
+def _wizard_session_load(_params: dict[str, Any]) -> dict[str, Any]:
+    """Read wizard session draft если есть.
+
+    Returns: {"session": dict | null}
+    """
+    db = _get_project_db()
+    if db is None:
+        return {"session": None}
+
+    raw = db.kv_get(_WIZARD_SESSION_KEY)
+    return {"session": raw}
+
+
+@register("wizard_session_clear")
+def _wizard_session_clear(_params: dict[str, Any]) -> dict[str, Any]:
+    """Удалить draft (customer dismissed recovery / завершил wizard / новый сеанс).
+
+    Returns: {"cleared": bool}  — True если запись существовала.
+    """
+    db = _get_project_db()
+    if db is None:
+        return {"cleared": False, "reason": "ProjectDB not initialized"}
+
+    cleared = db.kv_delete(_WIZARD_SESSION_KEY)
+    return {"cleared": cleared}
+
+
+@register("list_sample_bundles")
+def _list_sample_bundles(_params: dict[str, Any]) -> dict[str, Any]:
+    """Return доступные sample bundle paths для wizard step 2 proxy picker.
+
+    Reads _SAMPLE_BUNDLE_PATHS из methods.py (canonical, мокаемое в тестах).
+
+    Returns: {"bundles": [{"id": str, "path": str, "label": str, "exists": bool}, ...]}
+    """
+    sample_paths = _get_sample_bundle_paths()
+
+    # Human-readable labels на русском — для UI
+    _LABELS = {
+        "kagotsel_venarus": "Кагоцел РФ+ (антивирусное, OTC pharma)",
+        "venarus_baseline": "Венарус (флеботоник, OTC pharma)",
+        "multi_proxy": "MMX 2021-2025 (multi-proxy demo)",
+    }
+
+    bundles = []
+    for bundle_id, path in sample_paths.items():
+        bundles.append({
+            "id": bundle_id,
+            "path": str(path),
+            "label": _LABELS.get(bundle_id, bundle_id),
+            "exists": path.exists(),
+        })
+    return {"bundles": bundles}
