@@ -111,7 +111,10 @@ class TestExportCli:
         result = runner.invoke(main, ["--output", str(out)])
         assert result.exit_code == 0
         assert out.exists()
-        assert "export interface" in out.read_text()
+        # Windows: read with utf-8 (output written с encoding="utf-8" в
+        # export_typescript.py:235). Без explicit — cp1251 default ломается на
+        # JSDoc descriptions с кириллицей (Phase 1.C.1 wizard schemas).
+        assert "export interface" in out.read_text(encoding="utf-8")
 
 
 class TestSchemaDiff:

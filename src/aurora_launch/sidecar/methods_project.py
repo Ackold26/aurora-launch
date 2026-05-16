@@ -556,6 +556,37 @@ class UnsupportedFormatError(ValueError):
     pass
 
 
+# Phase 1.C.2 — column mapping registry. Cross-adapter знание всех канонических
+# полей, известных Aurora. Frontend Step 1 показывает это как options в dropdown
+# (используя `auto_map_columns.ts::CANONICAL_FIELDS` — keep two в sync при
+# добавлении adapter'а).
+_CANONICAL_FIELDS_REGISTRY: list[dict[str, str]] = [
+    # identity
+    {"id": "brand_name", "label_ru": "Бренд", "group": "identity"},
+    {"id": "manufacturer_name", "label_ru": "Производитель", "group": "identity"},
+    {"id": "advertiser_name", "label_ru": "Рекламодатель", "group": "identity"},
+    {"id": "sku", "label_ru": "SKU", "group": "identity"},
+    # period
+    {"id": "period_date", "label_ru": "Период / Дата", "group": "period"},
+    # sales
+    {"id": "sales_volume_packs", "label_ru": "Продажи (упаковки)", "group": "sales"},
+    {"id": "sales_value_rub", "label_ru": "Продажи (рубли)", "group": "sales"},
+    {"id": "market_share_pct", "label_ru": "Доля рынка, %", "group": "sales"},
+    {"id": "spend_thousand_rub", "label_ru": "Затраты (тыс. руб)", "group": "sales"},
+    # media
+    {"id": "channel_name", "label_ru": "Канал", "group": "media"},
+    {"id": "media_type", "label_ru": "Тип медиа", "group": "media"},
+    {"id": "grp", "label_ru": "GRP", "group": "media"},
+    {"id": "tvr", "label_ru": "TVR", "group": "media"},
+    {"id": "reach_pct", "label_ru": "Reach, %", "group": "media"},
+    {"id": "audience_group", "label_ru": "Аудитория", "group": "media"},
+    # category
+    {"id": "region", "label_ru": "Регион", "group": "category"},
+    {"id": "pricing_segment", "label_ru": "Ценовой сегмент", "group": "category"},
+    {"id": "atc_code", "label_ru": "АТХ-код", "group": "category"},
+]
+
+
 @register("parse_data_file")
 def _parse_data_file(params: dict[str, Any]) -> dict[str, Any]:
     """Detect adapter for input file + parse first N records (preview).
@@ -564,11 +595,20 @@ def _parse_data_file(params: dict[str, Any]) -> dict[str, Any]:
       - `path`: str — input file path
       - `adapter_id`: str | null — explicit adapter (skip detection)
       - `max_records`: int — preview cap, default 100
-    Output:
+    Output (Phase 1.C.2 extended for column mapping UI):
       - `adapter_id`: str
       - `adapter_metadata`: dict (FormatAdapterContract serialised)
       - `record_count`: int
-      - `records`: list[dict] — preview slice
+      - `records`: list[dict] — preview slice (max_records cap)
+      - `source_columns`: list[str] — original source column names adapter
+        expects (keys of canonical_record_mapping). UI Step 1 показывает эти
+        имена слева, справа — dropdown с canonical fields.
+      - `suggested_mapping`: dict[str, str] — adapter's canonical_record_mapping
+        (source → canonical). Frontend использует как pre-filled defaults
+        вместо heuristic.
+      - `preview_rows`: list[dict] — первые 5 records для верификации значений.
+      - `available_canonical_fields`: list[dict] — full registry (id + label_ru
+        + group) для dropdown options.
     """
     from aurora_launch.engines.format_adapters.registry import build_default_registry
 
@@ -583,12 +623,18 @@ def _parse_data_file(params: dict[str, Any]) -> dict[str, Any]:
 
     records = adapter.parse(path)
     metadata = adapter.get_metadata()
+    suggested = dict(metadata.canonical_record_mapping)
 
     return {
         "adapter_id": metadata.adapter_id,
         "adapter_metadata": metadata.model_dump(),
         "record_count": len(records),
         "records": records[:max_records],
+        # 1.C.2 column mapping support
+        "source_columns": list(suggested.keys()),
+        "suggested_mapping": suggested,
+        "preview_rows": records[:5],
+        "available_canonical_fields": list(_CANONICAL_FIELDS_REGISTRY),
     }
 
 
