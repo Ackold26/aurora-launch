@@ -239,5 +239,7 @@
   "refresh.settings.frequency": "Частота проверки:",
   "refresh.settings.freq.daily": "Ежедневно",
   "refresh.settings.freq.weekly": "Еженедельно",
-  "refresh.settings.freq.monthly": "Ежемесячно"
+  "refresh.settings.freq.monthly": "Ежемесячно",
+
+  "notification_banner.dismiss": "Закрыть"
 }

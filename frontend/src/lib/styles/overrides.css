@@ -100,3 +100,49 @@
     --motion-duration-leisurely: 0ms;
   }
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * C-5 (audit 4.5 / Phase 1.A): elevation tokens.
+ *
+ * Card, Button, TrustScore, EmptyState ссылаются на --shadow-sm/md/lg/glow.
+ * До этой правки они были undefined → boxShadow по умолчанию 'none' → весь
+ * depth/elevation система invisibly провалена. Эти токены оживляют визуальную
+ * иерархию (premium feel — UX-1 partial).
+ *
+ * Light theme: тонкие тёмные тени на белом фоне.
+ * Dark theme: чуть более плотные чёрные тени + glow с accent.
+ * ──────────────────────────────────────────────────────────────────────────── */
+:root {
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05),
+               0 1px 1px rgba(15, 23, 42, 0.03);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08),
+               0 2px 4px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.12),
+               0 4px 12px rgba(15, 23, 42, 0.06);
+  --shadow-glow: 0 0 24px color-mix(in srgb, var(--accent, #2E5BFF) 30%, transparent);
+}
+
+[data-theme="dark"] {
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.40),
+               0 1px 1px rgba(0, 0, 0, 0.20);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45),
+               0 2px 6px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.55),
+               0 6px 16px rgba(0, 0, 0, 0.30);
+  --shadow-glow: 0 0 32px color-mix(in srgb, var(--accent, #2E5BFF) 50%, transparent);
+}
+
+/* UX-1 partial: subtle hover lift на Card (когда interactive) — premium tactile feel.
+ * Только при hover + не для disabled / loading. Honour reduced-motion. */
+.card.interactive:hover:not(:disabled):not(.loading) {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+  transition: transform var(--motion-duration-fast, 80ms) var(--easing-smooth, ease-out),
+              box-shadow var(--motion-duration-fast, 80ms) var(--easing-smooth, ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card.interactive:hover {
+    transform: none; /* lift отключён, но shadow остаётся для focus indicator */
+  }
+}

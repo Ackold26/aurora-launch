@@ -12,6 +12,7 @@
     'error'       → сетевой / подпись-верификация error (показывается мелко)
 
   INV-14: prefers-reduced-motion уважается через fadeIn transition (duration=0 при reduced).
+  Refactored on NotificationBanner (BTA-3 Phase 1.A): backdrop/positioning/ARIA delegated.
 
   Mock в Vitest: vi.mock('@tauri-apps/plugin-updater') — см. UpdateAvailableBanner.test.ts.
 -->
@@ -20,7 +21,7 @@
   import { onMount } from 'svelte';
   import { _ } from 'svelte-i18n';
   import { relaunch } from '@tauri-apps/plugin-process';
-  import { fadeIn } from '$lib/services/motion';
+  import NotificationBanner from './NotificationBanner.svelte';
 
   /** Информация об обнаруженном update (подмножество plugin Update type). */
   interface UpdateInfo {
@@ -28,7 +29,6 @@
     body: string | null;
   }
 
-  // Props: позволяем тестам передать update object напрямую, минуя реальный check().
   interface Props {
     /** Только для тестов: форсированный update object, пропускает реальный check(). */
     forceUpdate?: UpdateInfo | null;
@@ -36,15 +36,12 @@
 
   let { forceUpdate = undefined }: Props = $props();
 
-  // Используем generic $state<Type>(value) — паттерн принятый в проекте (wizard/+page.svelte).
-  // Annotation-style `let x: T = $state(v)` конфликтует с type narrowing в svelte-check.
   let bannerState = $state<'idle' | 'available' | 'downloading' | 'ready' | 'error'>('idle');
   let updateInfo = $state<UpdateInfo | null>(null);
   let downloadProgress = $state<number>(0);
   let errorMessage = $state<string | null>(null);
   let dismissedThisSession = $state<boolean>(false);
 
-  // Внутренняя ссылка на update object из plugin (для downloadAndInstall).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let _updateHandle: any = null;
 
@@ -56,9 +53,11 @@
         bannerState === 'error'),
   );
 
+  // level: error-state gets 'warning' tone; all other states use 'info'.
+  const level = $derived(bannerState === 'error' ? 'warning' : 'info') as 'info' | 'warning';
+
   onMount(() => {
     if (forceUpdate !== undefined) {
-      // Тестовый путь: форсируем состояние через prop.
       if (forceUpdate !== null) {
         updateInfo = forceUpdate;
         bannerState = 'available';
@@ -66,17 +65,11 @@
       return;
     }
 
-    // Продакшн путь: fire-and-forget best-effort check.
     void checkForUpdate();
 
     // Audit A-3 (этап 2.10): periodic re-check каждые 4 часа.
-    // dismiss-per-session не покрывает customer'ов которые работают 8+ часов
-    // без перезапуска — критический security update должен показаться повторно.
-    const RECHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 часа
+    const RECHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
     const intervalId = window.setInterval(() => {
-      // Если customer уже dismissed previous version — re-check может
-      // обнаружить НОВУЮ (или ту же) version. Reset dismissedThisSession,
-      // чтобы banner появился вновь только если есть update.
       if (bannerState === 'idle' || bannerState === 'error') {
         dismissedThisSession = false;
         void checkForUpdate();
@@ -87,8 +80,6 @@
 
   async function checkForUpdate() {
     try {
-      // Динамический импорт позволяет vi.mock('@tauri-apps/plugin-updater')
-      // перехватить вызов в тестах без side effects при module load.
       const { check } = await import('@tauri-apps/plugin-updater');
       const update = await check();
 
@@ -100,9 +91,7 @@
         };
         bannerState = 'available';
       }
-      // update === null или update.available === false → bannerState остаётся 'idle' (banner hidden)
     } catch (e) {
-      // Сетевой сбой, подпись не прошла — логируем тихо, не блокируем UI.
       console.warn('[updater] check failed:', e);
       errorMessage = e instanceof Error ? e.message : String(e);
       bannerState = 'error';
@@ -113,10 +102,6 @@
     if (!_updateHandle || bannerState === 'downloading') return;
     bannerState = 'downloading';
     downloadProgress = 0;
-    // Audit A-1 (этап 2.10): plugin-updater event payload `chunkLength` —
-    // delta size текущего chunk, НЕ накопленный bytes. Без локального
-    // accumulator progress bar показывал размер последнего chunk относительно
-    // total, прыгал случайно. Накапливаем сами.
     let downloadedBytes = 0;
     let totalBytes = 0;
 
@@ -131,8 +116,6 @@
             downloadedBytes = 0;
           } else if (progress.event === 'Progress') {
             downloadedBytes += progress.data?.chunkLength ?? 0;
-            // contentLength может прийти и с Progress event'ами — обновляем
-            // если total ещё неизвестен.
             if (totalBytes === 0) {
               totalBytes = progress.data?.contentLength ?? 0;
             }
@@ -142,7 +125,6 @@
                 Math.round((downloadedBytes / totalBytes) * 100),
               );
             } else {
-              // Неизвестный размер — индикатор пульсирует (-1 = indeterminate).
               downloadProgress = -1;
             }
           } else if (progress.event === 'Finished') {
@@ -171,139 +153,96 @@
   }
 </script>
 
-{#if visible}
-  <div
-    class="update-banner update-banner--{bannerState}"
-    role="status"
-    aria-live="polite"
-    aria-label={$_('updater.banner.aria_label')}
-    transition:fadeIn
-  >
-    <div class="update-banner__content">
-      {#if bannerState === 'available'}
-        <span class="update-banner__icon" aria-hidden="true">◆</span>
-        <span class="update-banner__message">
-          {$_('updater.banner.available', {
-            values: { version: updateInfo?.version ?? '' },
-          })}
-          {#if updateInfo?.body}
-            <span class="update-banner__notes">{updateInfo.body}</span>
-          {/if}
-        </span>
-        <div class="update-banner__actions">
-          <button
-            type="button"
-            class="update-banner__btn update-banner__btn--primary"
-            onclick={installUpdate}
-          >
-            {$_('updater.banner.install_now')}
-          </button>
-          <button
-            type="button"
-            class="update-banner__btn update-banner__btn--ghost"
-            onclick={dismiss}
-            aria-label={$_('updater.banner.dismiss_aria')}
-          >
-            {$_('updater.banner.later')}
-          </button>
-        </div>
-      {:else if bannerState === 'downloading'}
-        <span class="update-banner__icon" aria-hidden="true">⬇</span>
-        <span class="update-banner__message">
-          {$_('updater.banner.downloading')}
-        </span>
+<NotificationBanner
+  open={visible}
+  {level}
+  onDismiss={dismiss}
+>
+  {#snippet children()}
+    {#if bannerState === 'available'}
+      <span class="icon" aria-hidden="true">◆</span>
+      <span class="message">
+        {$_('updater.banner.available', {
+          values: { version: updateInfo?.version ?? '' },
+        })}
+        {#if updateInfo?.body}
+          <span class="update-banner__notes">{updateInfo.body}</span>
+        {/if}
+      </span>
+    {:else if bannerState === 'downloading'}
+      <span class="icon" aria-hidden="true">⬇</span>
+      <span class="message">{$_('updater.banner.downloading')}</span>
+      <div
+        class="progress-wrap"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={downloadProgress >= 0 ? downloadProgress : undefined}
+      >
         <div
-          class="update-banner__progress-wrap"
-          role="progressbar"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={downloadProgress >= 0 ? downloadProgress : undefined}
-        >
-          <div
-            class="update-banner__progress-bar"
-            class:update-banner__progress-bar--indeterminate={downloadProgress < 0}
-            style:width="{downloadProgress >= 0 ? downloadProgress : 100}%"
-          ></div>
-        </div>
-      {:else if bannerState === 'ready'}
-        <span class="update-banner__icon" aria-hidden="true">✓</span>
-        <span class="update-banner__message">
-          {$_('updater.banner.ready')}
-        </span>
-        <div class="update-banner__actions">
-          <button
-            type="button"
-            class="update-banner__btn update-banner__btn--primary"
-            onclick={doRelaunch}
-          >
-            {$_('updater.banner.relaunch')}
-          </button>
-          <button
-            type="button"
-            class="update-banner__btn update-banner__btn--ghost"
-            onclick={dismiss}
-            aria-label={$_('updater.banner.dismiss_aria')}
-          >
-            {$_('updater.banner.later')}
-          </button>
-        </div>
-      {:else if bannerState === 'error'}
-        <span class="update-banner__icon" aria-hidden="true">!</span>
-        <span class="update-banner__message update-banner__message--error">
-          {$_('updater.banner.error')}
-        </span>
-        <button
-          type="button"
-          class="update-banner__btn update-banner__btn--ghost update-banner__dismiss"
-          onclick={dismiss}
-          aria-label={$_('updater.banner.dismiss_aria')}
-        >
-          ×
-        </button>
-      {/if}
-    </div>
-  </div>
-{/if}
+          class="progress-bar"
+          class:progress-bar--indeterminate={downloadProgress < 0}
+          style:width="{downloadProgress >= 0 ? downloadProgress : 100}%"
+        ></div>
+      </div>
+    {:else if bannerState === 'ready'}
+      <span class="icon" aria-hidden="true">✓</span>
+      <span class="message">{$_('updater.banner.ready')}</span>
+    {:else if bannerState === 'error'}
+      <span class="icon icon--error" aria-hidden="true">!</span>
+      <span class="message message--error">{$_('updater.banner.error')}</span>
+    {/if}
+  {/snippet}
+
+  {#snippet actions()}
+    {#if bannerState === 'available'}
+      <button
+        type="button"
+        class="nb-btn nb-btn--primary"
+        onclick={installUpdate}
+      >
+        {$_('updater.banner.install_now')}
+      </button>
+      <button
+        type="button"
+        class="nb-btn nb-btn--ghost"
+        onclick={dismiss}
+        aria-label={$_('updater.banner.dismiss_aria')}
+      >
+        {$_('updater.banner.later')}
+      </button>
+    {:else if bannerState === 'ready'}
+      <button
+        type="button"
+        class="nb-btn nb-btn--primary"
+        onclick={doRelaunch}
+      >
+        {$_('updater.banner.relaunch')}
+      </button>
+      <button
+        type="button"
+        class="nb-btn nb-btn--ghost"
+        onclick={dismiss}
+        aria-label={$_('updater.banner.dismiss_aria')}
+      >
+        {$_('updater.banner.later')}
+      </button>
+    {/if}
+  {/snippet}
+</NotificationBanner>
 
 <style>
-  .update-banner {
-    width: 100%;
-    padding: var(--spacing-2, 0.5rem) var(--spacing-6, 1.5rem);
-    background: color-mix(in srgb, var(--accent, #6366f1) 12%, var(--bg-surface, #fff));
-    border-bottom: 1px solid color-mix(in srgb, var(--accent, #6366f1) 30%, transparent);
-    font-size: var(--typography-fontSize-ui-sm, 0.875rem);
-    z-index: 900;
-  }
-
-  .update-banner--error {
-    background: color-mix(in srgb, var(--color-warning, #ed6c02) 8%, var(--bg-surface, #fff));
-    border-bottom-color: color-mix(
-      in srgb,
-      var(--color-warning, #ed6c02) 30%,
-      transparent
-    );
-  }
-
-  .update-banner__content {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-3, 0.75rem);
-    flex-wrap: wrap;
-    max-width: 1200px;
-    margin: 0 auto;
-  }
-
-  .update-banner__icon {
-    color: var(--accent, #6366f1);
+  .icon {
+    color: var(--color-ui-accent-primary, #6366f1);
     font-size: 1rem;
     flex-shrink: 0;
   }
 
-  .update-banner--error .update-banner__icon {
-    color: var(--color-warning, #ed6c02);
+  .icon--error {
+    color: var(--state-warning-base, #ed6c02);
   }
 
-  .update-banner__message {
+  .message {
     flex: 1;
     color: var(--text-primary, #111);
     display: flex;
@@ -312,7 +251,7 @@
     flex-wrap: wrap;
   }
 
-  .update-banner__message--error {
+  .message--error {
     color: var(--text-secondary, #555);
   }
 
@@ -326,53 +265,10 @@
     white-space: nowrap;
   }
 
-  .update-banner__actions {
-    display: flex;
-    gap: var(--spacing-2, 0.5rem);
-    flex-shrink: 0;
-  }
-
-  .update-banner__btn {
-    padding: 4px 12px;
-    border-radius: 4px;
-    border: 1px solid transparent;
-    font-size: var(--typography-fontSize-ui-sm, 0.875rem);
-    font-weight: 500;
-    cursor: pointer;
-    transition: opacity 120ms ease, background-color 120ms ease;
-    line-height: 1.5;
-  }
-
-  .update-banner__btn--primary {
-    background: var(--accent, #6366f1);
-    border-color: var(--accent, #6366f1);
-    color: #fff;
-  }
-
-  .update-banner__btn--primary:hover {
-    opacity: 0.9;
-  }
-
-  .update-banner__btn--ghost {
-    background: transparent;
-    border-color: var(--border-subtle, #d1d5db);
-    color: var(--text-secondary, #555);
-  }
-
-  .update-banner__btn--ghost:hover {
-    background: var(--surface-hover, #f9fafb);
-    color: var(--text-primary, #111);
-  }
-
-  .update-banner__dismiss {
-    margin-left: auto;
-    padding: 2px 8px;
-    font-size: 1rem;
-    line-height: 1;
-  }
+  /* Button styles delegated to NotificationBanner shared :global(.nb-btn) rules. */
 
   /* Progress bar */
-  .update-banner__progress-wrap {
+  .progress-wrap {
     flex: 1;
     min-width: 120px;
     max-width: 240px;
@@ -382,37 +278,32 @@
     overflow: hidden;
   }
 
-  .update-banner__progress-bar {
+  .progress-bar {
     height: 100%;
-    background: var(--accent, #6366f1);
+    background: var(--color-ui-accent-primary, #6366f1);
     border-radius: 3px;
     transition: width 200ms ease;
   }
 
   @keyframes indeterminate {
-    0% {
-      transform: translateX(-100%);
-    }
-    100% {
-      transform: translateX(200%);
-    }
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(200%); }
   }
 
-  .update-banner__progress-bar--indeterminate {
+  .progress-bar--indeterminate {
     width: 40% !important;
     animation: indeterminate 1.2s ease infinite;
   }
 
-  /* INV-14: prefers-reduced-motion — stop indeterminate animation */
+  /* INV-14: prefers-reduced-motion */
   @media (prefers-reduced-motion: reduce) {
-    .update-banner__progress-bar--indeterminate {
+    .progress-bar--indeterminate {
       animation: none;
       width: 100% !important;
       opacity: 0.5;
     }
 
-    .update-banner__btn,
-    .update-banner__progress-bar {
+    .progress-bar {
       transition: none;
     }
   }

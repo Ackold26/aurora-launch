@@ -81,6 +81,15 @@
   let reproduceScript = $state<string>('');
   let reproduceFilename = $state<string>('reproduce.py');
   let reproduceLoading = $state(false);
+  // H-5 (audit 4.5 / Phase 1.A): focus modal close button on open
+  // (раньше focus оставался на trigger Button — NVDA modal появлялся
+  // но focus не двигался внутрь).
+  let reproduceCloseButtonEl = $state<HTMLButtonElement | undefined>(undefined);
+  $effect(() => {
+    if (reproduceModalOpen && reproduceCloseButtonEl) {
+      requestAnimationFrame(() => reproduceCloseButtonEl?.focus());
+    }
+  });
 
   // M-03 AI explanation state
   let explanation = $state<Explanation | null>(null);
@@ -356,6 +365,34 @@
     visited = new Set([...visited, t]);
   }
 
+  // H-6 (audit 4.5 / Phase 1.A): keyboard arrow navigation для tablist.
+  // Refs к tab buttons + handler по ARIA APG: Left/Right переходит между
+  // tabs (с wrap), Home/End — первый/последний, активация на focus (auto-
+  // select при перемещении — стандарт ARIA для tabs).
+  let tabRefs = $state<Array<HTMLButtonElement | undefined>>([]);
+
+  function tabsKeyboardNav(e: KeyboardEvent): void {
+    const currentIndex = TABS.indexOf(activeTab);
+    let nextIndex: number | null = null;
+
+    if (e.key === 'ArrowRight') {
+      nextIndex = (currentIndex + 1) % TABS.length;
+    } else if (e.key === 'ArrowLeft') {
+      nextIndex = (currentIndex - 1 + TABS.length) % TABS.length;
+    } else if (e.key === 'Home') {
+      nextIndex = 0;
+    } else if (e.key === 'End') {
+      nextIndex = TABS.length - 1;
+    }
+
+    if (nextIndex !== null) {
+      e.preventDefault();
+      selectTab(TABS[nextIndex] as Tab);
+      // Move focus к новому tab — соответствует automatic activation pattern.
+      requestAnimationFrame(() => tabRefs[nextIndex!]?.focus());
+    }
+  }
+
   $effect(() => {
     if (activeTab === 'cert' && $activeBundle && !verification && !verifying) {
       runVerify();
@@ -390,14 +427,20 @@
 {:else}
   <section class="inspector">
     <!-- 4.3 a11y: <nav> + role=tablist некорректно (nav семантически landmark
-         навигации, не tablist). Меняем на <div> с role=tablist. -->
-    <div class="tabs" role="tablist">
-      {#each TABS as t}
+         навигации, не tablist). Меняем на <div> с role=tablist.
+         H-6 (audit 4.5 / Phase 1.A): keyboard navigation Arrow keys между
+         tabs + Home/End — соответствует ARIA APG для tablist + WCAG 2.1 SC 4.1.2.
+         id на каждом tab — для aria-labelledby связки от tabpanel. -->
+    <div class="tabs" role="tablist" tabindex="-1" onkeydown={tabsKeyboardNav}>
+      {#each TABS as t, i}
         <button
+          id="tab-trigger-{t}"
           role="tab"
+          tabindex={activeTab === t ? 0 : -1}
           class:active={activeTab === t}
           aria-selected={activeTab === t}
           aria-controls="tab-{t}"
+          bind:this={tabRefs[i]}
           onclick={() => selectTab(t)}
         >
           {$_(`inspector.tab.${t}`)}
@@ -609,15 +652,15 @@
     onkeydown={(e) => { if (e.key === 'Escape') reproduceModalOpen = false; }}
     tabindex="-1"
   >
-    <div
-      class="reproduce-modal-content"
-      role="document"
-    >
+    <!-- H-5 (audit 4.5 / Phase 1.A): убран role="document" (non-standard wrapper).
+         Modal content — просто div, focus management через bind + $effect. -->
+    <div class="reproduce-modal-content">
       <header class="reproduce-modal-header">
         <h2 id="reproduce-modal-title">🐍 Воспроизвести прогноз в Python</h2>
         <button
           type="button"
           class="reproduce-modal-close"
+          bind:this={reproduceCloseButtonEl}
           onclick={() => (reproduceModalOpen = false)}
           aria-label="Закрыть"
         >

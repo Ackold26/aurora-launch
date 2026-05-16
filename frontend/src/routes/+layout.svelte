@@ -1,7 +1,7 @@
 <script lang="ts">
   import '../app.css';
   import { onMount } from 'svelte';
-  import { _, isLoading } from 'svelte-i18n';
+  import { _, isLoading, locale } from 'svelte-i18n';
   import { fly } from 'svelte/transition';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
@@ -29,6 +29,31 @@
   let feedbackText = $state('');
   let commandPaletteOpen = $state(false);
   let saving = $state(false);
+
+  // H-5 (audit 4.5 / Phase 1.A): focus management для feedback overlay.
+  let feedbackTextareaEl = $state<HTMLTextAreaElement | undefined>(undefined);
+  let feedbackSubmitButtonEl = $state<HTMLButtonElement | undefined>(undefined);
+
+  /** Focus trap: Shift+Tab из textarea → submit; Tab из submit → textarea. */
+  function feedbackTrapFocus(e: KeyboardEvent): void {
+    if (e.key !== 'Tab') return;
+    const active = document.activeElement;
+    if (e.shiftKey && active === feedbackTextareaEl && feedbackSubmitButtonEl) {
+      e.preventDefault();
+      feedbackSubmitButtonEl.focus();
+    } else if (!e.shiftKey && active === feedbackSubmitButtonEl && feedbackTextareaEl) {
+      e.preventDefault();
+      feedbackTextareaEl.focus();
+    }
+  }
+
+  // Autofocus textarea когда overlay открывается. requestAnimationFrame даёт
+  // transition'у смонтироваться — иначе focus игнорируется на element ещё не в DOM.
+  $effect(() => {
+    if (feedbackOpen && feedbackTextareaEl) {
+      requestAnimationFrame(() => feedbackTextareaEl?.focus());
+    }
+  });
 
   // PA-A02 fix: derive SaveIndicator state from bundle stores (was hardcoded "unsaved")
   const saveState = $derived.by<'saved' | 'saving' | 'unsaved'>(() => {
@@ -103,6 +128,16 @@
   );
 
   initI18n();
+
+  // C-4 (audit 4.5 / Phase 1.A): set HTML <html lang="ru-RU"/"en-US"> dynamically.
+  // Без этого NVDA выбирает TTS-движок по дефолтному locale OS — на русском
+  // тексте без lang="ru" движок читает английским голосом, произношение
+  // бессмысленное. Reactive к смене языка (settings page).
+  $effect(() => {
+    if (typeof document !== 'undefined' && $locale) {
+      document.documentElement.lang = $locale.startsWith('ru') ? 'ru-RU' : 'en-US';
+    }
+  });
 
   onMount(() => {
     document.documentElement.dataset.theme = $resolvedTheme;
@@ -321,16 +356,23 @@
   <HandshakeIncompatibleModal />
 
   {#if feedbackOpen}
+    <!-- H-5 (audit 4.5 / Phase 1.A): focus trap + autofocus textarea на mount.
+         До правки overlay открывался без перемещения focus — NVDA анонсировал
+         dialog но focus оставался на trigger button → customer не мог писать.
+         tabindex="-1" на backdrop + bind textarea + autofocus through $effect. -->
     <div
       class="feedback-overlay"
       role="dialog"
       aria-labelledby="feedback-title"
       aria-modal="true"
+      tabindex="-1"
       transition:fly={{ y: 20, duration: 220 }}
+      onkeydown={feedbackTrapFocus}
     >
       <div class="feedback-card">
         <h3 id="feedback-title">{$_('feedback.title')}</h3>
         <textarea
+          bind:this={feedbackTextareaEl}
           bind:value={feedbackText}
           placeholder={$_('feedback.placeholder')}
           rows={6}
@@ -342,6 +384,7 @@
           <button
             type="button"
             class="primary"
+            bind:this={feedbackSubmitButtonEl}
             onclick={submitFeedback}
             disabled={!feedbackText.trim()}
           >
