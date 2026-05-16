@@ -69,21 +69,41 @@ def _parse_iso(s: Optional[str]) -> Optional[datetime]:
         return None
 
 
+# Audit H-02 (этап 4.5): limit iter чтобы customer положивший 10k+ XLSX
+# в watched folder не получал O(N) freeze при каждом scan. Если limit
+# превышен — warning + scan ограничивается этим числом (sample). Для
+# realistic DSM/Mediascope folders ~100 XLSX в год — limit избыточен.
+_MAX_FOLDER_SCAN_FILES = 5000
+
+
 def _scan_folder_max_mtime(folder: Path) -> Optional[datetime]:
     """Return the latest mtime among .xlsx/.xls files in folder.
 
     Returns None if folder does not exist, is not a directory, or has no
     matching files. Errors on individual stat() calls are logged and skipped
     so a single unreadable file does not abort the scan.
+
+    Audit H-02: capped at _MAX_FOLDER_SCAN_FILES, warns if customer's folder
+    exceeds (расход stat()-calls O(N), 5000 даёт ~50-100ms на SSD, acceptable).
     """
     if not folder.is_dir():
         logger.debug("DataSourceWatcher: folder %s does not exist or is not a dir", folder)
         return None
 
     max_mtime: Optional[datetime] = None
+    n_scanned = 0
     for child in folder.iterdir():
         if child.suffix.lower() not in _XLSX_EXTENSIONS:
             continue
+        if n_scanned >= _MAX_FOLDER_SCAN_FILES:
+            logger.warning(
+                "DataSourceWatcher: folder %s contains >%d xlsx files. "
+                "Truncating scan для performance. Создайте отдельную папку "
+                "для актуальных данных.",
+                folder,
+                _MAX_FOLDER_SCAN_FILES,
+            )
+            break
         try:
             mtime = datetime.fromtimestamp(child.stat().st_mtime, tz=UTC)
         except OSError as exc:
@@ -91,6 +111,7 @@ def _scan_folder_max_mtime(folder: Path) -> Optional[datetime]:
             continue
         if max_mtime is None or mtime > max_mtime:
             max_mtime = mtime
+        n_scanned += 1
 
     return max_mtime
 
@@ -402,21 +423,27 @@ class ConsentManager:
         self._cached: Optional[RefreshConsentSetting] = None
 
     def get(self) -> Optional[RefreshConsentSetting]:
-        """Return current consent setting.  None = never configured (first-run)."""
-        if self._cached is not None:
-            return self._cached
-        if self._store is None:
-            return None
-        try:
-            raw = self._store.get(_CONSENT_KEY)
-            if raw is None:
+        """Return current consent setting.  None = never configured (first-run).
+
+        Audit H-06 (этап 4.5): чтение _cached было вне lock'а, что создавало
+        race условие при concurrent calls (один thread reads None, второй
+        already set'нул через .set() но до записи в _cached). Сейчас весь
+        read-through-cache pattern под единым lock'ом.
+        """
+        with self._lock:
+            if self._cached is not None:
+                return self._cached
+            if self._store is None:
                 return None
-            with self._lock:
+            try:
+                raw = self._store.get(_CONSENT_KEY)
+                if raw is None:
+                    return None
                 self._cached = RefreshConsentSetting.model_validate(raw)
-            return self._cached
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("ConsentManager.get failed: %s", exc)
-            return None
+                return self._cached
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("ConsentManager.get failed: %s", exc)
+                return None
 
     def set(self, enabled: bool, frequency: str = "weekly") -> RefreshConsentSetting:
         """Persist consent setting and return updated value."""

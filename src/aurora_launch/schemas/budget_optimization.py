@@ -95,6 +95,16 @@ class BudgetSearchRequest(BaseModel):
                 raise ValueError(
                     f"channel_caps[{ch!r}].min ({cap.min}) > total_budget ({self.total_budget})"
                 )
+        # Audit H-04 (этап 4.5): sum(cap.min) тоже не должен exceed budget.
+        # Без этой проверки 3 канала с min=40k каждый и total=100k проходили
+        # validation, но потом _random_splits возвращал same split N раз
+        # (total_slack < 0 fallback) с alloc.sum() = 120k > budget — overspent.
+        total_min = sum(cap.min for cap in self.channel_caps.values())
+        if total_min > self.total_budget:
+            raise ValueError(
+                f"sum(channel_caps[*].min) = {total_min} > total_budget = {self.total_budget}. "
+                f"Constraint infeasible — нельзя выделить минимумы всем каналам в рамках бюджета."
+            )
         return self
 
 

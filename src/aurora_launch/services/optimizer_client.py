@@ -218,10 +218,13 @@ class LocalOptimizerClient(OptimizerClient):
         from pathlib import Path
 
         db_path = Path(db_path_str)
-        if not db_path.exists():
+        # Audit B-01 (этап 4.5): is_file() check — без него customer мог
+        # указать путь к директории, .exists() возвращает True, а потом
+        # sqlite3 падал с непонятной ошибкой при попытке connect.
+        if not db_path.is_file():
             raise OptimizerNotConfigured(
-                f"Optimizer DB not found at {db_path}. "
-                f"Ensure {OPTIMIZER_DB_PATH_ENV!r} points to a valid Optimizer SQLite file."
+                f"Optimizer DB not found или не является файлом: {db_path}. "
+                f"Ensure {OPTIMIZER_DB_PATH_ENV!r} points to a valid Optimizer SQLite file (не директория)."
             )
         self._db_path = db_path
         logger.info("LocalOptimizerClient: using Optimizer DB at %s", db_path)
@@ -229,21 +232,29 @@ class LocalOptimizerClient(OptimizerClient):
     def list_projects(self) -> list[OptimizerProjectRef]:
         """Query Optimizer SQLite for project list.
 
-        Schema TBD — raises NotImplementedError until Optimizer publishes
-        its DB contract. See CROSS_PRODUCT_INTEGRATION.md §Optimizer Exports.
+        Audit H-01 (этап 4.5): NotImplementedError → graceful empty list +
+        warning. customer-facing path (validate_against_optimizer) увидит
+        empty list и продолжит без cross-product validation вместо 500.
+        Optimizer ещё не опубликовал DB schema — когда опубликует, эта
+        функция будет полноценно реализована.
         """
-        raise NotImplementedError(
-            "LocalOptimizerClient.list_projects(): Optimizer DB schema not yet finalized. "
-            "See 06_References/CROSS_PRODUCT_INTEGRATION.md §Optimizer Exports."
+        logger.warning(
+            "LocalOptimizerClient.list_projects(): Optimizer DB schema TBD. "
+            "Returning empty list. See 06_References/CROSS_PRODUCT_INTEGRATION.md."
         )
+        return []
 
     def get_history(self, query: OptimizerHistoryQuery) -> OptimizerHistoryResponse | None:
         """Query Optimizer SQLite for weekly actuals.
 
-        Schema TBD — raises NotImplementedError until Optimizer publishes
-        its DB contract. See CROSS_PRODUCT_INTEGRATION.md §Optimizer Exports.
+        Audit H-01 (этап 4.5): None signals «no history available» — caller
+        (validate_against_optimizer) handles None как «cross-product validation
+        не доступна» с graceful warning. Без этого fix customer получал бы
+        500-error в UI при наличии AURORA_OPTIMIZER_DB_PATH но pending Schema.
         """
-        raise NotImplementedError(
-            "LocalOptimizerClient.get_history(): Optimizer DB schema not yet finalized. "
-            "See 06_References/CROSS_PRODUCT_INTEGRATION.md §Optimizer Exports."
+        logger.warning(
+            "LocalOptimizerClient.get_history(brand=%r): Optimizer DB schema TBD. "
+            "Returning None (graceful no-data).",
+            query.brand_code,
         )
+        return None

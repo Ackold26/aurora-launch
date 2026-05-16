@@ -100,9 +100,18 @@ _GC_STOP_EVENT: threading.Event = threading.Event()
 # чтобы обнулить module-level singletons (test isolation). Регистрируется
 # после определения singletons (см. конец файла).
 def _hard_reset_module_singletons() -> None:
-    global _PROJECT_DB, _AUTOSAVE  # noqa: PLW0603
-    _PROJECT_DB = None
-    _AUTOSAVE = None
+    # Audit B-02 (этап 4.5): включаем _consent_manager и _dismissed_refresh
+    # из §3.5. Без них tests auto-refresh заражают друг друга — _cached
+    # consent от предыдущего теста + UUID из предыдущего проекта в set.
+    # globals().__setitem__ позволяет обнулить переменные определённые
+    # ниже в файле без forward declaration.
+    g = globals()
+    g["_PROJECT_DB"] = None
+    g["_AUTOSAVE"] = None
+    if "_consent_manager" in g:
+        g["_consent_manager"] = None
+    if "_dismissed_refresh" in g:
+        g["_dismissed_refresh"] = set()
 
 # How often the GC thread wakes to check. 1 hour is fine — 7-day window means
 # worst-case skew is 1 hour, which is acceptable. Sleeping in short intervals
@@ -2124,6 +2133,9 @@ def _optimize_budget(params: dict[str, Any]) -> dict[str, Any]:
                 },
             )
         except Exception as exc:  # noqa: BLE001
+            # Audit H-05 (этап 4.5): except OSError/ValueError на emit
+            # глотал TypeError, RuntimeError, JSONDecodeError — типичные
+            # bug'и в protocol layer. Logging + broad Exception ловит всё.
             try:
                 events.emit(
                     "optimize_budget_failed",
@@ -2133,8 +2145,11 @@ def _optimize_budget(params: dict[str, Any]) -> dict[str, Any]:
                         "kind": type(exc).__name__,
                     },
                 )
-            except (OSError, ValueError):
-                pass
+            except Exception as emit_exc:  # noqa: BLE001
+                logger.warning(
+                    "optimize_budget emit failure event itself failed: %s",
+                    emit_exc,
+                )
         finally:
             _optimize_cancel_flags.pop(handle, None)
             _optimize_threads.pop(handle, None)
