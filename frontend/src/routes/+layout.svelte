@@ -139,6 +139,29 @@
     }
   });
 
+  // Phase 2.E loose ends: dev-only test hooks для Playwright e2e injection.
+  // Безопасно — Vite strip'ает block при production build (process.env.NODE_ENV
+  // === 'production' → `import.meta.env.DEV` falsy → tree-shaking).
+  // Хуки позволяют 12 ранее skipped тестов выполнить real assertions против
+  // bundle / update state без необходимости полного backend mount.
+  type TestForceUpdate = { version: string; body: string | null } | null;
+  let _testForceUpdate = $state<TestForceUpdate>(null);
+
+  // @ts-expect-error — Vite's import.meta.env types injected at build time;
+  // svelte-check tsconfig sometimes misses them, but runtime works correctly.
+  if (import.meta.env?.DEV && typeof window !== 'undefined') {
+    (window as unknown as Record<string, unknown>).__auroraTestSetBundle = (
+      bundle: unknown,
+    ) => {
+      activeBundle.set(bundle as Parameters<typeof activeBundle.set>[0]);
+    };
+    (window as unknown as Record<string, unknown>).__auroraTestSetUpdate = (
+      info: TestForceUpdate,
+    ) => {
+      _testForceUpdate = info;
+    };
+  }
+
   onMount(() => {
     document.documentElement.dataset.theme = $resolvedTheme;
 
@@ -270,8 +293,10 @@
 
 <div class="app-layout" data-theme={$resolvedTheme}>
   <!-- Этап 2.9: non-blocking update banner. Best-effort check at startup.
-       Не блокирует UI — показывается только при наличии update. -->
-  <UpdateAvailableBanner />
+       Не блокирует UI — показывается только при наличии update.
+       Phase 2.E: forceUpdate prop принимает test-hook value (DEV) — Playwright
+       e2e может trigger banner без real updater backend. -->
+  <UpdateAvailableBanner forceUpdate={_testForceUpdate} />
   <!-- ROADMAP §3.5: auto-refresh banner. Opt-in only (152-FZ).
        Reads consent from sidecar; shows prompt on first-run or new data.
        Audit H-03 fix (этап 4.5): передаём projectUuid из активного bundle —
