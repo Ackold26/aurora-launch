@@ -50,6 +50,7 @@ from aurora_launch.sidecar.protocol_version import (
 )
 from aurora_launch.sidecar.services import (
     get_services,
+    register_reset_callback,
     reset_services_for_testing,
     set_services_for_testing,
 )
@@ -90,6 +91,15 @@ _AUTOSAVE_LOCK = threading.Lock()
 _GC_THREAD: threading.Thread | None = None
 _GC_THREAD_LOCK = threading.Lock()
 _GC_STOP_EVENT: threading.Event = threading.Event()
+
+
+# Audit H-4 (этап 2.10): callback который reset_services_for_testing() вызовет
+# чтобы обнулить module-level singletons (test isolation). Регистрируется
+# после определения singletons (см. конец файла).
+def _hard_reset_module_singletons() -> None:
+    global _PROJECT_DB, _AUTOSAVE  # noqa: PLW0603
+    _PROJECT_DB = None
+    _AUTOSAVE = None
 
 # How often the GC thread wakes to check. 1 hour is fine — 7-day window means
 # worst-case skew is 1 hour, which is acceptable. Sleeping in short intervals
@@ -261,14 +271,25 @@ def _gc_thread_body() -> None:
     _gc_log = _logging.getLogger(__name__ + ".gc_thread")
     _gc_log.info("GC background thread started (interval=%ss)", GC_INTERVAL_S)
 
+    # Audit B-2 (этап 2.10): GC thread должен использовать DI container
+    # вместо прямого _PROJECT_DB. Иначе тесты с set_services_for_testing
+    # не изолированы — GC продолжает стучаться в реальный singleton (или
+    # уже закрытый), вплоть до use-after-free на shutdown.
+    def _resolve_db() -> Any:
+        svc_db = get_services().get_project_db()
+        if svc_db is not None:
+            return svc_db
+        return _PROJECT_DB
+
     while not _GC_STOP_EVENT.is_set():
         # Compute next gc time. If never ran → run immediately.
         sleep_for = 0.0
-        if _PROJECT_DB is not None:
+        db = _resolve_db()
+        if db is not None:
             try:
                 from datetime import datetime
 
-                last_ran_at, _ = _PROJECT_DB.get_gc_metadata()
+                last_ran_at, _ = db.get_gc_metadata()
                 if last_ran_at:
                     last_dt = datetime.fromisoformat(last_ran_at.replace("Z", "+00:00"))
                     elapsed_s = (datetime.now(UTC) - last_dt).total_seconds()
@@ -281,8 +302,9 @@ def _gc_thread_body() -> None:
         if _GC_STOP_EVENT.wait(timeout=sleep_for):
             break
 
-        # Time to run. Only execute if ProjectDB still alive.
-        if _PROJECT_DB is None:
+        # Re-resolve после сна (DI container мог поменяться).
+        db = _resolve_db()
+        if db is None:
             # Re-loop с short sleep чтобы wait для DB init
             if _GC_STOP_EVENT.wait(timeout=60.0):
                 break
@@ -290,8 +312,8 @@ def _gc_thread_body() -> None:
 
         try:
             _gc_log.info("Periodic GC: running gc_orphan_blobs")
-            collected = _PROJECT_DB.gc_orphan_blobs()
-            _PROJECT_DB._update_gc_metadata(collected)  # noqa: SLF001
+            collected = db.gc_orphan_blobs()
+            db._update_gc_metadata(collected)  # noqa: SLF001
             _gc_log.info("Periodic GC: collected %d orphan(s)", collected)
         except Exception as exc:  # noqa: BLE001
             _gc_log.warning("GC thread: unexpected error (non-fatal): %s", exc)
@@ -1840,3 +1862,9 @@ def _shutdown(_params: dict[str, Any]) -> dict[str, Any]:
         "forecasts_joined": forecasts_joined,
         "forecasts_timed_out": forecasts_timed_out,
     }
+
+
+# Audit H-4 (этап 2.10): регистрация reset callback должна произойти после
+# определения _hard_reset_module_singletons (выше) и singletons _PROJECT_DB /
+# _AUTOSAVE. Однократная регистрация, идемпотентна.
+register_reset_callback(_hard_reset_module_singletons)

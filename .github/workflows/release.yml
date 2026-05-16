@@ -230,6 +230,37 @@ jobs:
         run: |
           npm ci
           npm run gen:tokens
+      # Audit B-1 (Stage 2 / 2.10): substitute updater pubkey placeholder
+      # с реальным AURORA_UPDATER_PUBKEY secret. Без этого шага в production
+      # tauri-plugin-updater видит "EMBED_AT_RELEASE_TIME" как pubkey и либо
+      # падает при verify, либо принимает любую подпись (CRITICAL bug).
+      - name: Substitute updater pubkey в tauri.conf.json
+        env:
+          AURORA_UPDATER_PUBKEY: ${{ secrets.AURORA_UPDATER_PUBKEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${AURORA_UPDATER_PUBKEY:-}" ]; then
+            echo "ERROR: AURORA_UPDATER_PUBKEY secret не установлен. Авто-обновление будет нерабочим. Установите secret в GitHub Settings → Secrets."
+            exit 1
+          fi
+          CONF="src-tauri/tauri.conf.json"
+          if ! grep -q 'EMBED_AT_RELEASE_TIME' "$CONF"; then
+            echo "ERROR: placeholder EMBED_AT_RELEASE_TIME не найден в $CONF — конфигурация уже изменена?"
+            exit 1
+          fi
+          # Используем python вместо sed чтобы корректно работать с JSON
+          # escape-sequences (Ed25519 ключ не имеет, но правильный путь).
+          python3 -c "
+          import json, sys, os
+          with open('$CONF', 'r') as f:
+              conf = json.load(f)
+          pubkey = os.environ['AURORA_UPDATER_PUBKEY']
+          conf['plugins']['updater']['pubkey'] = pubkey
+          with open('$CONF', 'w') as f:
+              json.dump(conf, f, indent=2)
+          print('OK: updater pubkey substituted (', len(pubkey), 'bytes)')
+          "
       - name: macOS — ad-hoc codesign (no Apple Developer account)
         # Ad-hoc signing allows the DMG to open on the build machine without
         # Gatekeeper prompt for internal/pilot distribution. For public
