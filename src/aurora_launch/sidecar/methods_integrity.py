@@ -53,7 +53,19 @@ def _start_integrity_check(_params: dict[str, Any]) -> dict[str, Any]:
 
     Returns:
       - integrity_handle: str (UUID) — for cancel correlation
+
+    Raises:
+      - SidecarBusyError: если cap MAX_CONCURRENT_INTEGRITY reached.
+        Customer видит UX-5 toast «Aurora завершает проверку, попробуйте...»
     """
+    # Phase 2.B: bounded cap (integrity=1 — DB-scan heavy task).
+    from aurora_launch.sidecar import methods as _m
+    _m._check_capacity(
+        "проверку целостности",
+        _m._integrity_threads,
+        _m.MAX_CONCURRENT_INTEGRITY,
+    )
+
     handle = str(uuid.uuid4())
     cancel = threading.Event()
     _get_integrity_cancel_flags()[handle] = cancel

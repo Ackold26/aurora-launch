@@ -59,6 +59,17 @@ def _get_optimize_threads() -> dict[str, threading.Thread]:
     return _m._optimize_threads
 
 
+# Phase 2.B: thread cap helpers — late-bound через methods.py
+def _check_forecast_capacity() -> None:
+    from aurora_launch.sidecar import methods as _m
+    _m._check_capacity("прогноз", _m._forecast_threads, _m.MAX_CONCURRENT_FORECASTS)
+
+
+def _check_optimize_capacity() -> None:
+    from aurora_launch.sidecar import methods as _m
+    _m._check_capacity("подбор бюджета", _m._optimize_threads, _m.MAX_CONCURRENT_OPTIMIZE)
+
+
 # ─── Handlers: explain / reproduce / compose ──────────────────────────────────
 
 
@@ -308,6 +319,10 @@ def _start_forecast(params: dict[str, Any]) -> dict[str, Any]:
     seed = int(params.get("seed", 42))
     anchors_override: dict[str, Any] | None = params.get("anchors_override") or None
     spend_plan_param: dict[str, list[float]] | None = params.get("spend_plan") or None
+
+    # Phase 2.B: bounded thread cap — raise SidecarBusyError if at capacity
+    # so customer sees empathetic toast (UX-5) вместо resource exhaustion.
+    _check_forecast_capacity()
 
     handle = str(uuid.uuid4())
     cancel = threading.Event()
@@ -750,6 +765,9 @@ def _optimize_budget(params: dict[str, Any]) -> dict[str, Any]:
     from aurora_launch.schemas.budget_optimization import BudgetSearchRequest, ChannelCap
 
     _opt_logger = _logging.getLogger(__name__)
+
+    # Phase 2.B: bounded thread cap (optimize=1 — heavy task, single slot).
+    _check_optimize_capacity()
 
     handle = str(uuid.uuid4())
     cancel = threading.Event()
