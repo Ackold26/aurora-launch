@@ -19,6 +19,7 @@
     initRedactionTier,
     setRedactionTier,
   } from '$lib/stores/telemetrySettings';
+  import DataSourcesCard from '$lib/components/DataSourcesCard.svelte';
 
   let telemetryOptIn = $state(false);
   let buildInfo = $state<BuildInfo | null>(null);
@@ -222,6 +223,9 @@
       {/if}
     {/snippet}
   </Card>
+
+  <!-- Phase 3: Data sources (folder watching) per-project -->
+  <DataSourcesCard />
 
   {#if buildInfo}
     {@const info = buildInfo}
