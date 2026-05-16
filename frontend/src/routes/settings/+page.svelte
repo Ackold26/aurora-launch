@@ -1,7 +1,7 @@
 <!-- Settings — theme, locale, telemetry opt-in, About. -->
 
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { _, locale } from 'svelte-i18n';
   import Card from '$lib/components/Card.svelte';
   import Badge from '$lib/components/Badge.svelte';
@@ -11,11 +11,24 @@
   import type { BuildInfo } from '$ipc/client';
   import { track, notifyOptInChange } from '$lib/services/telemetry';
   import type { RefreshConsentSetting } from '$ipc/client';
+  import type { RedactionTier } from '$lib/services/tiered_redact';
+  import {
+    redactionTier,
+    redactionTierLoading,
+    pendingRedactionCount,
+    initRedactionTier,
+    setRedactionTier,
+  } from '$lib/stores/telemetrySettings';
 
   let telemetryOptIn = $state(false);
   let buildInfo = $state<BuildInfo | null>(null);
   let refreshConsent = $state<RefreshConsentSetting | null>(null);
   let refreshConsentLoading = $state(false);
+
+  // Phase 2.D.2 HE-6: redaction tier (reactive from store)
+  let tier = $state<RedactionTier>('basic');
+  const unsubTier = redactionTier.subscribe((v) => { tier = v; });
+  onDestroy(unsubTier);
 
   onMount(async () => {
     try {
@@ -33,6 +46,8 @@
     } catch (e) {
       console.warn('refresh consent fetch failed', e);
     }
+    // Load persisted redaction tier (HE-6)
+    await initRedactionTier();
   });
 
   async function toggleTelemetry(e: Event) {
@@ -92,6 +107,11 @@
       refreshConsentLoading = false;
     }
   }
+
+  async function changeTier(newTier: RedactionTier) {
+    await setRedactionTier(newTier);
+    track('settings_changed', { setting_key: 'redaction_tier' });
+  }
 </script>
 
 <section class="settings">
@@ -137,6 +157,33 @@
         </span>
       </label>
       <p class="hint">{$_('settings.telemetry.detail')}</p>
+    {/snippet}
+  </Card>
+
+  <!-- Phase 2.D.2 HE-6: PII redaction tier -->
+  <Card title={$_('settings.redaction.title')}>
+    {#snippet children()}
+      <p class="hint">{$_('settings.redaction.detail')}</p>
+      <fieldset class="tier-fieldset" disabled={$redactionTierLoading}>
+        <legend class="sr-only">{$_('settings.redaction.legend')}</legend>
+        {#each (['basic', 'strict', 'paranoid'] as RedactionTier[]) as t (t)}
+          <label class="tier-option">
+            <input
+              type="radio"
+              bind:group={tier}
+              value={t}
+              onchange={() => changeTier(t)}
+            />
+            <span class="tier-label">{$_(`settings.redaction.tier.${t}`)}</span>
+            <span class="tier-desc hint">{$_(`settings.redaction.tier.${t}.desc`)}</span>
+          </label>
+        {/each}
+      </fieldset>
+      {#if $pendingRedactionCount > 0}
+        <p class="info-banner" role="status">
+          {$_('settings.redaction.pending', { values: { count: $pendingRedactionCount } })}
+        </p>
+      {/if}
     {/snippet}
   </Card>
 
@@ -319,5 +366,69 @@
   .about dd {
     margin: 0;
     color: var(--text-primary);
+  }
+
+  /* Phase 2.D.2: redaction tier card */
+  .tier-fieldset {
+    border: none;
+    padding: 0;
+    margin: var(--spacing-3) 0 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-2);
+  }
+
+  .tier-fieldset:disabled {
+    opacity: 0.6;
+    pointer-events: none;
+  }
+
+  .tier-option {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+    column-gap: var(--spacing-2);
+    align-items: center;
+    cursor: pointer;
+  }
+
+  .tier-option input[type='radio'] {
+    grid-row: 1 / 3;
+    align-self: center;
+    margin: 0;
+    accent-color: var(--accent);
+  }
+
+  .tier-label {
+    color: var(--text-primary);
+    font-size: var(--typography-fontSize-ui-sm);
+    font-weight: 500;
+  }
+
+  .tier-desc {
+    margin: 0;
+    font-size: var(--typography-fontSize-ui-xs, 0.75rem);
+  }
+
+  .info-banner {
+    margin-top: var(--spacing-3);
+    padding: var(--spacing-2) var(--spacing-3);
+    background: color-mix(in srgb, var(--accent) 10%, var(--bg-main));
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    border-radius: var(--border-radius-md);
+    color: var(--text-secondary);
+    font-size: var(--typography-fontSize-ui-sm);
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
   }
 </style>

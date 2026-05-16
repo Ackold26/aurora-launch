@@ -106,6 +106,9 @@ pub fn run() {
             commands::telemetry::list_events,
             commands::telemetry::get_telemetry_opt_in,
             commands::telemetry::set_telemetry_opt_in,
+            // Phase 2.D.2 HE-6: tiered PII redaction
+            commands::telemetry::get_redaction_tier,
+            commands::telemetry::set_redaction_tier,
             // feedback commands (Block 2F — Cmd+Shift+F)
             commands::feedback::capture_feedback,
             commands::feedback::list_pending_feedback,

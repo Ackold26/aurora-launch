@@ -296,11 +296,10 @@ class TestImportAuroraBundle:
 # ---------------------------------------------------------------------------
 
 
-KAGOTSEL_PATH = Path(
-    "C:/Users/ackol/Desktop/Аврора - материалы для обучения и тестирования"
-    "/Эконометрика - тестовые файлы/XLSX"
-    "/Кагоцел РФ+_данные для эконометрики + наши данные 29.08.xlsx"
-)
+def _kagotsel_path() -> Path:
+    """Return the kagotsel_venarus path from the canonical _SAMPLE_BUNDLE_PATHS dict."""
+    from aurora_launch.sidecar.methods import _SAMPLE_BUNDLE_PATHS
+    return _SAMPLE_BUNDLE_PATHS["kagotsel_venarus"]
 
 
 class TestLoadSampleBundle:
@@ -309,8 +308,8 @@ class TestLoadSampleBundle:
             dispatch("load_sample_bundle", {"scenario": "nonexistent_brand"})
 
     @pytest.mark.skipif(
-        not KAGOTSEL_PATH.exists(),
-        reason="Pilot XLSX not present on this machine",
+        not _kagotsel_path().exists(),
+        reason="Pilot XLSX not present on this machine (set AURORA_SAMPLE_DATA_DIR)",
     )
     def test_kagotsel_venarus_loads(self) -> None:
         result = dispatch("load_sample_bundle", {"scenario": "kagotsel_venarus"})

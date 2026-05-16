@@ -2,6 +2,11 @@
 //!
 //! Events appended to local SQLite. Upload pipe to Vercel deferred F1.
 //! All events tagged `uploaded_at = NULL` until F1 wiring uploads them.
+//!
+//! Phase 2.D.2 HE-6: tiered PII redaction.
+//! The `redaction_tier` column on telemetry_events tracks which tier was applied
+//! to each row. On upgrade (basic→strict→paranoid), existing rows are flagged
+//! `redaction_pending = 1` for background re-redaction.
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -96,6 +101,92 @@ pub async fn get_telemetry_opt_in(state: State<'_, AppState>) -> AuroraResult<bo
         .telemetry_opt_in
         .lock()
         .map_err(|_| AuroraError::Other("opt_in poisoned".into()))?)
+}
+
+// ─── Phase 2.D.2 HE-6: tiered PII redaction ──────────────────────────────────
+
+/// Tier ordering for upgrade detection.  Higher index = more restrictive.
+fn tier_rank(tier: &str) -> u8 {
+    match tier {
+        "basic" => 0,
+        "strict" => 1,
+        "paranoid" => 2,
+        _ => 0,
+    }
+}
+
+/// Return the customer's current redaction tier (default: "basic").
+#[tauri::command]
+pub async fn get_redaction_tier(state: State<'_, AppState>) -> AuroraResult<String> {
+    let conn_guard = state
+        .sqlite
+        .lock()
+        .map_err(|_| AuroraError::Other("sqlite poisoned".into()))?;
+    let conn = conn_guard.as_ref().ok_or(AuroraError::Other("SQLite not initialised".into()))?;
+    let row: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'redaction_tier'",
+            [],
+            |r| r.get(0),
+        )
+        .ok();
+    Ok(row.unwrap_or_else(|| "basic".into()))
+}
+
+/// Persist a new redaction tier.
+///
+/// If the new tier is more restrictive than the current one (upgrade),
+/// all existing `telemetry_events` rows are flagged `redaction_pending = 1`
+/// so they can be re-redacted by the frontend or a background job.
+///
+/// Returns `{ pending_count }` — number of rows flagged (0 if same/downgrade).
+#[tauri::command]
+pub async fn set_redaction_tier(
+    state: State<'_, AppState>,
+    tier: String,
+) -> AuroraResult<serde_json::Value> {
+    // Validate tier value
+    if !matches!(tier.as_str(), "basic" | "strict" | "paranoid") {
+        return Err(AuroraError::Other(format!(
+            "invalid redaction tier: {tier}"
+        )));
+    }
+
+    let conn_guard = state
+        .sqlite
+        .lock()
+        .map_err(|_| AuroraError::Other("sqlite poisoned".into()))?;
+    let conn = conn_guard.as_ref().ok_or(AuroraError::Other("SQLite not initialised".into()))?;
+
+    // Read current tier
+    let current: String = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'redaction_tier'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or_else(|_| "basic".into());
+
+    // Persist new tier
+    conn.execute(
+        "INSERT INTO settings (key, value, updated_at)
+         VALUES ('redaction_tier', ?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = ?1, updated_at = ?2",
+        rusqlite::params![tier, chrono::Utc::now().to_rfc3339()],
+    )?;
+
+    // Flag existing rows for re-redaction if upgrading tier
+    let pending_count: i64 = if tier_rank(&tier) > tier_rank(&current) {
+        conn.execute(
+            "UPDATE telemetry_events SET redaction_pending = 1
+             WHERE redaction_pending = 0",
+            [],
+        )? as i64
+    } else {
+        0
+    };
+
+    Ok(serde_json::json!({ "pending_count": pending_count }))
 }
 
 #[tauri::command]

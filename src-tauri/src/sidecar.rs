@@ -101,15 +101,29 @@ impl SidecarManager {
         rand::thread_rng().fill_bytes(&mut bytes);
         let token = hex::encode(bytes);
 
+        // Phase 2.D.1 HE-2: keep env var as backward-compat fallback (Windows
+        // primary, Linux/macOS secondary). Primary channel — first stdin line
+        // (written sразу after spawn) — reduces env var exposure surface (ps
+        // output, /proc/PID/environ visible other users default Linux).
         let cmd = app
             .shell()
             .sidecar(SIDECAR_BINARY)
             .map_err(|e| AuroraError::Other(format!("sidecar binary not found: {e}")))?
             .env(ENV_AUTH_TOKEN, &token);
 
-        let (mut rx, child) = cmd
+        let (mut rx, mut child) = cmd
             .spawn()
             .map_err(|e| AuroraError::Other(format!("sidecar spawn failed: {e}")))?;
+
+        // HE-2: write token as first stdin line. Python sidecar reads с timeout
+        // 5s and validates 64-char hex. На Windows Python skip stdin (select
+        // not supported on file descriptors) и falls back на env var.
+        let token_line = format!("{token}\n");
+        if let Err(e) = child.write(token_line.as_bytes()) {
+            log::warn!(
+                "[sidecar HE-2] stdin token write failed: {e}; falling back to env var only"
+            );
+        }
 
         let manager = Arc::new(Self {
             next_id: AtomicI64::new(1),
