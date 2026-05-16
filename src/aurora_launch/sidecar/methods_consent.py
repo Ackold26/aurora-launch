@@ -183,3 +183,78 @@ def _dismiss_refresh_trigger(params: dict[str, Any]) -> dict[str, Any]:
     _dismissed_refresh.add(project_uuid)
     logger.debug("dismiss_refresh_trigger: %s suppressed for this session", project_uuid)
     return {"dismissed": True}
+
+
+# ─── Phase 3: persisted data sources per project ──────────────────────────────
+# Customer-managed list of folders watched per project. Раньше frontend
+# управлял этим только в-памяти / localStorage. Cross-machine sync невозможен.
+# Backend persistence через v003 _kv_store: key = `data_sources.{project_uuid}`.
+
+def _data_sources_key(project_uuid: str) -> str:
+    return f"data_sources.{project_uuid}"
+
+
+@register("get_data_sources")
+def _get_data_sources(params: dict[str, Any]) -> dict[str, Any]:
+    """Return persisted data source configs for project.
+
+    Params: { project_uuid: str }
+    Returns: { sources: list[{source_kind, path?, ...}] } or { sources: [] }
+    """
+    project_uuid = str(params.get("project_uuid", "")).strip()
+    if not project_uuid:
+        raise ValueError("project_uuid must be non-empty")
+
+    db = _get_project_db()
+    if db is None:
+        return {"sources": []}
+
+    stored = db.kv_get(_data_sources_key(project_uuid))
+    if stored is None:
+        return {"sources": []}
+
+    # Stored as {"sources": [...]} wrapper для extensibility (могут добавиться
+    # config-level fields позже — например, last_checked_at).
+    sources = stored.get("sources", []) if isinstance(stored, dict) else []
+    return {"sources": sources}
+
+
+@register("set_data_sources")
+def _set_data_sources(params: dict[str, Any]) -> dict[str, Any]:
+    """Persist data source configs for project.
+
+    Params: {
+        project_uuid: str,
+        sources: list[{source_kind, path?, ...}]
+    }
+    Returns: { saved: true, count: int }
+
+    Replaces full list (not append). Frontend customer manages add/remove,
+    then sends final state here.
+    """
+    from aurora_launch.schemas.auto_refresh import DataSourceConfig
+
+    project_uuid = str(params.get("project_uuid", "")).strip()
+    if not project_uuid:
+        raise ValueError("project_uuid must be non-empty")
+
+    raw_sources = params.get("sources")
+    if not isinstance(raw_sources, list):
+        raise ValueError("sources must be a list")
+
+    # Validate each entry через Pydantic — reject malformed up-front.
+    validated: list[dict[str, Any]] = []
+    for raw in raw_sources:
+        if not isinstance(raw, dict):
+            raise ValueError("each source must be a dict")
+        cfg = DataSourceConfig.model_validate(raw)
+        validated.append(cfg.model_dump(exclude_none=False))
+
+    db = _get_project_db()
+    if db is None:
+        # Fail-soft: customer не теряет данные (frontend сохранил у себя)
+        # но не персистится cross-machine.
+        return {"saved": False, "count": len(validated), "warning": "db_unavailable"}
+
+    db.kv_set(_data_sources_key(project_uuid), {"sources": validated})
+    return {"saved": True, "count": len(validated)}
