@@ -275,7 +275,9 @@
   }
 
   .detail {
-    color: var(--text-muted, #6b7280);
+    /* WCAG AA 4.5:1 fix (A11Y-W01): --text-muted (#7A7D87 on white) is ~3.6:1
+       at xs font-size. Use --text-secondary (#4A4D57) which is ~7.6:1. */
+    color: var(--text-secondary, #4a4d57);
     font-size: var(--typography-fontSize-ui-xs, 0.75rem);
     max-width: 560px;
   }

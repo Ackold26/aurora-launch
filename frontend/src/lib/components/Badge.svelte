@@ -67,7 +67,9 @@
   .badge-warning,
   .badge-verdict-medium {
     background: color-mix(in srgb, var(--color-warning) 14%, transparent);
-    color: var(--color-warning);
+    /* WCAG AA fix (A11Y-W08): --color-warning (#F59E0B) on near-white badge
+       background = ~2.2:1 (fails). Darken to #92600A which is ~4.5:1 on white. */
+    color: color-mix(in srgb, var(--color-warning) 60%, #000);
     border-color: color-mix(in srgb, var(--color-warning) 40%, transparent);
   }
 

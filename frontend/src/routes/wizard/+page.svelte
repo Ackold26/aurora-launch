@@ -541,12 +541,19 @@
 </script>
 
 <section class="wizard">
+  <!-- WCAG 2.4.2 / axe page-has-heading-one: visually hidden h1 for screen
+       readers. The stepper serves as the visual page landmark, but AT users
+       benefit from a top-level heading identifying the page. -->
+  <h1 class="visually-hidden">Мастер прогноза</h1>
   <header class="wizard-header">
     <!-- Block 3 HIGH-8 fix: aria-current="step" announces active step to
          screen readers per WCAG 4.1.2. The stepper is a progress indicator
          (sequential), not navigation — keyboard users advance via Next/Back
          buttons. -->
-    <ol class="stepper" aria-label="Wizard steps">
+    <!-- tabindex="0": WCAG 2.1 SC 2.1.1 / axe scrollable-region-focusable.
+         overflow-x:auto makes the stepper a scrollable region; keyboard users
+         need a way to scroll it. tabindex="0" makes it focusable via Tab. -->
+    <ol class="stepper" aria-label="Wizard steps" tabindex="0">
       {#each STEPS as s, i}
         <li
           class:active={i === step}
@@ -564,7 +571,7 @@
   <div class="step-body" in:fly={{ y: 12, duration: 220, easing: quintOut }}>
     {#if step === 0}
       <PatternSuggestionCard />
-      <Card title={$_('wizard.step.import')}>
+      <Card headingLevel={2} title={$_('wizard.step.import')}>
         {#snippet children()}
           <p>Импортируйте DSM/Mediascope файлы или используйте Aurora Data Studio экспорт.</p>
           <div class="row">
@@ -584,7 +591,7 @@
         {/snippet}
       </Card>
     {:else if step === 1}
-      <Card title={$_('wizard.step.mapping')}>
+      <Card headingLevel={2} title={$_('wizard.step.mapping')}>
         {#snippet children()}
           {#if sourceColumns.length === 0}
             <p class="empty-hint">
@@ -612,7 +619,7 @@
         bind:selectedLabel={proxyPickerLabel}
       />
     {:else if step === 3}
-      <Card title={$_('wizard.step.similarity')}>
+      <Card headingLevel={2} title={$_('wizard.step.similarity')}>
         {#snippet children()}
           {#if !similarityDim}
             <Button variant="primary" onclick={computeSimilarity}>
@@ -631,7 +638,7 @@
     {:else if step === 4}
       <AnchorsForm bind:draft={anchorsDraft} horizon_periods={forecastHorizon} />
     {:else if step === 5}
-      <Card title={$_('wizard.step.forecast')}>
+      <Card headingLevel={2} title={$_('wizard.step.forecast')}>
         {#snippet children()}
           {#if !forecastHandleId}
             <Button variant="sigil" size="lg" onclick={startForecast}>
@@ -664,7 +671,7 @@
         {/snippet}
       </Card>
     {:else if step === 6}
-      <Card title={$_('wizard.step.cert')}>
+      <Card headingLevel={2} title={$_('wizard.step.cert')}>
         {#snippet children()}
           <p>Methodology Cert закрепляет reproducibility — Ed25519 подпись от Aurora AI.</p>
           {#if !certSigned}
@@ -787,7 +794,7 @@
   }
 
   .save-hint {
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-size: var(--typography-fontSize-ui-sm);
     margin: 0;
   }
@@ -821,7 +828,9 @@
     display: flex;
     align-items: center;
     gap: var(--spacing-2);
-    color: var(--text-muted);
+    /* WCAG AA 4.5:1 fix (A11Y-W02): --text-muted (#7A7D87) fails contrast on
+       --bg-main light (#FAFAFC). --text-secondary (#4A4D57) passes at ~7.6:1. */
+    color: var(--text-secondary);
     white-space: nowrap;
     font-size: var(--typography-fontSize-ui-sm);
   }
@@ -887,7 +896,7 @@
 
   /* Phase 1.C.6: empty state когда Step 1 reached без import */
   .empty-hint {
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-style: italic;
     margin: 0;
   }
@@ -924,7 +933,7 @@
 
   .recovery-details {
     font-size: 0.9em;
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin: 0;
   }
 

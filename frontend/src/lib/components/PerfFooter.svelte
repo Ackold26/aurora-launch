@@ -91,7 +91,9 @@
   }
 
   .label {
-    color: var(--text-muted);
+    /* WCAG AA fix (A11Y-W07): --text-muted (~3.6:1) fails at xs font-size.
+       --text-secondary (~7.6:1) used for compliance. */
+    color: var(--text-secondary);
   }
 
   .value {

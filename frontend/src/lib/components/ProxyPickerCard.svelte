@@ -181,7 +181,7 @@
   .picker-subtitle {
     margin: 0;
     font-size: 0.95em;
-    color: var(--text-muted, var(--color-ui-text-muted, #7a7a90));
+    color: var(--text-secondary, #4a4d57);
   }
 
   /* ── Loading / Error ─────────────────────────────────────────────────────── */
@@ -248,15 +248,19 @@
 
   .card-sub {
     font-size: var(--typography-fontSize-ui-xs, 0.75rem);
-    color: var(--text-muted, var(--color-ui-text-muted, #7a7a90));
+    color: var(--text-secondary, #4a4d57);
   }
 
   .card-available {
-    color: var(--color-semantic-success, #10b981);
+    /* WCAG AA fix (A11Y-W09): --color-semantic-success (#10b981) on white = 2.85:1.
+       Darken to #0D7A5F (~5.3:1 on white). */
+    color: color-mix(in srgb, var(--color-semantic-success, #10b981) 60%, #000);
   }
 
   .card-unavailable {
-    color: var(--color-semantic-error, #ef4444);
+    /* WCAG AA fix (A11Y-W10): --color-semantic-error (#ef4444) on white = 3.09:1.
+       Darken via color-mix for compliance. */
+    color: color-mix(in srgb, var(--color-semantic-error, #ef4444) 60%, #000);
   }
 
   /* ── Divider ─────────────────────────────────────────────────────────────── */
@@ -278,7 +282,7 @@
 
   .divider-label {
     font-size: var(--typography-fontSize-ui-sm, 0.875rem);
-    color: var(--text-muted, var(--color-ui-text-muted, #7a7a90));
+    color: var(--text-secondary, #4a4d57);
     white-space: nowrap;
   }
 

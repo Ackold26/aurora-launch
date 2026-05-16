@@ -9,6 +9,12 @@
     subtitle?: string;
     accent?: 'default' | 'success' | 'warning' | 'danger' | 'info';
     interactive?: boolean;
+    /**
+     * Heading level for the card title (default: 3).
+     * Set to 2 when a page-level <h1> is present and the card is the
+     * first content heading — avoids axe heading-order violation (A11Y-W03).
+     */
+    headingLevel?: 2 | 3 | 4;
     onclick?: (e: MouseEvent) => void;
     children?: import('svelte').Snippet;
     actions?: import('svelte').Snippet;
@@ -19,6 +25,7 @@
     subtitle,
     accent = 'default',
     interactive = false,
+    headingLevel = 3,
     onclick,
     children,
     actions
@@ -39,7 +46,7 @@
   {#if title || subtitle || actions}
     <header class="card-header">
       <div class="card-titles">
-        {#if title}<h3 class="card-title">{title}</h3>{/if}
+        {#if title}<svelte:element this={`h${headingLevel}`} class="card-title">{title}</svelte:element>{/if}
         {#if subtitle}<p class="card-subtitle">{subtitle}</p>{/if}
       </div>
       {#if actions}
