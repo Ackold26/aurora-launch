@@ -4,6 +4,12 @@
 **Supersedes:** v1.2 plan (имел 4 BLOCKER + 9 HIGH findings, см. `04_Sprints/AUDIT_ROADMAP_v1.2.md`)
 **Next planning revision:** после Block 1 audit gate
 
+> **2026-05-10 update — продукт переименован.** ADR-007 v3 финализировал нейминг: customer-facing имя теперь **Aurora Econometrica Launch Planner**. Repo identifier `aurora-launch` остаётся (короткий). ADR-012 решение 4 — auroraai.pro посадочные rename под канон постепенно.
+>
+> ADR-012 решения 1-3, 5 не затрагивают логику этого ROADMAP — Launch Planner идёт как запланировано (Block 1 → 2 → 3 → 4 → Final F1-F4 trajectory). Контекст ADR-012 для координации с другими приложениями линейки: Brand Tracker и Trade & Pricing идут сразу на Platform Core (как и Launch Planner делает через обработчики Workflow Engine), MMM Optimizer мигрирует в Core после успешных пилотов Launch Planner / Brand Tracker (Launch Planner pilot Materia Medica = один из триггеров миграции).
+>
+> См. `D:\Docs\Aurora_Ai\aurora-meta\DECISIONS\ADR-012-econometrica-strategic-decisions-2026-05-10.md`.
+
 ## Контекст
 
 Aurora Launch - продукт Phase B Aurora Analytics Suite. Backend Phase B завершён (B0.5/B1/B1.5/B2-backend/B3/B4/B5 shipped + 4 audit waves). Остаётся: foundation hardening (ZIP container, concurrency) → frontend с premium UX → audit → pilot integration с Антоном.
