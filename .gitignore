@@ -25,6 +25,9 @@ target/
 dist/
 build/
 .venv/
+.coverage
+htmlcov/
+.pytest_cache/
 
 # Tauri build artefacts (CI-produced, never commit locally)
 src-tauri/binaries/
