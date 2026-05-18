@@ -1,72 +1,57 @@
-//! Adapter IPC commands (Block 4 Phase 3).
+//! File analysis & validation IPC commands.
 //!
-//! Wires frontend file picker к Python AdapterRegistry через sidecar JSON-RPC.
-//! Auto-detects DSM/Mediascope/AdEx/Custom XLSX format, parses к canonical
-//! records, returns preview slice for UI display.
+//! После port'а file reader из Aurora Econometrica MMM Optimizer (2026-05-18,
+//! design doc `docs/FILE_READER_PORT_DESIGN.md`) этот модуль обслуживает два
+//! sidecar метода:
+//!   - `analyze_data_file`  — preview первых N строк + автоопределение ролей
+//!   - `validate_wide_table` — полная валидация с user role overrides
+//!
+//! Sidecar Python JSON-RPC (newline-delimited stdio). Возврат — opaque
+//! `serde_json::Value`: shape известна только TypeScript-клиенту (см. typed
+//! interface в `frontend/src/lib/ipc/client.ts`). Дублировать здесь Rust
+//! struct'ы — это maintenance bloat для двух методов.
 
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::errors::{AuroraError, AuroraResult};
+use crate::errors::AuroraResult;
 use crate::sidecar::SidecarManager;
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct ParseDataFileInput {
+pub struct AnalyzeDataFileInput {
     pub path: String,
-    pub adapter_id: Option<String>,
-    pub max_records: Option<u32>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ParseDataFileResult {
-    pub adapter_id: String,
-    pub adapter_metadata: serde_json::Value,
-    pub record_count: u64,
-    pub records: Vec<serde_json::Value>,
+    pub n_rows: Option<u32>,
 }
 
 #[tauri::command]
-pub async fn parse_data_file(
+pub async fn analyze_data_file(
     sidecar: State<'_, Arc<SidecarManager>>,
-    input: ParseDataFileInput,
-) -> AuroraResult<ParseDataFileResult> {
-    let mut params = serde_json::json!({
+    input: AnalyzeDataFileInput,
+) -> AuroraResult<serde_json::Value> {
+    let params = serde_json::json!({
         "path": input.path,
-        "max_records": input.max_records.unwrap_or(100),
+        "n_rows": input.n_rows.unwrap_or(20),
     });
-    if let Some(id) = input.adapter_id {
-        params["adapter_id"] = serde_json::Value::String(id);
-    }
-
-    sidecar.invoke("parse_data_file", params).await
+    sidecar.invoke("analyze_data_file", params).await
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct AdapterInfo {
-    pub adapter_id: String,
-    pub adapter_version: String,
-    pub schema_version: String,
-    pub sample_files_glob: Vec<String>,
-    pub canonical_record_mapping: std::collections::BTreeMap<String, String>,
-    pub detected_signatures: Vec<String>,
+pub struct ValidateWideTableInput {
+    pub path: String,
+    pub role_overrides: Option<std::collections::BTreeMap<String, String>>,
 }
 
 #[tauri::command]
-pub async fn list_adapters(
+pub async fn validate_wide_table(
     sidecar: State<'_, Arc<SidecarManager>>,
-) -> AuroraResult<Vec<AdapterInfo>> {
-    // Convenience IPC for Settings → Adapters tab. Sidecar returns the registry.
-    // Block 4 method `list_adapters` not yet defined — use a wrapper pinging
-    // ping result's `methods` for now; future sidecar method will return full
-    // metadata. For Block 4 Phase 3 we ship the contract; sidecar Phase 1+
-    // will add the method.
-    let result: serde_json::Value = sidecar
-        .invoke("ping", serde_json::json!({}))
-        .await?;
-    let _ = result;
-    // Until the sidecar method ships, return empty list (frontend gracefully
-    // shows "no adapters registered").
-    Ok(Vec::new())
+    input: ValidateWideTableInput,
+) -> AuroraResult<serde_json::Value> {
+    let mut params = serde_json::json!({ "path": input.path });
+    if let Some(overrides) = input.role_overrides {
+        params["role_overrides"] = serde_json::to_value(overrides)
+            .unwrap_or(serde_json::Value::Object(Default::default()));
+    }
+    sidecar.invoke("validate_wide_table", params).await
 }

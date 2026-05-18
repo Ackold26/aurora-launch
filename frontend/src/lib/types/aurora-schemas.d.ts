@@ -79,8 +79,8 @@ export interface WizardSession {
   imported_adapter_id?: string | null;
   imported_record_count?: number | null;
   imported_columns?: string[] | null;
-  column_mapping?: ColumnMapping[];
-  mapping_done?: boolean;
+  column_roles?: ColumnRoleAssignment[];
+  validation_done?: boolean;
   selected_proxy_path?: string | null;
   selected_proxy_label?: string | null;
   similarity_result?: WizardSimilarityResult | null;
@@ -115,12 +115,12 @@ export interface WizardSimilarityResult {
   computed_at: string;
 }
 
-/** Сопоставление колонки XLSX к каноническому полю Aurora. */
-export interface ColumnMapping {
-  /** Имя колонки в XLSX */
-  source_column: string;
-  /** Каноническое поле Aurora (brand, period, sales, channel_spend_*) */
-  canonical_field: string;
+/** Роль колонки + флаг ручного override (после user правки в превью). */
+export interface ColumnRoleAssignment {
+  name: string;
+  role: "kpi" | "media" | "control" | "date" | "unused" | "unknown";
+  confidence: number;
+  auto_detected?: boolean;
 }
 
 /** Aggregates Aurora Launch–specific bundle metadata. */

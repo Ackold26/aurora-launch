@@ -6,11 +6,10 @@
  * поэтому тесты работают против SvelteKit dev server без Tauri runtime.
  *
  * Покрытие:
- *   - 7 шагов stepper рендерится
- *   - Step 1 (mapping) — hint «сначала импортируйте» при отсутствии данных
- *   - Step 2 (proxy) — 3 sample bundle карточки из мока list_sample_bundles
- *   - Step 3 (similarity) — кнопка Compute → SVG появляется
- *   - Step 4 (anchors) — 4 паттерна + слайдер intensity
+ *   - 6 шагов stepper рендерится (mapping step удалён)
+ *   - Step 1 (proxy) — 3 sample bundle карточки из мока list_sample_bundles
+ *   - Step 2 (similarity) — кнопка Compute → SVG появляется
+ *   - Step 3 (anchors) — 4 паттерна + слайдер intensity
  *   - Recovery dialog — показывается если draft с прогрессом
  *   - Recovery accept — восстанавливает step
  *   - Next/Back navigation — полный цикл туда-обратно
@@ -38,9 +37,9 @@ test.describe('Wizard happy path (Phase 1.C)', () => {
 
   // ── Structural ──────────────────────────────────────────────────────────────
 
-  test('renders all 7 steps в stepper', async ({ page }) => {
+  test('renders all 6 steps в stepper', async ({ page }) => {
     await gotoWizard(page);
-    await expect(page.locator('.stepper li')).toHaveCount(7);
+    await expect(page.locator('.stepper li')).toHaveCount(6);
   });
 
   test('Back disabled on first step', async ({ page }) => {
@@ -48,24 +47,33 @@ test.describe('Wizard happy path (Phase 1.C)', () => {
     await expect(page.getByRole('button', { name: /Back|Назад/ })).toBeDisabled();
   });
 
-  // ── Step 1 (mapping) — empty hint ──────────────────────────────────────────
+  // ── Step 1 (proxy) — sample bundles ────────────────────────────────────────
 
-  test('Step 1 — empty mapping hint visible without import', async ({ page }) => {
+  test('Step 1 — ProxyPickerCard renders 3 sample bundles from mock', async ({ page }) => {
     await gotoWizard(page);
-    await page.getByRole('button', { name: /Next|Далее/ }).click();
-    // Wizard source: "Сначала импортируйте файл на предыдущем шаге..."
-    await expect(
-      page.getByText(/Сначала импортируйте файл/),
-    ).toBeVisible({ timeout: 3000 });
-  });
-
-  // ── Step 2 (proxy) — sample bundles ────────────────────────────────────────
-
-  test('Step 2 — ProxyPickerCard renders 3 sample bundles from mock', async ({ page }) => {
+    // Next is gated behind previewHeaders.length > 0 when no file loaded,
+    // but mock analyze_data_file auto-fills; we navigate with 1 click.
+    // Since Next is disabled without a file, we skip straight from mock import.
+    // For navigation test: use setupMockIpc override of wizard_session_load
+    // with step=1 already set.
+    await setupMockIpc(page, {
+      wizard_session_load: () => ({
+        session: {
+          session_id: 'proxy-nav-test',
+          step: 1,
+          imported_file_path: '/mock/test.xlsx',
+          imported_columns: ['date', 'sales_packs', 'tv_grp', 'competitor_share'],
+          column_roles: [
+            { name: 'date', role: 'date', confidence: 0.97, auto_detected: true },
+          ],
+          created_at: new Date().toISOString(),
+          last_saved_at: new Date().toISOString(),
+        },
+      }),
+    });
     await gotoWizard(page);
-    for (let i = 0; i < 2; i++) {
-      await page.getByRole('button', { name: /Next|Далее/ }).click();
-    }
+    // Accept recovery → jumps to step 1 (proxy)
+    await page.getByRole('button', { name: /Восстановить/ }).click();
     // list_sample_bundles IPC is called by ProxyPickerCard onMount.
     // Labels come from defaultWizardHappyPathMocks.
     await expect(page.getByText('Кагоцел (грипп/ОРВИ)')).toBeVisible({ timeout: 3000 });
@@ -73,26 +81,48 @@ test.describe('Wizard happy path (Phase 1.C)', () => {
     await expect(page.getByText('Мульти-прокси (3 бренда)')).toBeVisible();
   });
 
-  // ── Step 3 (similarity) — Compute button ───────────────────────────────────
+  // ── Step 2 (similarity) — Compute button ───────────────────────────────────
 
-  test('Step 3 — Compute button → SVG radar appears', async ({ page }) => {
+  test('Step 2 — Compute button → SVG radar appears', async ({ page }) => {
+    await setupMockIpc(page, {
+      wizard_session_load: () => ({
+        session: {
+          session_id: 'sim-nav-test',
+          step: 2,
+          imported_file_path: '/mock/test.xlsx',
+          imported_columns: ['date', 'sales_packs'],
+          column_roles: [],
+          created_at: new Date().toISOString(),
+          last_saved_at: new Date().toISOString(),
+        },
+      }),
+    });
     await gotoWizard(page);
-    for (let i = 0; i < 3; i++) {
-      await page.getByRole('button', { name: /Next|Далее/ }).click();
-    }
+    await page.getByRole('button', { name: /Восстановить/ }).click();
     // Button text in wizard source: "Compute"
     await page.getByRole('button', { name: /Compute|Вычислить/ }).click();
     // RadarChart renders an SVG; wait for it to appear after IPC resolves
     await expect(page.locator('svg').first()).toBeVisible({ timeout: 5000 });
   });
 
-  // ── Step 4 (anchors) — pattern picker ──────────────────────────────────────
+  // ── Step 3 (anchors) — pattern picker ──────────────────────────────────────
 
-  test('Step 4 — AnchorsForm pattern cards rendered', async ({ page }) => {
+  test('Step 3 — AnchorsForm pattern cards rendered', async ({ page }) => {
+    await setupMockIpc(page, {
+      wizard_session_load: () => ({
+        session: {
+          session_id: 'anchors-nav-test',
+          step: 3,
+          imported_file_path: '/mock/test.xlsx',
+          imported_columns: ['date', 'sales_packs'],
+          column_roles: [],
+          created_at: new Date().toISOString(),
+          last_saved_at: new Date().toISOString(),
+        },
+      }),
+    });
     await gotoWizard(page);
-    for (let i = 0; i < 4; i++) {
-      await page.getByRole('button', { name: /Next|Далее/ }).click();
-    }
+    await page.getByRole('button', { name: /Восстановить/ }).click();
     // TRAJECTORY_PATTERNS label_ru values from trajectory_patterns.ts.
     // Each pattern is rendered as an aria-pressed button card.
     // 'Устойчивый рост' also appears in the subtitle text, so we target buttons.
@@ -105,10 +135,21 @@ test.describe('Wizard happy path (Phase 1.C)', () => {
   test('AnchorsForm — intensity slider visible by default (sustain pattern)', async ({
     page,
   }) => {
+    await setupMockIpc(page, {
+      wizard_session_load: () => ({
+        session: {
+          session_id: 'anchors-slider-test',
+          step: 3,
+          imported_file_path: '/mock/test.xlsx',
+          imported_columns: ['date', 'sales_packs'],
+          column_roles: [],
+          created_at: new Date().toISOString(),
+          last_saved_at: new Date().toISOString(),
+        },
+      }),
+    });
     await gotoWizard(page);
-    for (let i = 0; i < 4; i++) {
-      await page.getByRole('button', { name: /Next|Далее/ }).click();
-    }
+    await page.getByRole('button', { name: /Восстановить/ }).click();
     // Intensity slider has aria-label="Интенсивность паттерна от 1 до 10"
     // Visible in all non-custom patterns (sustain is default).
     await expect(
@@ -119,10 +160,21 @@ test.describe('Wizard happy path (Phase 1.C)', () => {
   test('AnchorsForm — switching to custom pattern hides intensity slider', async ({
     page,
   }) => {
+    await setupMockIpc(page, {
+      wizard_session_load: () => ({
+        session: {
+          session_id: 'anchors-custom-test',
+          step: 3,
+          imported_file_path: '/mock/test.xlsx',
+          imported_columns: ['date', 'sales_packs'],
+          column_roles: [],
+          created_at: new Date().toISOString(),
+          last_saved_at: new Date().toISOString(),
+        },
+      }),
+    });
     await gotoWizard(page);
-    for (let i = 0; i < 4; i++) {
-      await page.getByRole('button', { name: /Next|Далее/ }).click();
-    }
+    await page.getByRole('button', { name: /Восстановить/ }).click();
     // Slider visible in sustain (default)
     await expect(page.getByLabel(/Интенсивность паттерна/i)).toBeVisible();
     // Click «Свой график» pattern card — an aria-pressed button
@@ -135,17 +187,34 @@ test.describe('Wizard happy path (Phase 1.C)', () => {
 
   // ── Navigation ──────────────────────────────────────────────────────────────
 
-  test('Next/Back navigation cycles through all 7 steps', async ({ page }) => {
+  test('Next/Back navigation cycles through all 6 steps', async ({ page }) => {
+    // Start at step 1 (proxy) via recovery to bypass file-upload gate on step 0
+    await setupMockIpc(page, {
+      wizard_session_load: () => ({
+        session: {
+          session_id: 'nav-cycle-test',
+          step: 1,
+          imported_file_path: '/mock/test.xlsx',
+          imported_columns: ['date', 'sales_packs', 'tv_grp', 'competitor_share'],
+          column_roles: [
+            { name: 'date', role: 'date', confidence: 0.97, auto_detected: true },
+          ],
+          created_at: new Date().toISOString(),
+          last_saved_at: new Date().toISOString(),
+        },
+      }),
+    });
     await gotoWizard(page);
-    // Forward: step 1 → 7
-    for (let i = 0; i < 6; i++) {
+    await page.getByRole('button', { name: /Восстановить/ }).click();
+    // Forward: step 2 → 6 (5 more clicks from step 1)
+    for (let i = 1; i < 5; i++) {
       await page.getByRole('button', { name: /Next|Далее/ }).click();
       await expect(page.locator('.stepper li.active')).toContainText(
         String(i + 2),
       );
     }
-    // Reverse: step 7 → 1
-    for (let i = 5; i >= 0; i--) {
+    // Reverse: step 6 → 2
+    for (let i = 4; i >= 1; i--) {
       await page.getByRole('button', { name: /Back|Назад/ }).click();
       await expect(page.locator('.stepper li.active')).toContainText(
         String(i + 1),
@@ -165,11 +234,12 @@ test.describe('Wizard happy path (Phase 1.C)', () => {
           session_id: 'test-recovery-show-1',
           step: 3,
           imported_file_path: '/mock/test.xlsx',
-          imported_adapter_id: 'dsm_v2024',
-          imported_record_count: 100,
-          imported_columns: ['Бренд', 'Дата'],
-          column_mapping: [{ source_column: 'Бренд', canonical_field: 'brand_name' }],
-          mapping_done: true,
+          imported_columns: ['date', 'sales_packs', 'tv_grp'],
+          column_roles: [
+            { name: 'date', role: 'date', confidence: 0.97, auto_detected: true },
+            { name: 'sales_packs', role: 'kpi', confidence: 0.85, auto_detected: true },
+          ],
+          validation_done: true,
           selected_proxy_path: '/mock/kagotsel.aurora',
           selected_proxy_label: 'Кагоцел',
           created_at: new Date(Date.now() - 3600000).toISOString(),
@@ -193,11 +263,9 @@ test.describe('Wizard happy path (Phase 1.C)', () => {
           session_id: 'test-recovery-accept-2',
           step: 2,
           imported_file_path: '/mock/test.xlsx',
-          imported_adapter_id: 'dsm_v2024',
-          imported_record_count: 100,
-          imported_columns: ['Бренд', 'Дата'],
-          column_mapping: [],
-          mapping_done: false,
+          imported_columns: ['date', 'sales_packs'],
+          column_roles: [],
+          validation_done: false,
           created_at: new Date().toISOString(),
           last_saved_at: new Date().toISOString(),
         },
@@ -219,11 +287,9 @@ test.describe('Wizard happy path (Phase 1.C)', () => {
           session_id: 'test-recovery-dismiss-3',
           step: 4,
           imported_file_path: '/mock/test.xlsx',
-          imported_adapter_id: 'dsm_v2024',
-          imported_record_count: 50,
-          imported_columns: ['Бренд'],
-          column_mapping: [],
-          mapping_done: false,
+          imported_columns: ['date', 'sales_packs'],
+          column_roles: [],
+          validation_done: false,
           created_at: new Date().toISOString(),
           last_saved_at: new Date().toISOString(),
         },

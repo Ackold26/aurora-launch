@@ -24,8 +24,8 @@ function makeBlankSession(): WizardSession {
     imported_adapter_id: null,
     imported_record_count: null,
     imported_columns: null,
-    column_mapping: [],
-    mapping_done: false,
+    column_roles: [],
+    validation_done: false,
     selected_proxy_path: null,
     selected_proxy_label: null,
     similarity_result: null,
@@ -38,7 +38,7 @@ function makeBlankSession(): WizardSession {
     saved_bundle_path: null,
     created_at: now,
     last_saved_at: now,
-  } as WizardSession;
+  } satisfies WizardSession;
 }
 
 class WizardSessionStore {

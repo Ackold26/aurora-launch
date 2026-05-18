@@ -117,8 +117,8 @@ pub fn run() {
             // build info
             commands::build_info::get_build_info,
             // adapters (Block 4 Phase 3)
-            commands::adapters::parse_data_file,
-            commands::adapters::list_adapters,
+            commands::adapters::analyze_data_file,
+            commands::adapters::validate_wide_table,
             // crash recovery (Phase 0.3)
             commands::crash_recovery::list_pending_crashes,
             commands::crash_recovery::get_crash_details,
