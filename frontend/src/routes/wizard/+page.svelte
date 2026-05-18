@@ -1,6 +1,7 @@
 <!--
-  Wizard — 7 steps: import → mapping → proxy → similarity → anchors →
+  Wizard — 6 steps: import → proxy → similarity → anchors →
   forecast → cert. Real progress events ONLY (no setTimeout theatre).
+  DataPreviewTable embedded in Step 0 (import) — mapping step removed.
 -->
 
 <script lang="ts">
@@ -18,7 +19,7 @@
   import ProgressBar from '$lib/components/ProgressBar.svelte';
   import ForecastCone from '$lib/components/ForecastCone.svelte';
   import PatternSuggestionCard from '$lib/components/PatternSuggestionCard.svelte';
-  import ColumnMappingTable from '$lib/components/ColumnMappingTable.svelte';
+  import DataPreviewTable from '$lib/components/DataPreviewTable.svelte';
   import ProxyPickerCard from '$lib/components/ProxyPickerCard.svelte';
   import AnchorsForm from '$lib/components/AnchorsForm.svelte';
   import { ipc } from '$ipc/client';
@@ -29,19 +30,18 @@
   import type {
     ForecastProgressEvent,
     ForecastCompletedEvent,
-    ForecastFailedEvent
+    ForecastFailedEvent,
+    ColumnAssignment,
   } from '$ipc/client';
   import { pushToast } from '$lib/stores/toast';
   import { determineVerdict } from '$lib/utils/verdict';
   import { track } from '$lib/services/telemetry';
   import { composeForecastJson } from '$lib/ipc/forecast';
   import { wizardSession } from '$lib/stores/wizardSession.svelte';
-  import { autoMapColumns } from '$lib/utils/auto_map_columns';
   import { validIntensity } from '$lib/utils/trajectory_patterns';
 
   const STEPS = [
     'import',
-    'mapping',
     'proxy',
     'similarity',
     'anchors',
@@ -51,15 +51,18 @@
 
   let step = $state(0);
   let importedFile = $state<string | null>(null);
-  let importedAdapter = $state<string | null>(null);
-  let importedRecordCount = $state<number | null>(null);
   let importing = $state(false);
+  let validating = $state(false);
 
-  // Phase 1.C.2: column mapping state
-  let sourceColumns = $state<string[]>([]);
-  let suggestedMapping = $state<Record<string, string>>({});
-  let previewRows = $state<Array<Record<string, unknown>>>([]);
-  let columnMapping = $state(new Map<string, string | null>());
+  // Step 0 (import): wide-table preview state
+  let previewHeaders = $state<string[]>([]);
+  let previewDataRows = $state<Array<Array<string | number | null>>>([]);
+  let previewDtypes = $state<Record<string, string>>({});
+  let previewShape = $state<[number, number] | null>(null);
+  let previewFileName = $state<string | null>(null);
+  let previewSizeKb = $state<number | null>(null);
+  let roleAssignments = $state(new Map<string, ColumnAssignment>());
+  let validationDone = $state(false);
 
   // Phase 1.C.3: proxy picker bindable
   let proxyPickerPath = $state<string | null>(null);
@@ -87,13 +90,33 @@
   });
 
   // Phase 1.C.6: derived completion flags
-  const mappingDone = $derived(
-    columnMapping.size > 0 &&
-      Array.from(columnMapping.values()).every((v) => v !== null && v !== '')
-  );
   const anchorsDone = $derived(
     anchorsDraft !== null && validIntensity(anchorsDraft.intensity)
   );
+
+  // Audit fix 2026-05-18: track roleAssignments size + content hash to reset
+  // validationDone on any role change. Without this, user правит роль после
+  // успешной валидации → переход к Proxy не перепроверяется.
+  // INV-22 sister: SSOT для «нужна перевалидация» — один derived.
+  const roleSignature = $derived(
+    Array.from(roleAssignments.values())
+      .map((a) => `${a.name}:${a.role}`)
+      .sort()
+      .join('|'),
+  );
+  let lastValidatedSignature = $state<string>('');
+  $effect(() => {
+    // При смене roleSignature после прошлой валидации — сбросить флаг.
+    // Проверка lastValidatedSignature !== '' защищает от initial fire
+    // когда headers пусты и validationDone уже false.
+    if (
+      validationDone &&
+      lastValidatedSignature !== '' &&
+      roleSignature !== lastValidatedSignature
+    ) {
+      validationDone = false;
+    }
+  });
 
   // Phase 1.C.6: recovery dialog state
   let showRecoveryDialog = $state(false);
@@ -160,15 +183,25 @@
     const s = wizardSession.session;
     step = s.step ?? 0;
     importedFile = s.imported_file_path ?? null;
-    importedAdapter = s.imported_adapter_id ?? null;
-    importedRecordCount = s.imported_record_count ?? null;
-    sourceColumns = s.imported_columns ?? [];
-    // Восстанавливаем mapping из array → Map
-    const restored = new Map<string, string | null>();
-    for (const m of s.column_mapping ?? []) {
-      restored.set(m.source_column, m.canonical_field || null);
+    // Restore preview headers (gives visual context in import step)
+    previewHeaders = s.imported_columns ?? [];
+    // Restore roleAssignments from column_roles array
+    if (s.column_roles && s.column_roles.length > 0) {
+      const restoredRoles = new Map<string, ColumnAssignment>();
+      for (const a of s.column_roles) {
+        restoredRoles.set(a.name, {
+          name: a.name,
+          role: a.role,
+          confidence: a.confidence,
+          auto_detected: a.auto_detected ?? false,
+          kind: '',  // not stored in session — backend will fill on reanalyze
+        });
+      }
+      roleAssignments = restoredRoles;
     }
-    columnMapping = restored;
+    // Restore validation flag (true only if validate_wide_table succeeded
+    // ранее с тем же набором роле́й; user role change → reset → нужна перевалидация).
+    validationDone = s.validation_done ?? false;
     proxyPickerPath = s.selected_proxy_path ?? null;
     proxyPickerLabel = s.selected_proxy_label ?? null;
     if (s.similarity_result) {
@@ -210,15 +243,10 @@
   function persistCurrentStep() {
     wizardSession.update((s) => {
       s.step = step;
-      // Step 1 — mapping
-      s.column_mapping = Array.from(columnMapping.entries()).map(
-        ([source, canonical]) => ({
-          source_column: source,
-          canonical_field: canonical ?? '',
-        })
-      );
-      s.mapping_done = mappingDone;
-      // Step 2 — proxy
+      // Step 0 — import: persist role assignments
+      s.column_roles = Array.from(roleAssignments.values());
+      s.validation_done = validationDone;
+      // Step 1 — proxy
       s.selected_proxy_path = proxyPickerPath;
       s.selected_proxy_label = proxyPickerLabel;
       // Step 3 — similarity. Cast SimilarityDimensionScores (concrete shape)
@@ -243,7 +271,64 @@
     });
   }
 
-  function next() {
+  /**
+   * Run validate_wide_table с актуальными role overrides.
+   * Audit fix 2026-05-18: до этой правки validate никогда не вызывался —
+   * gate перед переходом к Proxy был неполным. Теперь Next на step 0
+   * блокируется при validation error; warnings показываются info-тостами,
+   * но не блокируют. validationDone сбрасывается при role change через
+   * $effect ниже.
+   */
+  async function runValidation(): Promise<boolean> {
+    if (!importedFile || previewHeaders.length === 0) return false;
+    validating = true;
+    try {
+      const role_overrides: Record<string, import('$ipc/client').ColumnRole> = {};
+      for (const [name, a] of roleAssignments.entries()) {
+        role_overrides[name] = a.role;
+      }
+      const result = await ipc.validateWideTable({
+        path: importedFile,
+        role_overrides,
+      });
+      if (result.status === 'error') {
+        pushToast({
+          level: 'danger',
+          title: 'Не пройдена валидация',
+          body: result.message ?? result.verdict ?? 'Проверьте данные и роли колонок.',
+        });
+        validationDone = false;
+        return false;
+      }
+      // Show warnings as info — не блокируем переход.
+      for (const w of result.warnings ?? []) {
+        pushToast({ level: 'info', title: w.message ?? 'Внимание', body: '' });
+      }
+      validationDone = true;
+      lastValidatedSignature = roleSignature;
+      return true;
+    } catch (e) {
+      pushToast({
+        level: 'danger',
+        title: 'Ошибка валидации',
+        body: String(e),
+      });
+      validationDone = false;
+      return false;
+    } finally {
+      validating = false;
+    }
+  }
+
+  async function next() {
+    // Step 0 → Proxy: gate через validate_wide_table.
+    if (step === 0) {
+      if (previewHeaders.length === 0) return;
+      if (!validationDone) {
+        const ok = await runValidation();
+        if (!ok) return;
+      }
+    }
     persistCurrentStep();
     if (step < STEPS.length - 1) step += 1;
     wizardSession.update((s) => {
@@ -270,30 +355,49 @@
       importedFile = selected;
       importing = true;
       try {
-        // Block 4 Phase 3: route к real adapter via sidecar
-        const result = await ipc.parseDataFile({ path: selected, max_records: 100 });
-        importedAdapter = result.adapter_id;
-        importedRecordCount = result.record_count;
+        // File reader port 2026-05-18: analyze wide table via sidecar
+        const result = await ipc.analyzeDataFile({ path: selected, n_rows: 20 });
+        if (result.status === 'error') {
+          throw new Error(result.message ?? 'Ошибка анализа файла');
+        }
 
-        // Phase 1.C.2: column mapping init
-        sourceColumns = result.source_columns ?? [];
-        suggestedMapping = result.suggested_mapping ?? {};
-        previewRows = result.preview_rows ?? [];
-        // auto-fill mapping (adapter suggested + heuristic fallback)
-        columnMapping = autoMapColumns(sourceColumns, suggestedMapping);
+        // Populate preview state
+        previewHeaders = result.headers ?? [];
+        previewDataRows = result.rows ?? [];
+        previewDtypes = result.dtypes ?? {};
+        previewShape = result.shape ?? null;
+        previewFileName = result.file_name ?? null;
+        previewSizeKb = result.size_kb ?? null;
 
-        // Phase 1.C.6: persist в session immediately
+        // Build roleAssignments Map from backend column detections
+        const newRoles = new Map<string, ColumnAssignment>();
+        for (const col of result.columns ?? []) {
+          newRoles.set(col.name, {
+            name: col.name,
+            role: col.role,
+            confidence: col.confidence,
+            kind: col.kind,
+            auto_detected: true,
+          });
+        }
+        roleAssignments = newRoles;
+
+        // Reset validation on new file load — roles may differ from prior.
+        validationDone = false;
+        lastValidatedSignature = '';
+
+        // Persist in session immediately
         wizardSession.update((s) => {
           s.imported_file_path = selected;
-          s.imported_adapter_id = result.adapter_id;
-          s.imported_record_count = result.record_count;
-          s.imported_columns = sourceColumns;
+          s.imported_adapter_id = null;  // no adapter concept in new flow
+          s.imported_record_count = result.shape?.[0] ?? null;
+          s.imported_columns = result.headers ?? [];
         });
 
         pushToast({
           level: 'success',
-          title: `Файл загружен (${result.adapter_id})`,
-          body: `${result.record_count} записей · ${sourceColumns.length} колонок`,
+          title: 'Файл загружен',
+          body: `${result.shape?.[0] ?? 0} строк · ${result.shape?.[1] ?? 0} колонок`,
         });
       } catch (e) {
         pushToast({
@@ -301,10 +405,9 @@
           title: 'Не удалось прочитать файл',
           body: String(e),
         });
-        importedAdapter = null;
-        importedRecordCount = null;
-        sourceColumns = [];
-        columnMapping = new Map();
+        previewHeaders = [];
+        previewDataRows = [];
+        roleAssignments = new Map();
       } finally {
         importing = false;
       }
@@ -573,51 +676,36 @@
       <PatternSuggestionCard />
       <Card headingLevel={2} title={$_('wizard.step.import')}>
         {#snippet children()}
-          <p>Загрузите файл DSM/Mediascope или экспорт из Aurora Data Studio.</p>
+          <p>{$_('wizard.import.empty_hint')}</p>
           <div class="row">
             <Button variant="primary" onclick={pickImport} loading={importing}>
               {#snippet children()}Выбрать файл{/snippet}
             </Button>
             {#if importedFile}<code>{importedFile}</code>{/if}
           </div>
-          {#if importedAdapter}
-            <div class="import-summary">
-              <strong>Формат:</strong> {importedAdapter}
-              {#if importedRecordCount !== null}
-                · <strong>{importedRecordCount}</strong> records
-              {/if}
-            </div>
+          {#if previewHeaders.length > 0 && previewDataRows.length === 0}
+            <p class="recovery-data-hint">
+              {$_('wizard.import.recovery_hint')}
+            </p>
           {/if}
-        {/snippet}
-      </Card>
-    {:else if step === 1}
-      <Card headingLevel={2} title={$_('wizard.step.mapping')}>
-        {#snippet children()}
-          {#if sourceColumns.length === 0}
-            <p class="empty-hint">
-              Сначала загрузите файл на шаге 1 — Aurora определит его структуру автоматически.
-            </p>
-          {:else}
-            <p>
-              Aurora распознала <strong>{sourceColumns.length}</strong> колонок
-              в файле. Проверьте сопоставление с каноническими полями
-              (бренд / период / продажи) и при необходимости поправьте.
-            </p>
-            <ColumnMappingTable
-              {sourceColumns}
-              {suggestedMapping}
-              {previewRows}
-              bind:mapping={columnMapping}
+          {#if previewHeaders.length > 0 && previewDataRows.length > 0}
+            <DataPreviewTable
+              headers={previewHeaders}
+              rows={previewDataRows}
+              dtypes={previewDtypes}
+              totalRows={previewShape?.[0] ?? undefined}
+              sizeKb={previewSizeKb}
+              bind:roleAssignments
             />
           {/if}
         {/snippet}
       </Card>
-    {:else if step === 2}
+    {:else if step === 1}
       <ProxyPickerCard
         bind:selectedPath={proxyPickerPath}
         bind:selectedLabel={proxyPickerLabel}
       />
-    {:else if step === 3}
+    {:else if step === 2}
       <Card headingLevel={2} title={$_('wizard.step.similarity')}>
         {#snippet children()}
           {#if !similarityDim}
@@ -634,9 +722,9 @@
           {/if}
         {/snippet}
       </Card>
-    {:else if step === 4}
+    {:else if step === 3}
       <AnchorsForm bind:draft={anchorsDraft} horizon_periods={forecastHorizon} />
-    {:else if step === 5}
+    {:else if step === 4}
       <Card headingLevel={2} title={$_('wizard.step.forecast')}>
         {#snippet children()}
           {#if !forecastHandleId}
@@ -669,7 +757,7 @@
           {/if}
         {/snippet}
       </Card>
-    {:else if step === 6}
+    {:else if step === 5}
       <Card headingLevel={2} title={$_('wizard.step.cert')}>
         {#snippet children()}
           <p>Сертификат методологии фиксирует параметры прогноза — Aurora AI подписывает его криптографически.</p>
@@ -713,7 +801,12 @@
       {#snippet children()}{$_('wizard.back')}{/snippet}
     </Button>
     {#if step < STEPS.length - 1}
-      <Button variant="primary" onclick={next}>
+      <Button
+        variant="primary"
+        onclick={next}
+        loading={validating}
+        disabled={step === 0 && previewHeaders.length === 0}
+      >
         {#snippet children()}{$_('wizard.next')}{/snippet}
       </Button>
     {:else}
@@ -795,6 +888,18 @@
     color: var(--text-secondary);
     font-size: var(--typography-fontSize-ui-sm);
     margin: 0;
+  }
+
+  /* Audit fix 2026-05-18: recovery flow когда headers есть, rows пусты —
+     показываем подсказку перезагрузить файл. */
+  .recovery-data-hint {
+    margin-top: var(--spacing-3);
+    padding: var(--spacing-2) var(--spacing-3);
+    border-radius: var(--radius-sm, 4px);
+    background: var(--color-warning-soft, color-mix(in srgb, #f59e0b 10%, transparent));
+    color: var(--text-secondary);
+    font-size: var(--typography-fontSize-ui-sm);
+    font-style: italic;
   }
 
   .saved-banner {
@@ -890,13 +995,6 @@
     justify-content: space-between;
     border-top: 1px solid var(--border-subtle);
     padding-top: var(--spacing-4);
-  }
-
-  /* Phase 1.C.6: empty state когда Step 1 reached без import */
-  .empty-hint {
-    color: var(--text-secondary);
-    font-style: italic;
-    margin: 0;
   }
 
   /* Phase 1.C.6 / UX-3: recovery dialog modal */

@@ -7,11 +7,12 @@
  *
  * Покрытие:
  *   - Step 1 (import) — initial state
- *   - Step 2 (mapping) — after Next
- *   - Step 3 (proxy) — ProxyPickerCard with mocked bundles
- *   - Step 4 (similarity) — pre-compute + post-compute (radar)
- *   - Step 5 (anchors) — AnchorsForm
+ *   - Step 2 (proxy) — ProxyPickerCard with mocked bundles (step 1 in 6-step wizard)
+ *   - Step 3 (similarity) — pre-compute + post-compute (radar)
+ *   - Step 4 (anchors) — AnchorsForm
  *   - Recovery dialog — aria-modal
+ *
+ * Note: mapping step removed (7→6 steps); a11y tests updated accordingly.
  *
  * Known axe limitation: <span.label> inside .btn-primary/.btn-sigil has white
  * text with transparent background. axe walks DOM and finds page bg (white)
@@ -70,18 +71,25 @@ test.describe('Wizard accessibility (WCAG AA)', () => {
     });
   });
 
-  // ── Step 2 (mapping) ────────────────────────────────────────────────────────
-  test('Step 2 (mapping) — no a11y violations', async ({ page }) => {
-    await setupMockIpc(page);
-    await navigateToStep(page, 1);
-    await injectAxe(page);
-    await checkA11y(page, AXE_CONTEXT, AXE_OPTS);
-  });
-
-  // ── Step 3 (proxy) ──────────────────────────────────────────────────────────
-  test('Step 3 (proxy) — no a11y violations', async ({ page }) => {
-    await setupMockIpc(page);
-    await navigateToStep(page, 2);
+  // ── Step 2 (proxy, index 1 in 6-step wizard) ────────────────────────────────
+  test('Step 2 (proxy) — no a11y violations', async ({ page }) => {
+    // Navigate via session recovery to bypass file-upload gate on step 0
+    await setupMockIpc(page, {
+      wizard_session_load: () => ({
+        session: {
+          session_id: 'a11y-proxy-test',
+          step: 1,
+          imported_file_path: '/mock/test.xlsx',
+          imported_columns: ['date', 'sales_packs'],
+          column_roles: [],
+          created_at: new Date().toISOString(),
+          last_saved_at: new Date().toISOString(),
+        },
+      }),
+    });
+    await page.goto('/wizard');
+    await expect(page.locator('.stepper')).toBeVisible({ timeout: 8000 });
+    await page.getByRole('button', { name: /Восстановить/ }).click();
     // Wait for list_sample_bundles IPC to resolve before axe scan.
     await expect(page.getByText('Кагоцел (грипп/ОРВИ)')).toBeVisible({
       timeout: 5000,
@@ -90,21 +98,49 @@ test.describe('Wizard accessibility (WCAG AA)', () => {
     await checkA11y(page, AXE_CONTEXT, AXE_OPTS);
   });
 
-  // ── Step 4 (similarity) ─────────────────────────────────────────────────────
-  test('Step 4 (similarity) — no a11y violations before compute', async ({
+  // ── Step 3 (similarity, index 2) ────────────────────────────────────────────
+  test('Step 3 (similarity) — no a11y violations before compute', async ({
     page,
   }) => {
-    await setupMockIpc(page);
-    await navigateToStep(page, 3);
+    await setupMockIpc(page, {
+      wizard_session_load: () => ({
+        session: {
+          session_id: 'a11y-sim-before-test',
+          step: 2,
+          imported_file_path: '/mock/test.xlsx',
+          imported_columns: ['date', 'sales_packs'],
+          column_roles: [],
+          created_at: new Date().toISOString(),
+          last_saved_at: new Date().toISOString(),
+        },
+      }),
+    });
+    await page.goto('/wizard');
+    await expect(page.locator('.stepper')).toBeVisible({ timeout: 8000 });
+    await page.getByRole('button', { name: /Восстановить/ }).click();
     await injectAxe(page);
     await checkA11y(page, AXE_CONTEXT, AXE_OPTS);
   });
 
-  test('Step 4 (similarity) — no a11y violations after compute + radar', async ({
+  test('Step 3 (similarity) — no a11y violations after compute + radar', async ({
     page,
   }) => {
-    await setupMockIpc(page);
-    await navigateToStep(page, 3);
+    await setupMockIpc(page, {
+      wizard_session_load: () => ({
+        session: {
+          session_id: 'a11y-sim-after-test',
+          step: 2,
+          imported_file_path: '/mock/test.xlsx',
+          imported_columns: ['date', 'sales_packs'],
+          column_roles: [],
+          created_at: new Date().toISOString(),
+          last_saved_at: new Date().toISOString(),
+        },
+      }),
+    });
+    await page.goto('/wizard');
+    await expect(page.locator('.stepper')).toBeVisible({ timeout: 8000 });
+    await page.getByRole('button', { name: /Восстановить/ }).click();
     await page.getByRole('button', { name: /Compute|Вычислить/ }).click();
     // Wait for RadarChart SVG to appear after IPC resolves.
     await expect(page.locator('svg').first()).toBeVisible({ timeout: 5000 });
@@ -112,10 +148,24 @@ test.describe('Wizard accessibility (WCAG AA)', () => {
     await checkA11y(page, AXE_CONTEXT, AXE_OPTS);
   });
 
-  // ── Step 5 (anchors) ────────────────────────────────────────────────────────
-  test('Step 5 (anchors) — no a11y violations', async ({ page }) => {
-    await setupMockIpc(page);
-    await navigateToStep(page, 4);
+  // ── Step 4 (anchors, index 3) ────────────────────────────────────────────────
+  test('Step 4 (anchors) — no a11y violations', async ({ page }) => {
+    await setupMockIpc(page, {
+      wizard_session_load: () => ({
+        session: {
+          session_id: 'a11y-anchors-test',
+          step: 3,
+          imported_file_path: '/mock/test.xlsx',
+          imported_columns: ['date', 'sales_packs'],
+          column_roles: [],
+          created_at: new Date().toISOString(),
+          last_saved_at: new Date().toISOString(),
+        },
+      }),
+    });
+    await page.goto('/wizard');
+    await expect(page.locator('.stepper')).toBeVisible({ timeout: 8000 });
+    await page.getByRole('button', { name: /Восстановить/ }).click();
     await injectAxe(page);
     await checkA11y(page, AXE_CONTEXT, AXE_OPTS);
   });
@@ -128,11 +178,9 @@ test.describe('Wizard accessibility (WCAG AA)', () => {
           session_id: 'a11y-recovery-test',
           step: 2,
           imported_file_path: '/mock/test.xlsx',
-          imported_adapter_id: 'dsm_v2024',
-          imported_record_count: 50,
-          imported_columns: ['Бренд', 'Дата'],
-          column_mapping: [],
-          mapping_done: false,
+          imported_columns: ['date', 'sales_packs'],
+          column_roles: [],
+          validation_done: false,
           created_at: new Date().toISOString(),
           last_saved_at: new Date().toISOString(),
         },

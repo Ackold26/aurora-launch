@@ -55,30 +55,54 @@ export const defaultWizardHappyPathMocks: Record<string, IpcHandler> = {
     ],
   }),
 
-  // ── Step 0: parse imported file ─────────────────────────────────────────────
-  parse_data_file: () => ({
-    adapter_id: 'dsm_v2024',
-    adapter_metadata: {},
-    record_count: 156,
-    records: [
-      { brand_name: 'Кагоцел', period_date: '2024-01-01', sales_value_rub: 50000 },
+  // ── Step 0: analyze imported file (file reader port 2026-05-18) ────────────
+  analyze_data_file: () => ({
+    status: 'ok',
+    file_name: 'sample_wide_table.xlsx',
+    size_kb: 142.6,
+    shape: [156, 4],
+    headers: ['date', 'sales_packs', 'tv_grp', 'competitor_share'],
+    rows: [
+      ['2024-01-07', 142000, 850.2, 0.12],
+      ['2024-01-14', 138500, 790.5, 0.13],
+      ['2024-01-21', 145200, 910.1, 0.11],
+      ['2024-01-28', 139800, 820.3, 0.14],
+      ['2024-02-04', 151000, 880.7, 0.10],
     ],
-    source_columns: ['Бренд', 'Дата', 'Продажи_рубли', 'АТХ_код'],
-    suggested_mapping: {
-      Бренд: 'brand_name',
-      Дата: 'period_date',
-      Продажи_рубли: 'sales_value_rub',
-      АТХ_код: 'atc_code',
+    dtypes: {
+      date: 'datetime64[ns]',
+      sales_packs: 'int64',
+      tv_grp: 'float64',
+      competitor_share: 'float64',
     },
-    preview_rows: [
-      { brand_name: 'Кагоцел', period_date: '2024-01-01', sales_value_rub: 50000 },
+    columns: [
+      { name: 'date',              role: 'date',    confidence: 0.97, kind: 'date',               auto_detected: true },
+      { name: 'sales_packs',       role: 'kpi',     confidence: 0.85, kind: 'target_count',        auto_detected: true },
+      { name: 'tv_grp',            role: 'media',   confidence: 0.85, kind: 'physical',            auto_detected: true },
+      { name: 'competitor_share',  role: 'control', confidence: 0.90, kind: 'signed_competitor',   auto_detected: true },
     ],
-    available_canonical_fields: [
-      { id: 'brand_name', label_ru: 'Бренд', group: 'identity' },
-      { id: 'period_date', label_ru: 'Период / Дата', group: 'period' },
-      { id: 'sales_value_rub', label_ru: 'Продажи (рубли)', group: 'sales' },
-      { id: 'atc_code', label_ru: 'АТХ-код', group: 'category' },
-    ],
+  }),
+
+  // ── Step 0: validate wide table (file reader port 2026-05-18) ───────────────
+  validate_wide_table: () => ({
+    status: 'ok',
+    verdict: 'ГОТОВ К МОДЕЛИРОВАНИЮ',
+    file: { name: 'sample_wide_table.xlsx', rows: 156, cols: 4, size_kb: 142.6 },
+    columns: [],
+    detected: {
+      date: 'date',
+      kpi: ['sales_packs'],
+      media: ['tv_grp'],
+      control: ['competitor_share'],
+      n_predictors: 2,
+      ratio: 78.0,
+      date_frequency: 'weekly',
+    },
+    available_kpi_types: ['sales_packs', 'leads'],
+    issues: [],
+    warnings: [],
+    high_correlations: [],
+    full_correlation_matrix: { labels: [], matrix: [] },
   }),
 
   // ── Step 3: similarity computation ─────────────────────────────────────────

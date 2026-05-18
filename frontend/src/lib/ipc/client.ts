@@ -107,37 +107,70 @@ export interface BuildInfo {
   cargo_pkg_name: string;
 }
 
-export interface ParseDataFileInput {
+// ─── Validation / file-reader types (file reader port 2026-05-18) ─────────────
+
+export type ColumnRole = 'kpi' | 'media' | 'control' | 'date' | 'unused' | 'unknown';
+
+export interface ColumnAssignment {
+  name: string;
+  role: ColumnRole;
+  confidence: number;
+  /** Populated by backend; may be empty string when restored from session. */
+  kind: string;
+  /** True when role was auto-detected (not user-overridden). */
+  auto_detected?: boolean;
+}
+
+export interface AnalyzeDataFileInput {
   path: string;
-  adapter_id?: string;
-  max_records?: number;
+  n_rows?: number;
 }
 
-export interface CanonicalFieldRegistryEntry {
-  id: string;
-  label_ru: string;
-  group: 'identity' | 'period' | 'sales' | 'media' | 'category';
+export interface AnalyzeDataFileResult {
+  status: 'ok' | 'error';
+  message?: string;
+  file_name?: string;
+  size_kb?: number;
+  shape?: [number, number];
+  headers?: string[];
+  rows?: Array<Array<string | number | null>>;
+  dtypes?: Record<string, string>;
+  columns?: ColumnAssignment[];
 }
 
-export interface ParseDataFileResult {
-  adapter_id: string;
-  adapter_metadata: Record<string, unknown>;
-  record_count: number;
-  records: Array<Record<string, unknown>>;
-  // Phase 1.C.2 — column mapping UI support
-  source_columns: string[];
-  suggested_mapping: Record<string, string>;
-  preview_rows: Array<Record<string, unknown>>;
-  available_canonical_fields: CanonicalFieldRegistryEntry[];
+export interface ValidateWideTableInput {
+  path: string;
+  role_overrides?: Record<string, ColumnRole>;
 }
 
-export interface AdapterInfo {
-  adapter_id: string;
-  adapter_version: string;
-  schema_version: string;
-  sample_files_glob: string[];
-  canonical_record_mapping: Record<string, string>;
-  detected_signatures: string[];
+export interface WideTableValidationResult {
+  status: 'ok' | 'warning' | 'error';
+  verdict?: string;
+  message?: string;
+  file?: { name: string; rows: number; cols: number; size_kb: number };
+  columns?: Array<
+    ColumnAssignment & {
+      dtype?: string;
+      stats?: Record<string, number>;
+      histogram?: { counts: number[]; edges: number[] };
+      adstock_type?: string;
+      date_stats?: Record<string, unknown>;
+    }
+  >;
+  detected?: {
+    date: string | null;
+    kpi: string[];
+    media: string[];
+    control: string[];
+    n_predictors: number;
+    ratio: number;
+    date_frequency: string;
+  };
+  available_kpi_types?: string[];
+  issues?: Array<{ type: string; message: string; severity: string }>;
+  warnings?: Array<{ type: string; message: string; severity: string }>;
+  high_correlations?: Array<{ col1: string; col2: string; correlation: number; risk: string }>;
+  full_correlation_matrix?: { labels: string[]; matrix: number[][] };
 }
 
 export interface ForecastProgressEvent {
@@ -317,10 +350,11 @@ export const ipc = {
   // build info
   getBuildInfo: () => invoke<BuildInfo>('get_build_info'),
 
-  // adapters (Block 4 Phase 3)
-  parseDataFile: (input: ParseDataFileInput) =>
-    invoke<ParseDataFileResult>('parse_data_file', { input }),
-  listAdapters: () => invoke<AdapterInfo[]>('list_adapters'),
+  // validation (file reader port 2026-05-18)
+  analyzeDataFile: (input: AnalyzeDataFileInput) =>
+    invoke<AnalyzeDataFileResult>('analyze_data_file', { input }),
+  validateWideTable: (input: ValidateWideTableInput) =>
+    invoke<WideTableValidationResult>('validate_wide_table', { input }),
 
   // save_bundle (Block 4 Phase 2 — full sidecar wiring)
   saveBundleViaSidecar: (input: SaveBundleInput) =>
