@@ -27,24 +27,18 @@ _FROZEN = ConfigDict(frozen=False, extra="forbid", validate_assignment=True)
 # validate_assignment=True — каждое присваивание поля проверяется по схеме.
 
 
-WizardStep = Literal["import", "mapping", "proxy", "similarity", "anchors", "forecast", "cert"]
+WizardStep = Literal["import", "proxy", "similarity", "anchors", "forecast", "cert"]
 
 
-class ColumnMapping(BaseModel):
-    """Сопоставление колонки XLSX к каноническому полю Aurora.
-
-    Customer на step 1 указывает: какая колонка в его файле = brand /
-    period / sales / channel_spend_tv / etc. Используется sidecar
-    парсером для нормализации данных перед forecast.
-    """
+class ColumnRoleAssignment(BaseModel):
+    """Роль колонки + флаг ручного override (после user правки в превью)."""
 
     model_config = _FROZEN
 
-    source_column: str = Field(min_length=1, description="Имя колонки в XLSX")
-    canonical_field: str = Field(
-        min_length=1,
-        description="Каноническое поле Aurora (brand, period, sales, channel_spend_*)",
-    )
+    name: str = Field(min_length=1)
+    role: Literal["kpi", "media", "control", "date", "unused", "unknown"]
+    confidence: float = Field(ge=0.0, le=1.0)
+    auto_detected: bool = True
 
 
 class WizardAnchorsDraft(BaseModel):
@@ -97,35 +91,33 @@ class WizardSession(BaseModel):
     model_config = _FROZEN
 
     session_id: str = Field(min_length=1, description="Stable UUID для wizard session")
-    step: int = Field(ge=0, le=6, default=0, description="Current wizard step index")
+    step: int = Field(ge=0, le=5, default=0, description="Current wizard step index")
 
-    # Step 0: import
+    # Step 0: import + role assignment (analyze_data_file → user overrides → validate_wide_table)
     imported_file_path: str | None = None
     imported_adapter_id: str | None = None
     imported_record_count: int | None = None
     imported_columns: list[str] | None = None
+    column_roles: list[ColumnRoleAssignment] = Field(default_factory=list)
+    validation_done: bool = False
 
-    # Step 1: mapping
-    column_mapping: list[ColumnMapping] = Field(default_factory=list)
-    mapping_done: bool = False
-
-    # Step 2: proxy
+    # Step 1: proxy
     selected_proxy_path: str | None = None
     selected_proxy_label: str | None = None  # human-readable name
 
-    # Step 3: similarity (cached after computation)
+    # Step 2: similarity (cached after computation)
     similarity_result: WizardSimilarityResult | None = None
 
-    # Step 4: anchors
+    # Step 3: anchors
     anchors_draft: WizardAnchorsDraft | None = None
     anchors_done: bool = False
 
-    # Step 5: forecast
+    # Step 4: forecast
     forecast_handle_id: str | None = None
     forecast_completed: bool = False
     forecast_horizon: int = Field(ge=1, default=26)
 
-    # Step 6: cert + save
+    # Step 5: cert + save
     cert_signed: bool = False
     saved_bundle_path: str | None = None
 

@@ -3,9 +3,12 @@
 Handlers: get_memory_report, create_project, list_projects, get_project,
           delete_project, list_versions, compare_versions,
           compare_forecast_versions, import_aurora_bundle, load_sample_bundle,
-          save_bundle, parse_data_file, inspect_bundle_entry_json,
+          save_bundle, inspect_bundle_entry_json,
           wizard_session_save, wizard_session_load, wizard_session_clear,
           list_sample_bundles.
+
+Note: parse_data_file removed 2026-05-18 (file reader port).
+      Replaced by analyze_data_file + validate_wide_table in methods_validation.py.
 
 Helpers:  _SAMPLE_BUNDLE_PATHS dict.
 
@@ -16,8 +19,11 @@ _get_project_db() imported from there.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
+
+from pydantic import ValidationError
 
 from aurora_launch import __version__
 
@@ -597,94 +603,6 @@ def _save_bundle(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-# ─── Phase 3: parse_data_file ─────────────────────────────────────────────────
-
-
-class UnsupportedFormatError(ValueError):
-    pass
-
-
-# Phase 1.C.2 — column mapping registry. Cross-adapter знание всех канонических
-# полей, известных Aurora. Frontend Step 1 показывает это как options в dropdown
-# (используя `auto_map_columns.ts::CANONICAL_FIELDS` — keep two в sync при
-# добавлении adapter'а).
-_CANONICAL_FIELDS_REGISTRY: list[dict[str, str]] = [
-    # identity
-    {"id": "brand_name", "label_ru": "Бренд", "group": "identity"},
-    {"id": "manufacturer_name", "label_ru": "Производитель", "group": "identity"},
-    {"id": "advertiser_name", "label_ru": "Рекламодатель", "group": "identity"},
-    {"id": "sku", "label_ru": "SKU", "group": "identity"},
-    # period
-    {"id": "period_date", "label_ru": "Период / Дата", "group": "period"},
-    # sales
-    {"id": "sales_volume_packs", "label_ru": "Продажи (упаковки)", "group": "sales"},
-    {"id": "sales_value_rub", "label_ru": "Продажи (рубли)", "group": "sales"},
-    {"id": "market_share_pct", "label_ru": "Доля рынка, %", "group": "sales"},
-    {"id": "spend_thousand_rub", "label_ru": "Затраты (тыс. руб)", "group": "sales"},
-    # media
-    {"id": "channel_name", "label_ru": "Канал", "group": "media"},
-    {"id": "media_type", "label_ru": "Тип медиа", "group": "media"},
-    {"id": "grp", "label_ru": "GRP", "group": "media"},
-    {"id": "tvr", "label_ru": "TVR", "group": "media"},
-    {"id": "reach_pct", "label_ru": "Reach, %", "group": "media"},
-    {"id": "audience_group", "label_ru": "Аудитория", "group": "media"},
-    # category
-    {"id": "region", "label_ru": "Регион", "group": "category"},
-    {"id": "pricing_segment", "label_ru": "Ценовой сегмент", "group": "category"},
-    {"id": "atc_code", "label_ru": "АТХ-код", "group": "category"},
-]
-
-
-@register("parse_data_file")
-def _parse_data_file(params: dict[str, Any]) -> dict[str, Any]:
-    """Detect adapter for input file + parse first N records (preview).
-
-    Inputs:
-      - `path`: str — input file path
-      - `adapter_id`: str | null — explicit adapter (skip detection)
-      - `max_records`: int — preview cap, default 100
-    Output (Phase 1.C.2 extended for column mapping UI):
-      - `adapter_id`: str
-      - `adapter_metadata`: dict (FormatAdapterContract serialised)
-      - `record_count`: int
-      - `records`: list[dict] — preview slice (max_records cap)
-      - `source_columns`: list[str] — original source column names adapter
-        expects (keys of canonical_record_mapping). UI Step 1 показывает эти
-        имена слева, справа — dropdown с canonical fields.
-      - `suggested_mapping`: dict[str, str] — adapter's canonical_record_mapping
-        (source → canonical). Frontend использует как pre-filled defaults
-        вместо heuristic.
-      - `preview_rows`: list[dict] — первые 5 records для верификации значений.
-      - `available_canonical_fields`: list[dict] — full registry (id + label_ru
-        + group) для dropdown options.
-    """
-    from aurora_launch.engines.format_adapters.registry import build_default_registry
-
-    path = params["path"]
-    explicit_adapter = params.get("adapter_id")
-    max_records = int(params.get("max_records", 100))
-
-    registry = build_default_registry()
-    adapter = registry.get_by_id(explicit_adapter) if explicit_adapter else registry.detect(path)
-    if adapter is None:
-        raise UnsupportedFormatError(f"no adapter detected for {path}")
-
-    records = adapter.parse(path)
-    metadata = adapter.get_metadata()
-    suggested = dict(metadata.canonical_record_mapping)
-
-    return {
-        "adapter_id": metadata.adapter_id,
-        "adapter_metadata": metadata.model_dump(),
-        "record_count": len(records),
-        "records": records[:max_records],
-        # 1.C.2 column mapping support
-        "source_columns": list(suggested.keys()),
-        "suggested_mapping": suggested,
-        "preview_rows": records[:5],
-        "available_canonical_fields": list(_CANONICAL_FIELDS_REGISTRY),
-    }
-
 
 # ─── Phase 5: inspector data ──────────────────────────────────────────────────
 
@@ -747,13 +665,30 @@ def _wizard_session_load(_params: dict[str, Any]) -> dict[str, Any]:
     """Read wizard session draft если есть.
 
     Returns: {"session": dict | null}
+
+    §6 migration safety: если draft сохранён со старой WizardSession shape
+    (column_mapping/mapping_done вместо column_roles/validation_done),
+    WizardSession(raw) кинет ValidationError. Ловим и возвращаем null —
+    customer начнёт wizard заново. Старый draft автоматически перезапишется
+    при следующем wizard_session_save с новой shape.
     """
     db = _get_project_db()
     if db is None:
         return {"session": None}
 
-    raw = db.kv_get(_WIZARD_SESSION_KEY)
-    return {"session": raw}
+    try:
+        raw = db.kv_get(_WIZARD_SESSION_KEY)
+        if raw is not None:
+            # Validate shape to catch stale drafts from old WizardSession schema
+            from aurora_launch.schemas.wizard_session import WizardSession
+            WizardSession.model_validate(raw)
+        return {"session": raw}
+    except ValidationError:
+        logging.getLogger(__name__).warning(
+            "wizard_session_load: stale draft failed validation (old schema shape), "
+            "returning null for safe recovery. Draft will be overwritten on next save."
+        )
+        return {"session": None}
 
 
 @register("wizard_session_clear")

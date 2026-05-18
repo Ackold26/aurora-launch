@@ -39,19 +39,25 @@ def tmp_project_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
 
 
 def _sample_session() -> dict[str, Any]:
-    """Минимальный валидный WizardSession dict для теста."""
+    """Минимальный валидный WizardSession dict для теста.
+
+    Updated for new schema: column_roles/validation_done вместо
+    column_mapping/mapping_done (file reader port 2026-05-18).
+    step: 1 = proxy (было 2 когда mapping был отдельным шагом).
+    """
     return {
         "session_id": "test-uuid-001",
-        "step": 2,
+        "step": 1,
         "imported_file_path": "/tmp/test.xlsx",
-        "imported_adapter_id": "dsm_v2024",
+        "imported_adapter_id": None,
         "imported_record_count": 156,
-        "imported_columns": ["Бренд", "Период", "Продажи"],
-        "column_mapping": [
-            {"source_column": "Бренд", "canonical_field": "brand"},
-            {"source_column": "Продажи", "canonical_field": "sales"},
+        "imported_columns": ["date", "sales_packs", "tv_spend"],
+        "column_roles": [
+            {"name": "date", "role": "date", "confidence": 0.97, "auto_detected": True},
+            {"name": "sales_packs", "role": "kpi", "confidence": 0.70, "auto_detected": True},
+            {"name": "tv_spend", "role": "media", "confidence": 0.70, "auto_detected": True},
         ],
-        "mapping_done": True,
+        "validation_done": True,
         "selected_proxy_path": None,
         "selected_proxy_label": None,
         "similarity_result": None,
@@ -103,8 +109,8 @@ class TestWizardSessionLoad:
         result = dispatch("wizard_session_load", {})
         assert result["session"] is not None
         assert result["session"]["session_id"] == "test-uuid-001"
-        assert result["session"]["step"] == 2
-        assert len(result["session"]["column_mapping"]) == 2
+        assert result["session"]["step"] == 1
+        assert len(result["session"]["column_roles"]) == 3
 
     # NOTE: тест "load без ProjectDB" удалён по той же причине — production
     # invariant: sidecar всегда имеет ProjectDB после startup.
@@ -187,7 +193,7 @@ class TestRoundTripPersistenceAcrossReopen:
             result = dispatch("wizard_session_load", {})
             assert result["session"] is not None
             assert result["session"]["session_id"] == "test-uuid-001"
-            assert result["session"]["mapping_done"] is True
+            assert result["session"]["validation_done"] is True
         finally:
             db2.close()
             _m._PROJECT_DB = None

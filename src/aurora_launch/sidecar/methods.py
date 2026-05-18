@@ -6,7 +6,8 @@ result OR raises an exception (caught by server, converted к error response).
 Block 4 method inventory:
 - `ping` — diagnostic; returns `{"pong": true, "version": ...}`
 - `save_bundle` — Phase 2: Python BundleZipWriter wrapper
-- `parse_data_file` — Phase 3: AdapterRegistry.detect + parse
+- `analyze_data_file` — file reader port: preview + auto-detect column roles
+- `validate_wide_table` — full validation with role overrides
 - `start_forecast` — Phase 4: spawn forecast task, emit progress events
 - `cancel_forecast` — Phase 4: cooperative cancel via atomic flag
 - `get_forecast_status` — Phase 4: poll status (also event-driven)
@@ -676,10 +677,7 @@ import aurora_launch.sidecar.methods_integrity  # noqa: E402, F401
 import aurora_launch.sidecar.methods_consent  # noqa: E402, F401
 import aurora_launch.sidecar.methods_cross_product  # noqa: E402, F401
 import aurora_launch.sidecar.methods_license  # noqa: E402, F401  Phase 2.A
-
-# Re-export symbols that external modules (server.py, tests) import from here
-# for backward-compatibility with the pre-split layout.
-from aurora_launch.sidecar.methods_project import UnsupportedFormatError  # noqa: E402, F401
+import aurora_launch.sidecar.methods_validation  # noqa: E402, F401
 
 # Audit H-4 (этап 2.10): регистрация reset callback должна произойти после
 # определения _hard_reset_module_singletons (выше) и singletons _PROJECT_DB /
