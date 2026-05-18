@@ -261,15 +261,5 @@ class TestServerSmoke:
         data = json.loads(out.getvalue().strip())
         assert data["result"]["payload"] == {"hello": "world"}
 
-    def test_parse_data_file_unsupported_returns_error(self, token: str, tmp_path):
-        """Unknown file format returns structured `unsupported_format` error."""
-        bad_file = tmp_path / "random.bin"
-        bad_file.write_bytes(b"\x00\x01\x02nothing recognizable")
-
-        params = {"path": str(bad_file)}
-        out = io.StringIO()
-        serve_once(
-            self._request("parse_data_file", params, token), expected_token=token, out=out
-        )
-        data = json.loads(out.getvalue().strip())
-        assert data["error"]["kind"] == "unsupported_format"
+    # NOTE: test_parse_data_file_unsupported_returns_error removed 2026-05-18
+    # parse_data_file handler deleted (file reader port: analyze_data_file replaces it).

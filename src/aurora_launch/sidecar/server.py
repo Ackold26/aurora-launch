@@ -24,7 +24,7 @@ from aurora_launch.sidecar.auth import AuthError, check_auth, load_token_from_en
 from aurora_launch.sidecar.methods import (
     MethodNotFoundError,
     SidecarBusyError,
-    UnsupportedFormatError,
+    SidecarSecurityError,
     dispatch,
 )
 from aurora_launch.sidecar.protocol import (
@@ -45,8 +45,8 @@ def _error_for(exc: BaseException) -> ErrorPayload:
         return ErrorPayload("protocol_error", str(exc))
     if isinstance(exc, MethodNotFoundError):
         return ErrorPayload("method_not_found", str(exc))
-    if isinstance(exc, UnsupportedFormatError):
-        return ErrorPayload("unsupported_format", str(exc))
+    if isinstance(exc, SidecarSecurityError):
+        return ErrorPayload("security_error", str(exc))
     if isinstance(exc, SidecarBusyError):
         # Phase 2.B UX-5: structured kind для frontend toast vs raw error
         return ErrorPayload("sidecar_busy", str(exc))

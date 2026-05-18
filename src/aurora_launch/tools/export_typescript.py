@@ -196,7 +196,7 @@ def main(output: Path, print_only: bool) -> None:
         RecipientAnchorsPayload,
     )
     from aurora_launch.schemas.wizard_session import (
-        ColumnMapping,
+        ColumnRoleAssignment,
         WizardAnchorsDraft,
         WizardSession,
         WizardSimilarityResult,
@@ -214,7 +214,7 @@ def main(output: Path, print_only: bool) -> None:
         WizardSession,
         WizardAnchorsDraft,
         WizardSimilarityResult,
-        ColumnMapping,
+        ColumnRoleAssignment,
         # Aurora Launch schemas
         AuroraLaunchBundleMetadata,  # composition root
         AnonymizationDetails,
