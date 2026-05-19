@@ -44,6 +44,15 @@ jobs:
       - name: Set up Python 3.11
         run: uv python install 3.11
 
+      - name: Setup uv venv (avoids /usr/local perms issue для editable installs)
+        # `uv pip install --system` targets system Python 3.12 (pre-installed на
+        # ubuntu-22.04 runner image) at /usr/local/lib — read-only для runner user.
+        # Дedicated venv в $PWD/.venv writable + targets uv-managed Python 3.11.
+        run: |
+          uv venv --python 3.11 .venv
+          echo "VIRTUAL_ENV=$PWD/.venv" >> $GITHUB_ENV
+          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+
       - name: Clone aurora-platform-core (sibling for [tool.uv.sources])
         env:
           PAT: ${{ secrets.AURORA_CROSS_REPO_PAT }}
@@ -51,11 +60,11 @@ jobs:
 
       - name: Install sibling packages (editable, --no-deps)
         run: |
-          uv pip install --system --break-system-packages -e ../aurora-platform-core/aurora_engines --no-deps
-          uv pip install --system --break-system-packages -e ../aurora-platform-core/aurora_observability --no-deps
+          uv pip install -e ../aurora-platform-core/aurora_engines --no-deps
+          uv pip install -e ../aurora-platform-core/aurora_observability --no-deps
 
       - name: Install deps (including pre-commit)
-        run: uv pip install --system --break-system-packages pre-commit ruff mypy pydantic numpy
+        run: uv pip install pre-commit ruff mypy pydantic numpy
 
       - name: Run pre-commit on all files
         run: pre-commit run --all-files --show-diff-on-failure
@@ -75,6 +84,15 @@ jobs:
       - name: Set up Python 3.11
         run: uv python install 3.11
 
+      - name: Setup uv venv (avoids /usr/local perms issue для editable installs)
+        # `uv pip install --system` targets system Python 3.12 (pre-installed на
+        # ubuntu-22.04 runner image) at /usr/local/lib — read-only для runner user.
+        # Дedicated venv в $PWD/.venv writable + targets uv-managed Python 3.11.
+        run: |
+          uv venv --python 3.11 .venv
+          echo "VIRTUAL_ENV=$PWD/.venv" >> $GITHUB_ENV
+          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+
       - name: Clone aurora-platform-core (sibling for [tool.uv.sources])
         env:
           PAT: ${{ secrets.AURORA_CROSS_REPO_PAT }}
@@ -82,11 +100,11 @@ jobs:
 
       - name: Install sibling packages (editable, --no-deps)
         run: |
-          uv pip install --system --break-system-packages -e ../aurora-platform-core/aurora_engines --no-deps
-          uv pip install --system --break-system-packages -e ../aurora-platform-core/aurora_observability --no-deps
+          uv pip install -e ../aurora-platform-core/aurora_engines --no-deps
+          uv pip install -e ../aurora-platform-core/aurora_observability --no-deps
 
       - name: Install deps
-        run: uv pip install --system --break-system-packages -e ".[]" --no-deps && uv pip install --system --break-system-packages pydantic numpy pandas rfc8785 click rich ruff mypy pyyaml
+        run: uv pip install -e ".[]" --no-deps && uv pip install pydantic numpy pandas rfc8785 click rich ruff mypy pyyaml
 
       - name: ruff check
         run: ruff check src tests
@@ -120,6 +138,12 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
+      - name: Setup uv venv (avoids /usr/local perms issue для editable installs)
+        run: |
+          uv venv --python ${{ matrix.python-version }} .venv
+          echo "VIRTUAL_ENV=$PWD/.venv" >> $GITHUB_ENV
+          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+
       - name: Clone aurora-platform-core (sibling for [tool.uv.sources])
         env:
           PAT: ${{ secrets.AURORA_CROSS_REPO_PAT }}
@@ -127,14 +151,14 @@ jobs:
 
       - name: Install sibling packages (editable, --no-deps)
         run: |
-          uv pip install --system --break-system-packages -e ../aurora-platform-core/aurora_engines --no-deps
-          uv pip install --system --break-system-packages -e ../aurora-platform-core/aurora_observability --no-deps
+          uv pip install -e ../aurora-platform-core/aurora_engines --no-deps
+          uv pip install -e ../aurora-platform-core/aurora_observability --no-deps
 
       - name: Install dependencies
         # Sprint 0 wiring (2026-05-19): aurora-engines + aurora-observability resolve
         # via [tool.uv.sources] к sibling, installed editable в prior step.
         # Main package с --no-deps — explicit runtime whitelist (numpy/pandas/pymc/arviz/etc).
-        run: uv pip install --system --break-system-packages -e ".[]" --no-deps && uv pip install --system --break-system-packages pydantic numpy pandas rfc8785 click rich pytest pytest-cov hypothesis ruff mypy pyyaml
+        run: uv pip install -e ".[]" --no-deps && uv pip install pydantic numpy pandas rfc8785 click rich pytest pytest-cov hypothesis ruff mypy pyyaml
 
       - name: Run tests
         run: pytest -v --cov=src/aurora_launch --cov-report=term-missing --cov-report=xml
@@ -171,6 +195,15 @@ jobs:
       - name: Set up Python 3.11
         run: uv python install 3.11
 
+      - name: Setup uv venv (avoids /usr/local perms issue для editable installs)
+        # `uv pip install --system` targets system Python 3.12 (pre-installed на
+        # ubuntu-22.04 runner image) at /usr/local/lib — read-only для runner user.
+        # Дedicated venv в $PWD/.venv writable + targets uv-managed Python 3.11.
+        run: |
+          uv venv --python 3.11 .venv
+          echo "VIRTUAL_ENV=$PWD/.venv" >> $GITHUB_ENV
+          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+
       - name: Clone aurora-platform-core (sibling for [tool.uv.sources])
         env:
           PAT: ${{ secrets.AURORA_CROSS_REPO_PAT }}
@@ -178,11 +211,11 @@ jobs:
 
       - name: Install sibling packages (editable, --no-deps)
         run: |
-          uv pip install --system --break-system-packages -e ../aurora-platform-core/aurora_engines --no-deps
-          uv pip install --system --break-system-packages -e ../aurora-platform-core/aurora_observability --no-deps
+          uv pip install -e ../aurora-platform-core/aurora_engines --no-deps
+          uv pip install -e ../aurora-platform-core/aurora_observability --no-deps
 
       - name: Install dependencies
-        run: uv pip install --system --break-system-packages -e ".[]" --no-deps && uv pip install --system --break-system-packages pydantic numpy pandas rfc8785 click rich pytest
+        run: uv pip install -e ".[]" --no-deps && uv pip install pydantic numpy pandas rfc8785 click rich pytest
 
       - name: BC corpus generation
         run: |
