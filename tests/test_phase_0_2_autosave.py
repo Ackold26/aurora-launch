@@ -292,12 +292,13 @@ class TestRecoveryFlow:
 
 
 @pytest.mark.skipif(
-    sys.platform == "darwin",
+    sys.platform != "linux",
     reason=(
-        "TestTimerScheduling tests timer-driven race-prone на macOS GitHub Actions "
-        "runners. Multiple tests fail intermittently (test_replace_provider, "
-        "test_provider_exception_does_not_kill_timer). Sprint Buffer item: replace "
-        "timer race с polling assertion OR mock timer threading."
+        "TestTimerScheduling tests timer-driven race-prone на macOS + Windows "
+        "GitHub Actions runners. Multiple tests fail intermittently "
+        "(test_replace_provider, test_provider_exception_does_not_kill_timer) — "
+        "tmp dir cleanup + thread timing varies non-Linux. Sprint Buffer item: "
+        "replace timer race с polling assertion OR mock timer threading."
     ),
 )
 class TestTimerScheduling:
