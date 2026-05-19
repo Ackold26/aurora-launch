@@ -1,6 +1,6 @@
 [project]
 name = "aurora-launch"
-version = "0.1.0-b05"
+version = "0.1.1"
 description = "Aurora Launch — MMM forecasting product for new brand launches via ad-hoc proxy intake"
 authors = [
     { name = "Aurora Analytics", email = "ackold@yandex.ru" },
