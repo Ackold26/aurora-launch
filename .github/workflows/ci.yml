@@ -45,7 +45,7 @@ jobs:
         run: uv python install 3.11
 
       - name: Install deps (including pre-commit)
-        run: uv pip install --system pre-commit ruff mypy pydantic numpy
+        run: uv pip install --system --break-system-packages pre-commit ruff mypy pydantic numpy
 
       - name: Run pre-commit on all files
         run: pre-commit run --all-files --show-diff-on-failure
@@ -66,7 +66,7 @@ jobs:
         run: uv python install 3.11
 
       - name: Install deps
-        run: uv pip install --system -e ".[]" --no-deps && uv pip install --system pydantic numpy pandas rfc8785 click rich ruff mypy pyyaml
+        run: uv pip install --system --break-system-packages -e ".[]" --no-deps && uv pip install --system --break-system-packages pydantic numpy pandas rfc8785 click rich ruff mypy pyyaml
 
       - name: ruff check
         run: ruff check src tests
@@ -103,7 +103,7 @@ jobs:
       - name: Install dependencies
         # CI runners don't have aurora-platform-core sibling checkout.
         # Tests that require Phase A integration auto-skip via path checks.
-        run: uv pip install --system -e ".[]" --no-deps && uv pip install --system pydantic numpy pandas rfc8785 click rich pytest pytest-cov hypothesis ruff mypy pyyaml
+        run: uv pip install --system --break-system-packages -e ".[]" --no-deps && uv pip install --system --break-system-packages pydantic numpy pandas rfc8785 click rich pytest pytest-cov hypothesis ruff mypy pyyaml
 
       - name: Run tests
         run: pytest -v --cov=src/aurora_launch --cov-report=term-missing --cov-report=xml
@@ -141,7 +141,7 @@ jobs:
         run: uv python install 3.11
 
       - name: Install dependencies
-        run: uv pip install --system -e ".[]" --no-deps && uv pip install --system pydantic numpy pandas rfc8785 click rich pytest
+        run: uv pip install --system --break-system-packages -e ".[]" --no-deps && uv pip install --system --break-system-packages pydantic numpy pandas rfc8785 click rich pytest
 
       - name: BC corpus generation
         run: |

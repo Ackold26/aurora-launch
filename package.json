@@ -5,6 +5,12 @@
   "description": "Aurora Launch — root manifest. Proxies dev/build scripts к frontend/ так чтобы Tauri CLI (запускаемый из этой папки) не цеплял sibling-проекты типа aurora-cloud/ (Vercel Edge Functions).",
   "scripts": {
     "dev": "npm --prefix frontend run dev",
-    "build": "npm --prefix frontend run build"
+    "build": "npm --prefix frontend run build",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "tauri:build:dev": "AURORA_BUILD_PROFILE=dev tauri build --debug"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.2"
   }
 }
