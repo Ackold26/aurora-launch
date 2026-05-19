@@ -105,7 +105,11 @@ jobs:
           uv pip install -e ../aurora-platform-core/aurora_observability --no-deps
 
       - name: Install deps
-        run: uv pip install -e ".[]" --no-deps && uv pip install pydantic numpy pandas rfc8785 click rich ruff mypy pyyaml
+        # Sibling aurora-engines + aurora-observability installed editable в prior step;
+        # main `uv pip install -e .` resolves остальные main deps (msgpack, pymc, openpyxl,
+        # cryptography, arviz, pytensor, psutil) с PyPI. Dev tools whitelist отдельно
+        # ([tool.uv] dev-dependencies — не auto-installed via `uv pip install`).
+        run: uv pip install -e ".[]" && uv pip install ruff mypy pyyaml
 
       - name: ruff check
         run: ruff check src tests
@@ -158,10 +162,10 @@ jobs:
           uv pip install -e ../aurora-platform-core/aurora_observability --no-deps
 
       - name: Install dependencies
-        # Sprint 0 wiring (2026-05-19): aurora-engines + aurora-observability resolve
-        # via [tool.uv.sources] к sibling, installed editable в prior step.
-        # Main package с --no-deps — explicit runtime whitelist (numpy/pandas/pymc/arviz/etc).
-        run: uv pip install -e ".[]" --no-deps && uv pip install pydantic numpy pandas rfc8785 click rich pytest pytest-cov hypothesis ruff mypy pyyaml
+        # Sibling aurora-engines + aurora-observability installed editable в prior step;
+        # main install resolves остальные main deps (msgpack, pymc, openpyxl,
+        # cryptography, arviz, pytensor, psutil) с PyPI. Dev tools whitelist отдельно.
+        run: uv pip install -e ".[]" && uv pip install pytest pytest-cov hypothesis ruff mypy pyyaml
 
       - name: Run tests
         run: pytest -v --cov=src/aurora_launch --cov-report=term-missing --cov-report=xml
@@ -218,7 +222,8 @@ jobs:
           uv pip install -e ../aurora-platform-core/aurora_observability --no-deps
 
       - name: Install dependencies
-        run: uv pip install -e ".[]" --no-deps && uv pip install pydantic numpy pandas rfc8785 click rich pytest
+        # Full main deps resolution (msgpack, pymc, etc.); sibling editable satisfies aurora-engines/observability.
+        run: uv pip install -e ".[]" && uv pip install pytest
 
       - name: BC corpus generation
         run: |
