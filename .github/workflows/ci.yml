@@ -58,7 +58,12 @@ jobs:
         run: |
           uv venv --python 3.11 .venv
           echo "VIRTUAL_ENV=$PWD/.venv" >> $GITHUB_ENV
-          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+          # venv layout: bin/ on Linux/macOS, Scripts/ on Windows.
+          if [ -d ".venv/Scripts" ]; then
+            echo "$PWD/.venv/Scripts" >> $GITHUB_PATH
+          else
+            echo "$PWD/.venv/bin" >> $GITHUB_PATH
+          fi
 
       - name: Clone aurora-platform-core (sibling for [tool.uv.sources])
         env:
@@ -99,7 +104,12 @@ jobs:
         run: |
           uv venv --python 3.11 .venv
           echo "VIRTUAL_ENV=$PWD/.venv" >> $GITHUB_ENV
-          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+          # venv layout: bin/ on Linux/macOS, Scripts/ on Windows.
+          if [ -d ".venv/Scripts" ]; then
+            echo "$PWD/.venv/Scripts" >> $GITHUB_PATH
+          else
+            echo "$PWD/.venv/bin" >> $GITHUB_PATH
+          fi
 
       - name: Clone aurora-platform-core (sibling for [tool.uv.sources])
         env:
@@ -156,7 +166,12 @@ jobs:
         run: |
           uv venv --python ${{ matrix.python-version }} .venv
           echo "VIRTUAL_ENV=$PWD/.venv" >> $GITHUB_ENV
-          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+          # venv layout: bin/ on Linux/macOS, Scripts/ on Windows.
+          if [ -d ".venv/Scripts" ]; then
+            echo "$PWD/.venv/Scripts" >> $GITHUB_PATH
+          else
+            echo "$PWD/.venv/bin" >> $GITHUB_PATH
+          fi
 
       - name: Clone aurora-platform-core (sibling for [tool.uv.sources])
         env:
@@ -216,7 +231,12 @@ jobs:
         run: |
           uv venv --python 3.11 .venv
           echo "VIRTUAL_ENV=$PWD/.venv" >> $GITHUB_ENV
-          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+          # venv layout: bin/ on Linux/macOS, Scripts/ on Windows.
+          if [ -d ".venv/Scripts" ]; then
+            echo "$PWD/.venv/Scripts" >> $GITHUB_PATH
+          else
+            echo "$PWD/.venv/bin" >> $GITHUB_PATH
+          fi
 
       - name: Clone aurora-platform-core (sibling for [tool.uv.sources])
         env:
