@@ -14,6 +14,7 @@
   import { pushToast } from '$lib/stores/toast';
   import { track, initTelemetryInternal } from '$lib/services/telemetry';
 
+  import AuroraLogo from '$lib/components/AuroraLogo.svelte';
   import Toaster from '$lib/components/Toaster.svelte';
   import PerfFooter from '$lib/components/PerfFooter.svelte';
   import Badge from '$lib/components/Badge.svelte';
@@ -311,7 +312,7 @@
   <RefreshAvailableBanner projectUuid={$activeBundle?.manifest?.project_id ?? ''} />
   <header class="app-header">
     <div class="brand">
-      <span class="logo" aria-hidden="true">◆</span>
+      <AuroraLogo size="sm" />
       <span class="brand-name">Aurora Launch</span>
       {#if $licenseStatus.tier === 'dev_bypass'}
         <Badge variant="warning" size="sm">
