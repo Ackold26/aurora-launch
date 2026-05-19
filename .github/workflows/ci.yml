@@ -44,6 +44,14 @@ jobs:
       - name: Set up Python 3.11
         run: uv python install 3.11
 
+      - name: Clone aurora-platform-core (sibling for [tool.uv.sources])
+        run: git clone --depth=1 https://github.com/Ackold26/aurora-platform-core.git ../aurora-platform-core
+
+      - name: Install sibling packages (editable, --no-deps)
+        run: |
+          uv pip install --system --break-system-packages -e ../aurora-platform-core/aurora_engines --no-deps
+          uv pip install --system --break-system-packages -e ../aurora-platform-core/aurora_observability --no-deps
+
       - name: Install deps (including pre-commit)
         run: uv pip install --system --break-system-packages pre-commit ruff mypy pydantic numpy
 
@@ -64,6 +72,14 @@ jobs:
 
       - name: Set up Python 3.11
         run: uv python install 3.11
+
+      - name: Clone aurora-platform-core (sibling for [tool.uv.sources])
+        run: git clone --depth=1 https://github.com/Ackold26/aurora-platform-core.git ../aurora-platform-core
+
+      - name: Install sibling packages (editable, --no-deps)
+        run: |
+          uv pip install --system --break-system-packages -e ../aurora-platform-core/aurora_engines --no-deps
+          uv pip install --system --break-system-packages -e ../aurora-platform-core/aurora_observability --no-deps
 
       - name: Install deps
         run: uv pip install --system --break-system-packages -e ".[]" --no-deps && uv pip install --system --break-system-packages pydantic numpy pandas rfc8785 click rich ruff mypy pyyaml
@@ -100,9 +116,18 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
+      - name: Clone aurora-platform-core (sibling for [tool.uv.sources])
+        run: git clone --depth=1 https://github.com/Ackold26/aurora-platform-core.git ../aurora-platform-core
+
+      - name: Install sibling packages (editable, --no-deps)
+        run: |
+          uv pip install --system --break-system-packages -e ../aurora-platform-core/aurora_engines --no-deps
+          uv pip install --system --break-system-packages -e ../aurora-platform-core/aurora_observability --no-deps
+
       - name: Install dependencies
-        # CI runners don't have aurora-platform-core sibling checkout.
-        # Tests that require Phase A integration auto-skip via path checks.
+        # Sprint 0 wiring (2026-05-19): aurora-engines + aurora-observability resolve
+        # via [tool.uv.sources] к sibling, installed editable в prior step.
+        # Main package с --no-deps — explicit runtime whitelist (numpy/pandas/pymc/arviz/etc).
         run: uv pip install --system --break-system-packages -e ".[]" --no-deps && uv pip install --system --break-system-packages pydantic numpy pandas rfc8785 click rich pytest pytest-cov hypothesis ruff mypy pyyaml
 
       - name: Run tests
@@ -139,6 +164,14 @@ jobs:
 
       - name: Set up Python 3.11
         run: uv python install 3.11
+
+      - name: Clone aurora-platform-core (sibling for [tool.uv.sources])
+        run: git clone --depth=1 https://github.com/Ackold26/aurora-platform-core.git ../aurora-platform-core
+
+      - name: Install sibling packages (editable, --no-deps)
+        run: |
+          uv pip install --system --break-system-packages -e ../aurora-platform-core/aurora_engines --no-deps
+          uv pip install --system --break-system-packages -e ../aurora-platform-core/aurora_observability --no-deps
 
       - name: Install dependencies
         run: uv pip install --system --break-system-packages -e ".[]" --no-deps && uv pip install --system --break-system-packages pydantic numpy pandas rfc8785 click rich pytest
