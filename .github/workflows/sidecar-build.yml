@@ -75,7 +75,9 @@ jobs:
           cache: pip
 
       - name: Clone aurora-platform-core (sibling for [tool.uv.sources])
-        run: git clone --depth=1 https://github.com/Ackold26/aurora-platform-core.git ../aurora-platform-core
+        env:
+          PAT: ${{ secrets.AURORA_CROSS_REPO_PAT }}
+        run: git clone --depth=1 "https://x-access-token:${PAT}@github.com/Ackold26/aurora-platform-core.git" ../aurora-platform-core
 
       - name: Install runtime deps + tests + pyinstaller (separated envs)
         # HIGH-4 fix: split test env (с dev extras) from build env (runtime

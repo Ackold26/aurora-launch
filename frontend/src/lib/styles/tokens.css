@@ -1,113 +1,140 @@
-/* Aurora Design — tokens.css
-   Generated from sibling tokens.json (W3C DTCG SSOT).
-   Source: aurora-platform-core/aurora_design/src/aurora_design/tokens/tokens.json
-   Generator: generate-tokens-css.mjs
-   DO NOT hand-edit — re-run `node generate-tokens-css.mjs` to regenerate. */
+/* Aurora Launch — tokens.css
+   Generated from ..\06_Aurora_Design_system\01_Tokens\tokens.json
+   Run `npm run gen:tokens` to regenerate. Do NOT hand-edit. */
 
 :root {
-  /* brand */
-  --brand-signature-lime: #CCFF00;
-  --brand-signature-breadcrumb-format: AURORA AI · {date} · v{product} · {deliverable-id};
-  --brand-typography-body-unified: Inter;
+  /* colors */
+  --color-brand-deep-20: #D6DFE8;
+  --color-brand-deep-40: #99ADC2;
+  --color-brand-deep-60: #547090;
+  --color-brand-deep-80: #1E3A5F;
+  --color-brand-deep-100: #0A1628;
+  --color-brand-gold-primary: #C5A46D;
+  --color-brand-gold-muted: #8C7142;
+  --color-brand-bg-white: #FFFFFF;
+  --color-brand-bg-quiet: #F7F5EE;
+  --color-brand-rule: #C8CDD4;
+  --color-brand-text-primary: var(--color-brand-deep-100);
+  --color-brand-text-secondary: var(--color-brand-deep-60);
+  --color-brand-sig-lime: #CCFF00;
+  --color-ui-accent-primary: #2E5BFF;
+  --color-ui-accent-secondary: var(--color-brand-sig-lime);
+  --color-ui-bg-main: #0f1117;
+  --color-ui-bg-surface: #1a1d27;
+  --color-ui-bg-border: #2a2d37;
+  --color-ui-text-primary: #EAEAF0;
+  --color-ui-text-secondary: #A8A8B8;
+  --color-ui-text-muted: #7A7A90;
+  --color-semantic-success: #10B981;
+  --color-semantic-warning: #F59E0B;
+  --color-semantic-danger: #EF4444;
+  --color-semantic-info: #22D3EE;
+  --color-semantic-stop: #ED2124;
+  --color-semantic-caution: #F1C44D;
+  --color-semantic-go: #269924;
+  --color-data-ocean: #0A6F7A;
+  --color-data-jade: #3EB661;
+  --color-data-berry: #D3086F;
+  --color-data-tangerine: #FA823C;
+  --color-data-purple: #6633CC;
+  --color-data-aqua: #4CCACD;
+  --color-data-peach: #FF7E81;
 
-  /* ui */
-  --ui-surface-bg-primary: #0C0C12;
-  --ui-surface-bg-secondary: #141420;
-  --ui-surface-bg-tertiary: #1E1E2C;
-  --ui-surface-bg-card: #181824;
-  --ui-surface-bg-card-hover: #22222F;
-  --ui-surface-bg-glass: rgba(20, 20, 30, 0.92);
-  --ui-accent-primary: #2E5BFF;
-  --ui-accent-primary-hover: #4A76FF;
-  --ui-accent-secondary: var(--brand-signature-lime);
-  --ui-accent-glow: rgba(46, 91, 255, 0.22);
-  --ui-accent-glow-strong: rgba(46, 91, 255, 0.40);
-  --ui-functional-info: #22D3EE;
-  --ui-functional-completion: #34D399;
-  --ui-functional-success: #10B981;
-  --ui-functional-warning: #F59E0B;
-  --ui-functional-danger: #EF4444;
-  --ui-text-primary: #EAEAF0;
-  --ui-text-secondary: #A8A8B8;
-  --ui-text-muted: #7A7A90;
-  --ui-border-default: rgba(255, 255, 255, 0.16);
-  --ui-border-subtle: rgba(255, 255, 255, 0.10);
-  --ui-border-active: rgba(46, 91, 255, 0.50);
-  --ui-typography-sans: Inter, system-ui, sans-serif;
-  --ui-typography-mono: JetBrains Mono, Consolas, monospace;
-  --ui-radius-sm: 8px;
-  --ui-radius-md: 12px;
-  --ui-radius-lg: 14px;
-  --ui-radius-xl: 16px;
-  --ui-radius-2xl: 20px;
-  --ui-theme-light-bg-primary: #F5F5F7;
-  --ui-theme-light-bg-card: #FFFFFF;
-  --ui-theme-light-text-primary: #1A1A1E;
-  --ui-theme-light-accent-secondary: #4A4A55;
-  --ui-theme-light-info: #0891B2;
-  --ui-theme-light-completion: #059669;
-  --ui-theme-fun-bg-primary: #F5F0D0;
-  --ui-theme-fun-bg-card: #FFFEF5;
-  --ui-theme-fun-accent-primary: #7C6BC4;
-  --ui-theme-fun-accent-secondary: #90C67C;
-  --ui-theme-fun-radius-btn: 999px;
+  /* typography */
+  --typography-fontFamily-serif: Georgia;
+  --typography-fontFamily-sans: Arial;
+  --typography-fontFamily-mono: Consolas;
+  --typography-fontFamily-uiSerif: Noto Serif;
+  --typography-fontFamily-uiSans: Inter;
+  --typography-fontFamily-uiMono: JetBrains Mono;
+  --typography-fontSize-ui-h1: 2rem;
+  --typography-fontSize-ui-h2: 1.5rem;
+  --typography-fontSize-ui-h3: 1.25rem;
+  --typography-fontSize-ui-body: 1rem;
+  --typography-fontSize-ui-sm: 0.875rem;
+  --typography-fontSize-ui-xs: 0.75rem;
+  --typography-fontWeight-light: 300;
+  --typography-fontWeight-regular: 400;
+  --typography-fontWeight-medium: 500;
+  --typography-fontWeight-bold: 700;
+  --typography-lineHeight-tight: 1;
+  --typography-lineHeight-snug: 1.15;
+  --typography-lineHeight-normal: 1.5;
 
-  /* deliverable */
-  --deliverable-surface-page: #FFFFFF;
-  --deliverable-surface-page-quiet: #F7F5EE;
-  --deliverable-aurora-deep-20: #D6DFE8;
-  --deliverable-aurora-deep-40: #99ADC2;
-  --deliverable-aurora-deep-60: #547090;
-  --deliverable-aurora-deep-80: #1E3A5F;
-  --deliverable-aurora-deep-100: #0A1628;
-  --deliverable-gold-primary: #C5A46D;
-  --deliverable-gold-muted: #8C7142;
-  --deliverable-neutrals-text-primary: #0A1628;
-  --deliverable-neutrals-text-secondary: #6E6F73;
-  --deliverable-neutrals-rule: #C8CDD4;
-  --deliverable-neutrals-soft-gray: #9A9A9A;
-  --deliverable-dataviz-ocean: #0A6F7A;
-  --deliverable-dataviz-jade: #3EB661;
-  --deliverable-dataviz-berry: #D3086F;
-  --deliverable-dataviz-tangerine: #FA823C;
-  --deliverable-dataviz-purple: #6633CC;
-  --deliverable-dataviz-aqua: #4CCACD;
-  --deliverable-dataviz-peach: #FF7E81;
-  --deliverable-status-stop: #ED2124;
-  --deliverable-status-caution: #F1C44D;
-  --deliverable-status-go: #269924;
-  --deliverable-xlsx-code-input: #0066FF;
-  --deliverable-xlsx-code-formula: #000000;
-  --deliverable-xlsx-code-cross-sheet: #008000;
-  --deliverable-xlsx-code-external: #FF0000;
-  --deliverable-typography-office-serif: Georgia, 'Times New Roman', serif;
-  --deliverable-typography-office-sans: Arial, sans-serif;
-  --deliverable-typography-office-mono: Consolas, 'Courier New', monospace;
-  --deliverable-typography-web-serif: 'Noto Serif', Georgia, serif;
-  --deliverable-typography-web-sans: {brand.typography.body-unified}, Arimo, Arial, sans-serif;
-  --deliverable-typography-web-mono: 'JetBrains Mono', Consolas, monospace;
-  --deliverable-scale-pptx-key-title: 24pt;
-  --deliverable-scale-pptx-key-body: 20pt;
-  --deliverable-scale-pptx-key-body-alt: 18pt;
-  --deliverable-scale-pptx-key-secondary-min: 16pt;
-  --deliverable-scale-pptx-key-chart-min: 14pt;
-  --deliverable-scale-pptx-detail-title: 16pt;
-  --deliverable-scale-pptx-detail-body: 12pt;
-  --deliverable-scale-pptx-detail-chart-min: 8pt;
-  --deliverable-scale-docx-h1: 18pt;
-  --deliverable-scale-docx-h2: 14pt;
-  --deliverable-scale-docx-h3: 12pt;
-  --deliverable-scale-docx-body: 11pt;
-  --deliverable-grid-pptx-ratio: 16:9;
-  --deliverable-grid-pptx-columns: 12;
-  --deliverable-grid-docx-margin: 2.5cm;
-  --deliverable-grid-gridline: 0.75pt;
+  /* spacing */
+  --spacing-0: 0;
+  --spacing-1: 0.25rem;
+  --spacing-2: 0.5rem;
+  --spacing-3: 0.75rem;
+  --spacing-4: 1rem;
+  --spacing-6: 1.5rem;
+  --spacing-8: 2rem;
+  --spacing-12: 3rem;
+  --spacing-16: 4rem;
 
-  /* rules */
-  --rules-emphasis-allowed: size,color,bold;
-  --rules-emphasis-forbidden: italic,ALL CAPS,underline (except links);
-  --rules-bullets-no-terminal-punctuation: true;
-  --rules-dataviz-max-hues-per-page: 5;
-  --rules-status-only-in-traffic-light-context: true;
+  /* sizing */
+  --sizing-ui-containerMax: 1280px;
+  --sizing-ui-sidebarWidth: 240px;
 
+  /* borders */
+  --border-width-hairline: 0.75pt;
+  --border-width-signature: 2pt;
+  --border-radius-none: 0;
+  --border-radius-sm: 2px;
+  --border-radius-md: 4px;
+  --border-radius-lg: 8px;
+
+  /* Aurora Launch convenience aliases (UX_PRINCIPLES.md §2.1) */
+  --bg-main: var(--color-ui-bg-main);
+  --bg-surface: var(--color-ui-bg-surface);
+  --border-subtle: var(--color-ui-bg-border);
+  --text-primary: var(--color-ui-text-primary);
+  --text-secondary: var(--color-ui-text-secondary);
+  --text-muted: var(--color-ui-text-muted);
+  --accent: var(--color-ui-accent-primary);
+  --accent-sigil: var(--color-ui-accent-secondary); /* sacred lime */
+  --color-success: var(--color-semantic-success);
+  --color-warning: var(--color-semantic-warning);
+  --color-danger: var(--color-semantic-danger);
+  --color-info: var(--color-semantic-info);
+  --font-sans: var(--typography-fontFamily-uiSans);
+  --font-serif: var(--typography-fontFamily-uiSerif);
+  --font-mono: var(--typography-fontFamily-uiMono);
+
+  /* Motion timings (Block 2D) */
+  --motion-fast: 150ms;
+  --motion-default: 200ms;
+  --motion-smooth: 320ms;
+  --easing-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --easing-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --easing-emphasized: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Light theme overrides (Block 2 D9) — tokens.json остаётся dark SSOT */
+[data-theme="light"] {
+  --bg-main: #FAFAFC;
+  --bg-surface: #FFFFFF;
+  --border-subtle: #E0E2E8;
+  --text-primary: #1A1D27;
+  --text-secondary: #4A4D57;
+  --text-muted: #7A7D87;
+}
+
+/* High contrast palette (a11y, ГОСТ Р 52872-2019) */
+[data-theme="high-contrast"] {
+  --bg-main: #000000;
+  --bg-surface: #0F0F0F;
+  --border-subtle: #FFFFFF;
+  --text-primary: #FFFFFF;
+  --text-secondary: #FFFF00;
+  --text-muted: #BBBBBB;
+  --accent: #00FFFF;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-default: 0ms;
+    --motion-smooth: 0ms;
+  }
 }

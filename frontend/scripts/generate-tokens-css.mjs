@@ -20,6 +20,11 @@ const TOKENS_PATH = path.resolve(
   '01_Tokens',
   'tokens.json'
 );
+// CI fallback: external SSOT sibling dir doesn't exist в runners. Vendored copy
+// committed adjacent к этому script — sync на любое изменение upstream tokens.json.
+// Dev workflow preferentially читает SSOT (внешний sibling); если missing —
+// vendored fallback (с warning).
+const VENDORED_PATH = path.resolve(HERE, 'tokens.vendored.json');
 const OUT_PATH = path.resolve(FRONTEND_ROOT, 'src/lib/styles/tokens.css');
 
 function flattenTokens(obj, prefix = '') {
@@ -54,13 +59,29 @@ function toCssVar(name) {
 
 async function main() {
   let raw;
+  let sourcePath = TOKENS_PATH;
   try {
     raw = await fs.readFile(TOKENS_PATH, 'utf-8');
   } catch (e) {
-    console.error(`[tokens] FAILED to read SSOT at ${TOKENS_PATH}`);
-    console.error(`[tokens] If the path moved, update generate-tokens-css.mjs.`);
-    console.error(e);
-    process.exit(2);
+    if (e.code !== 'ENOENT') {
+      console.error(`[tokens] FAILED to read SSOT at ${TOKENS_PATH}`);
+      console.error(e);
+      process.exit(2);
+    }
+    // External SSOT missing (typical CI runner without sibling design system dir).
+    // Fall back к vendored copy.
+    try {
+      raw = await fs.readFile(VENDORED_PATH, 'utf-8');
+      sourcePath = VENDORED_PATH;
+      console.warn(`[tokens] external SSOT not found at ${TOKENS_PATH}`);
+      console.warn(`[tokens] falling back to vendored copy: ${VENDORED_PATH}`);
+    } catch (e2) {
+      console.error(`[tokens] FAILED — neither SSOT nor vendored available.`);
+      console.error(`[tokens]   SSOT path:     ${TOKENS_PATH}`);
+      console.error(`[tokens]   Vendored path: ${VENDORED_PATH}`);
+      console.error(e2);
+      process.exit(2);
+    }
   }
   const tokens = JSON.parse(raw);
   const flat = flattenTokens(tokens);
@@ -83,7 +104,7 @@ async function main() {
 
   const lines = [
     '/* Aurora Launch — tokens.css',
-    `   Generated from ${path.relative(PROJECT_ROOT, TOKENS_PATH)}`,
+    `   Generated from ${path.relative(PROJECT_ROOT, sourcePath)}`,
     `   Run \`npm run gen:tokens\` to regenerate. Do NOT hand-edit. */`,
     '',
     ':root {'
