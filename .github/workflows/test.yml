@@ -53,6 +53,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: Pre-create sidecar binary placeholder
+        # Tauri externalBin (tauri.conf.json) requires binaries/aurora-sidecar-<target-triple>
+        # to exist before cargo check (resource validation in build.rs). Real binary
+        # built отдельно в sidecar-build.yml workflow; empty placeholder satisfies
+        # compile-time check here.
+        run: |
+          mkdir -p src-tauri/binaries
+          touch src-tauri/binaries/aurora-sidecar-x86_64-unknown-linux-gnu
+          chmod +x src-tauri/binaries/aurora-sidecar-x86_64-unknown-linux-gnu
       - name: Cargo build (no run)
         working-directory: src-tauri
         env:

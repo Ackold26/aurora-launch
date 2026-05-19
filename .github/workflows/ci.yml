@@ -45,7 +45,9 @@ jobs:
         run: uv python install 3.11
 
       - name: Clone aurora-platform-core (sibling for [tool.uv.sources])
-        run: git clone --depth=1 https://github.com/Ackold26/aurora-platform-core.git ../aurora-platform-core
+        env:
+          PAT: ${{ secrets.AURORA_CROSS_REPO_PAT }}
+        run: git clone --depth=1 "https://x-access-token:${PAT}@github.com/Ackold26/aurora-platform-core.git" ../aurora-platform-core
 
       - name: Install sibling packages (editable, --no-deps)
         run: |
@@ -74,7 +76,9 @@ jobs:
         run: uv python install 3.11
 
       - name: Clone aurora-platform-core (sibling for [tool.uv.sources])
-        run: git clone --depth=1 https://github.com/Ackold26/aurora-platform-core.git ../aurora-platform-core
+        env:
+          PAT: ${{ secrets.AURORA_CROSS_REPO_PAT }}
+        run: git clone --depth=1 "https://x-access-token:${PAT}@github.com/Ackold26/aurora-platform-core.git" ../aurora-platform-core
 
       - name: Install sibling packages (editable, --no-deps)
         run: |
@@ -117,7 +121,9 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Clone aurora-platform-core (sibling for [tool.uv.sources])
-        run: git clone --depth=1 https://github.com/Ackold26/aurora-platform-core.git ../aurora-platform-core
+        env:
+          PAT: ${{ secrets.AURORA_CROSS_REPO_PAT }}
+        run: git clone --depth=1 "https://x-access-token:${PAT}@github.com/Ackold26/aurora-platform-core.git" ../aurora-platform-core
 
       - name: Install sibling packages (editable, --no-deps)
         run: |
@@ -166,7 +172,9 @@ jobs:
         run: uv python install 3.11
 
       - name: Clone aurora-platform-core (sibling for [tool.uv.sources])
-        run: git clone --depth=1 https://github.com/Ackold26/aurora-platform-core.git ../aurora-platform-core
+        env:
+          PAT: ${{ secrets.AURORA_CROSS_REPO_PAT }}
+        run: git clone --depth=1 "https://x-access-token:${PAT}@github.com/Ackold26/aurora-platform-core.git" ../aurora-platform-core
 
       - name: Install sibling packages (editable, --no-deps)
         run: |
