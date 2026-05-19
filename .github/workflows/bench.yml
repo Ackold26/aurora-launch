@@ -37,11 +37,18 @@ jobs:
           python-version: '3.12'
           cache: pip
 
+      - name: Clone aurora-platform-core (sibling for [tool.uv.sources])
+        run: git clone --depth=1 https://github.com/Ackold26/aurora-platform-core.git ../aurora-platform-core
+
       - name: Install deps (runtime only — no dev tooling)
         # Runtime-only install mirrors production import environment.
         # Dev tools (pytest/ruff/mypy) increase import graph и skew timing.
+        # Sprint 0 wiring (2026-05-19): aurora_engines + aurora_observability
+        # installed editable из sibling до main `pip install -e .` (resolver satisfaction).
         run: |
           pip install --upgrade pip
+          pip install -e ../aurora-platform-core/aurora_engines --no-deps
+          pip install -e ../aurora-platform-core/aurora_observability --no-deps
           pip install -e .
 
       - name: Verify bench script exists

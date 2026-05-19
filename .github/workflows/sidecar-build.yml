@@ -74,11 +74,18 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: pip
 
+      - name: Clone aurora-platform-core (sibling for [tool.uv.sources])
+        run: git clone --depth=1 https://github.com/Ackold26/aurora-platform-core.git ../aurora-platform-core
+
       - name: Install runtime deps + tests + pyinstaller (separated envs)
         # HIGH-4 fix: split test env (с dev extras) from build env (runtime
         # only). Dev env runs pytest; build env stays lean for binary size.
+        # Sprint 0 wiring (2026-05-19): aurora_engines + aurora_observability
+        # installed editable из sibling до main `pip install -e ".[dev]"`.
         run: |
           python -m pip install --upgrade pip
+          pip install -e ../aurora-platform-core/aurora_engines --no-deps
+          pip install -e ../aurora-platform-core/aurora_observability --no-deps
           # Test env (with dev extras for pytest etc.)
           pip install -e ".[dev]"
 
