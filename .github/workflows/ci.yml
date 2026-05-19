@@ -144,6 +144,11 @@ jobs:
     name: Tests (${{ matrix.os }} / py${{ matrix.python-version }})
     needs: lint
     runs-on: ${{ matrix.os }}
+    env:
+      # PEP 540 UTF-8 mode — fixes Windows `cp1252` default encoding errors
+      # when reading non-ASCII YAML/JSON files (e.g. test_c3_workflow_integration).
+      # No-op on Linux/macOS (UTF-8 default).
+      PYTHONUTF8: "1"
     strategy:
       fail-fast: false
       matrix:
