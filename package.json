@@ -1,0 +1,10 @@
+{
+  "name": "aurora-launch-root",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Aurora Launch — root manifest. Proxies dev/build scripts к frontend/ так чтобы Tauri CLI (запускаемый из этой папки) не цеплял sibling-проекты типа aurora-cloud/ (Vercel Edge Functions).",
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build"
+  }
+}
