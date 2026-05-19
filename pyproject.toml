@@ -112,6 +112,10 @@ filterwarnings = [
     "ignore::DeprecationWarning:pandas.*",
     "ignore::DeprecationWarning:pydantic.*",
     "ignore::DeprecationWarning:openpyxl.*",
+    # ArviZ undergoing major refactor (2026); FutureWarnings on import.
+    # Migration guide: https://python.arviz.org/en/latest/user_guide/migration_guide.html
+    # Sprint Buffer item: update ArviZ usage to new API после release.
+    "ignore::FutureWarning:arviz.*",
     # File handle leak от XLSX sample bundle reader (openpyxl streaming).
     # Out of our control — closing handles fixed at adapter level.
     "ignore::pytest.PytestUnraisableExceptionWarning",

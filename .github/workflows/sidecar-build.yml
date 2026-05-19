@@ -34,6 +34,10 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash  # cross-OS matrix: Windows pwsh не expand ${PAT} bash-style env var
+
 jobs:
   build:
     name: ${{ matrix.target }}-${{ matrix.arch }}
