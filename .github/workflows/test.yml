@@ -62,6 +62,14 @@ jobs:
           mkdir -p src-tauri/binaries
           touch src-tauri/binaries/aurora-sidecar-x86_64-unknown-linux-gnu
           chmod +x src-tauri/binaries/aurora-sidecar-x86_64-unknown-linux-gnu
+      - name: Pre-create frontend/build placeholder
+        # tauri::generate_context!() macro validates `frontendDist` path
+        # (tauri.conf.json::build.frontendDist = "../frontend/build"). Full
+        # frontend build happens в frontend matrix job separately; placeholder
+        # index.html satisfies path existence check для cargo check here.
+        run: |
+          mkdir -p frontend/build
+          echo '<!doctype html><html><body>placeholder for tauri::generate_context!</body></html>' > frontend/build/index.html
       - name: Cargo build (no run)
         working-directory: src-tauri
         env:
@@ -95,6 +103,10 @@ jobs:
         run: npm ci --legacy-peer-deps
       - working-directory: frontend
         run: npm run gen:tokens
+      - working-directory: frontend
+        # svelte-kit sync генерирует .svelte-kit/tsconfig.json + types ambient files;
+        # необходимо для последующего `npm run check` (svelte-check).
+        run: npx svelte-kit sync
       - working-directory: frontend
         run: npm run check
       - working-directory: frontend
