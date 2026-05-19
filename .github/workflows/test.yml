@@ -47,6 +47,8 @@ jobs:
       - uses: actions/checkout@v4
       # HIGH-2 fix: SHA-pin community Rust toolchain action.
       - uses: dtolnay/rust-toolchain@21dc36fb71dd22e3317045c0c31a3f4249868b17 # stable @ 2024-09-01
+        with:
+          toolchain: stable
       - name: Install Tauri prerequisites
         run: |
           sudo apt-get update
@@ -79,7 +81,9 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - working-directory: frontend
-        run: npm ci
+        # --legacy-peer-deps: @histoire/plugin-svelte peer requires svelte 3/4
+        # while project на svelte 5 (per memory feedback_tauri_dev_first_run_chain).
+        run: npm ci --legacy-peer-deps
       - working-directory: frontend
         run: npm run gen:tokens
       - working-directory: frontend
@@ -100,7 +104,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - working-directory: frontend
-        run: npm ci
+        run: npm ci --legacy-peer-deps
       - working-directory: frontend
         run: npm run gen:tokens
       - name: Build frontend
@@ -141,7 +145,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install frontend deps
         working-directory: frontend
-        run: npm ci
+        run: npm ci --legacy-peer-deps
       - name: Install Playwright browsers
         working-directory: frontend
         run: npx playwright install --with-deps chromium
@@ -174,8 +178,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: npm
-          cache-dependency-path: aurora-cloud/package-lock.json
+          # NOTE: aurora-cloud/package-lock.json not committed yet (Sprint Buffer item).
+          # `npm ci || npm install` fallback handles missing lock; cache disabled
+          # until lock generated + committed.
       - working-directory: aurora-cloud
         run: npm ci || npm install
       - working-directory: aurora-cloud
