@@ -27,7 +27,7 @@
         "center": true,
         "theme": "Dark",
         "titleBarStyle": "Visible",
-        "visible": false
+        "visible": true
       }
     ],
     "security": {
