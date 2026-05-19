@@ -180,7 +180,7 @@ jobs:
           else
             cp dist/aurora-sidecar src-tauri/binaries/aurora-sidecar-${{ matrix.target }}
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: aurora-sidecar-${{ matrix.target }}
           path: src-tauri/binaries/aurora-sidecar-${{ matrix.target }}*
@@ -300,7 +300,7 @@ jobs:
         run: |
           mkdir -p release-artifacts
           find src-tauri/target -type f \( -name "*.exe" -o -name "*.msi" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.sig" \) -exec cp {} release-artifacts/ \;
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: aurora-launch-${{ matrix.target }}
           path: release-artifacts/
