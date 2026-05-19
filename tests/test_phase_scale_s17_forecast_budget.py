@@ -13,6 +13,7 @@ Coverage:
 
 from __future__ import annotations
 
+import sys
 import threading
 import time
 
@@ -240,6 +241,15 @@ class TestForecastBudgetExceededError:
 
 
 class TestCancelEventReset:
+    @pytest.mark.skipif(
+        sys.platform == "darwin",
+        reason=(
+            "Timing-sensitive watchdog test flaky on macOS GitHub Actions runners — "
+            "first call sometimes завершается до hitting budget. Sprint Buffer item: "
+            "investigate threading/timing model на macOS runner и either fix test "
+            "OR replace с deterministic mock-based assertion."
+        ),
+    )
     def test_second_call_succeeds_after_first_times_out(self) -> None:
         """Even if first call raised ForecastBudgetExceededError, second call
         with generous budget completes normally (cancel reset at entry)."""

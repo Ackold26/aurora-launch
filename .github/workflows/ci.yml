@@ -26,6 +26,13 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    # Workflow-level: forces bash shell на всех ОС. Windows runner default shell
+    # — pwsh (где ${VAR} не expand env vars без $env: prefix); bash-isms в clone
+    # steps `${PAT}` + venv setup `$PWD`/`$GITHUB_ENV` требуют bash везде.
+    shell: bash
+
 jobs:
   pre-commit:
     name: pre-commit hooks
