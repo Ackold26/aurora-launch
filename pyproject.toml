@@ -36,7 +36,20 @@ dependencies = [
     # Cross-platform; required for IPC get_memory_report. Handler degrades
     # gracefully when missing (severity='ok', measured=False).
     "psutil>=5.9",
+    # Sprint 0 (2026-05-19): Aurora platform-core shared library — engines + observability.
+    # Per-package deps (NOT umbrella aurora-platform-core which is monorepo name),
+    # MN ack 2026-05-19 в aurora-meta 5cec585.
+    # Local dev: sources resolved through [tool.uv.sources] к sibling D:/Docs/Aurora_Ai/aurora-platform-core/.
+    # Prod distribution: replace sources с git+https tag pin (Sprint 0 audit clear gate).
+    "aurora-engines>=0.1.0,<0.2",
+    "aurora-observability>=0.1.0,<0.2",
 ]
+
+# Editable local checkout для Phase A platform-core packages (Sprint 0 dev workflow).
+# CI: clone aurora-platform-core as sibling before uv sync (separate CI fix commit).
+[tool.uv.sources]
+aurora-engines = { path = "../aurora-platform-core/aurora_engines", editable = true }
+aurora-observability = { path = "../aurora-platform-core/aurora_observability", editable = true }
 
 [tool.uv]
 managed = true
@@ -54,15 +67,9 @@ dev-dependencies = [
     "pre-commit>=3.8.0",
 ]
 
-# Phase A path-deps are configured locally per developer via uv.sources
-# в .uv/sources.local.toml (gitignored). Production install uses git+https
-# to aurora-platform-core releases. CI doesn't need Phase A — tests that
-# require it auto-skip via PLATFORM_CORE_PATH check.
-#
-# For local dev with sibling aurora-platform-core checkout, run:
-#   uv add --editable ../aurora-platform-core/aurora_studio
-#   uv add --editable ../aurora-platform-core/aurora_schema_registry
-#   uv add --editable ../aurora-platform-core/aurora_inference
+# Phase A path-deps (aurora_studio / aurora_schema_registry / aurora_inference) deferred —
+# не используются в Launch коде на 2026-05-19. Sprint 0 wires только aurora-engines +
+# aurora-observability через [tool.uv.sources] выше.
 
 [project.scripts]
 aurora-launch-reproduce = "aurora_launch.tools.reproduce:main"
