@@ -1,4 +1,29 @@
-"""Budget Optimizer — prescriptive spend allocation (ROADMAP §4.4).
+"""DEPRECATED: Launch's local budget_optimizer (Sprint 0 marker, 2026-05-19).
+
+Status: Deprecated per MN Q1 decision (aurora-meta INBOX_TO_MM 5cec585). Sprint 0
+adds this marker only — code remains functional во время transition. Sprint 1
+will swap callsite в `methods_forecast.py:759` к `aurora_engines.optimize`
+(SLSQP canonical) и delete this file.
+
+Why deprecated:
+- aurora-platform-core shared library provides `aurora_engines.optimize` (SLSQP
+  budget optimization with posterior CI). Launch's local skeleton (random/grid
+  search, top-N alternatives) is a different algorithm — kept here as legacy
+  shim until Sprint 1 callsite migration.
+- Algorithm semantics differ: shared = deterministic global optimum;
+  local = stochastic top-N alternatives. Sprint 1 will design unified
+  alternative-generation strategy (perturbation / posterior sampling /
+  constrained subsets).
+
+Do NOT add new callsites. Existing callsite: src/aurora_launch/sidecar/methods_forecast.py:759.
+
+Refs: ~/.claude/plans/skeleton-squishy-quill.md Sprint 0 Q1 deprecation,
+aurora-meta 5cec585 (MN ack — DEPRECATED header only Sprint 0, swap Sprint 1).
+
+Original module docstring follows below.
+---
+
+Budget Optimizer — prescriptive spend allocation (ROADMAP §4.4).
 
 Finds the channel spend split that **maximises total forecasted sales** for a
 given budget, using random search (grid search for ≤ 2 channels).
