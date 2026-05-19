@@ -731,3 +731,28 @@ def _list_sample_bundles(_params: dict[str, Any]) -> dict[str, Any]:
             "exists": path.exists(),
         })
     return {"bundles": bundles}
+
+
+# ─── Sprint 0 Day 4 — C2 sidecar method (stub, see ~/.claude/plans/skeleton-squishy-quill.md) ───
+
+
+@register("list_projects_with_new_actuals")
+def list_projects_with_new_actuals(params: dict[str, Any]) -> dict[str, Any]:
+    """Sprint 0 STUB — returns empty list until schema migration (Sprint 1).
+
+    Intended behaviour (Sprint 1): scan ProjectDB.projects table, return projects где
+    `last_actuals_update_at` старше `threshold_weeks * 7` days OR null AND project_age >= threshold.
+
+    Current state (Sprint 0): always returns empty list because:
+    - `last_actuals_update_at` column does NOT exist в projects table (v001_initial.sql)
+    - Schema migration v002 + populate logic deferred to Sprint 1
+    - Frontend PosteriorUpdateReminders.svelte renders «No pending updates» на empty list
+
+    Args:
+        params: dict with optional key `threshold_weeks` (int, default 4)
+
+    Returns:
+        {"projects": []} — always empty в Sprint 0
+    """
+    _ = params.get("threshold_weeks", 4)  # unused в stub, satisfies linter
+    return {"projects": []}

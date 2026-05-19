@@ -127,6 +127,7 @@ pub fn run() {
             // project management — ProjectDB + LaunchOrchestrator (R-03a)
             commands::projects::create_project,
             commands::projects::list_projects,
+            commands::projects::list_pending_posterior_updates,
             commands::projects::get_project,
             commands::projects::delete_project,
             commands::projects::list_versions,

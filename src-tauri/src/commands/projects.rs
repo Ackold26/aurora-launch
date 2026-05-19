@@ -215,6 +215,38 @@ pub async fn load_sample_bundle(
         .map_err(|e| AuroraError::Other(format!("deserialize sample result: {e}")))
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PendingPosteriorUpdateItem {
+    pub project_uuid: String,
+    pub name: String,
+    pub last_actuals_update_at: Option<String>,
+    pub weeks_since_update: i64,
+}
+
+/// List projects где actuals data старше threshold_weeks (default 4 weeks). Sprint 0 stub:
+/// always returns empty list until schema migration adds `last_actuals_update_at` column.
+/// Sprint 1 PosteriorUpdateReminders frontend component consumes this command.
+#[tauri::command]
+pub async fn list_pending_posterior_updates(
+    sidecar: State<'_, Arc<SidecarManager>>,
+    threshold_weeks: Option<i64>,
+) -> AuroraResult<Vec<PendingPosteriorUpdateItem>> {
+    let params = serde_json::json!({
+        "threshold_weeks": threshold_weeks.unwrap_or(4),
+    });
+    let resp: serde_json::Value = sidecar
+        .invoke("list_projects_with_new_actuals", params)
+        .await?;
+    let projects = resp
+        .get("projects")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| {
+            AuroraError::Other("list_pending_posterior_updates: missing 'projects' field".into())
+        })?;
+    serde_json::from_value(serde_json::Value::Array(projects.clone()))
+        .map_err(|e| AuroraError::Other(format!("deserialize pending updates: {e}")))
+}
+
 // ---------------------------------------------------------------------------
 // Unit tests — serialize / deserialize roundtrip for each DTO.
 // No real sidecar needed; purely data-shape contracts.
@@ -388,5 +420,33 @@ mod tests {
         let decoded: SampleBundleResult = serde_json::from_value(raw).unwrap();
         assert!(decoded.channels.is_empty());
         assert_eq!(decoded.n_periods, 0);
+    }
+
+    #[test]
+    fn pending_posterior_update_item_roundtrip() {
+        let original = PendingPosteriorUpdateItem {
+            project_uuid: "proj-needs-update".into(),
+            name: "Kagocell RU".into(),
+            last_actuals_update_at: Some("2026-04-15T10:00:00Z".into()),
+            weeks_since_update: 5,
+        };
+        let json_str = serde_json::to_string(&original).unwrap();
+        let decoded: PendingPosteriorUpdateItem = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(decoded.project_uuid, "proj-needs-update");
+        assert_eq!(decoded.weeks_since_update, 5);
+        assert_eq!(decoded.last_actuals_update_at.as_deref(), Some("2026-04-15T10:00:00Z"));
+    }
+
+    #[test]
+    fn pending_posterior_update_item_optional_timestamp() {
+        let raw = json!({
+            "project_uuid": "new-proj",
+            "name": "Fresh Brand",
+            "last_actuals_update_at": null,
+            "weeks_since_update": 0
+        });
+        let decoded: PendingPosteriorUpdateItem = serde_json::from_value(raw).unwrap();
+        assert_eq!(decoded.last_actuals_update_at, None);
+        assert_eq!(decoded.weeks_since_update, 0);
     }
 }
