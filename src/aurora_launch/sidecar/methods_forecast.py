@@ -887,6 +887,101 @@ def _cancel_optimize_budget(params: dict[str, Any]) -> dict[str, Any]:
     return {"cancelled": False}
 
 
+# ─── Sprint 2 D1': trust score from project state ────────────────────────────
+
+
+@register("compute_trust_score_for_project")
+def _compute_trust_score_for_project(params: dict[str, Any]) -> dict[str, Any]:
+    """Compute trust score by reading project state from ProjectDB (Sprint 2 D1').
+
+    Closes spec API contract `invoke("compute_trust_score", {projectId})` —
+    server-side wrapper extracts the five trust dimensions from saved project
+    artifacts (proxy metadata, methodology cert, posterior diagnostics,
+    forecast bundle) instead of requiring frontend to pre-compute them.
+
+    Params:
+      - project_id: str (required)
+      - overrides: dict[str, float] (optional) — direct overrides per
+        dimension; use sparingly, mostly for tests/edge cases.
+
+    Returns:
+      - score: int
+      - tier: str (RU)
+      - diagnostics: list[dict] (Expert mode breakdown)
+      - sources: dict[str, str] — per-dimension provenance
+        ("project_state" | "default" | "override")
+      - source_notes: dict[str, str] — human-readable extraction notes
+      - project_id: str — echoed for correlation
+      - has_saved_version: bool — false когда the project has no current_version
+    """
+    from aurora_launch.engines.trust_score_project import compute_trust_score_for_project
+    from aurora_launch.persistence.project_db import ProjectDBError
+
+    SidecarStorageError = _SidecarStorageError()
+
+    project_id_raw = params.get("project_id")
+    if not project_id_raw or not isinstance(project_id_raw, str):
+        raise ValueError(
+            "compute_trust_score_for_project: project_id (str) is required"
+        )
+    project_id = project_id_raw
+
+    overrides_raw = params.get("overrides") or {}
+    if not isinstance(overrides_raw, dict):
+        raise ValueError(
+            f"compute_trust_score_for_project: overrides must be dict, "
+            f"got {type(overrides_raw).__name__}"
+        )
+
+    db = _get_project_db()
+    try:
+        detail = db.get_project(project_id)
+    except (ProjectDBError, SidecarStorageError) as exc:
+        raise ValueError(
+            f"compute_trust_score_for_project: project {project_id!r} not found: {exc}"
+        ) from exc
+
+    metadata = dict(detail.metadata)
+    files: dict[str, bytes] = {}
+    has_saved_version = detail.current_version_id is not None
+
+    if has_saved_version:
+        try:
+            loaded = db.load_version(detail.current_version_id)  # type: ignore[arg-type]
+            files = dict(loaded.files)
+            # Merge version-level metadata over project-level so latest wins
+            metadata = {**metadata, **dict(loaded.metadata)}
+        except (ProjectDBError, SidecarStorageError) as exc:
+            # Soft-fail: continue с metadata only, mark has_saved_version=false
+            has_saved_version = False
+            _ = exc
+
+    result = compute_trust_score_for_project(
+        metadata,
+        files,
+        granularity_hint=detail.granularity,
+        overrides=overrides_raw,
+    )
+
+    return {
+        "project_id": project_id,
+        "has_saved_version": has_saved_version,
+        "score": result.score,
+        "tier": result.tier,
+        "diagnostics": [
+            {
+                "label": d.label,
+                "value": d.value,
+                "status": d.status,
+                "weight": d.weight,
+            }
+            for d in result.diagnostics
+        ],
+        "sources": dict(result.sources),
+        "source_notes": dict(result.source_notes),
+    }
+
+
 # ─── Sprint 2 D5: MCMC OOM pre-flight ────────────────────────────────────────
 
 

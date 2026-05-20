@@ -239,3 +239,17 @@ pub async fn check_mcmc_budget(
 ) -> AuroraResult<serde_json::Value> {
     sidecar.invoke("check_mcmc_budget", params).await
 }
+
+/// Sprint 2 D1': trust score computed from project state (ProjectDB read).
+///
+/// Server-side equivalent of computeTrustScore — accepts project_id and reads
+/// proxy metadata, methodology cert, posterior diagnostics + forecast bundle
+/// to compute the five trust dimensions internally. Returns score, tier,
+/// diagnostics list, per-dimension sources, and source_notes for transparency.
+#[tauri::command]
+pub async fn compute_trust_score_for_project(
+    sidecar: State<'_, std::sync::Arc<crate::sidecar::SidecarManager>>,
+    params: serde_json::Value,
+) -> AuroraResult<serde_json::Value> {
+    sidecar.invoke("compute_trust_score_for_project", params).await
+}

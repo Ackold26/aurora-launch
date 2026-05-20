@@ -155,6 +155,46 @@ export async function computeTrustScore(
   return invoke<TrustScoreResult>('compute_trust_score', { params: inputs });
 }
 
+// ─── Sprint 2 D1': trust score read from project state ──────────────────────
+
+export type TrustDimensionSource = 'project_state' | 'default' | 'override';
+
+export type TrustDimensionKey =
+  | 'proxy_similarity_score'
+  | 'methodology_certified'
+  | 'model_convergence_passed'
+  | 'data_sufficiency'
+  | 'uncertainty_pct_inverse';
+
+export interface ProjectTrustScoreResult extends TrustScoreResult {
+  project_id: string;
+  /** false когда the project has no saved version yet — all dims default. */
+  has_saved_version: boolean;
+  /** Per-dimension source tag (project_state / default / override). */
+  sources: Record<TrustDimensionKey, TrustDimensionSource>;
+  /** Human-readable extraction notes per dimension (Expert info chip). */
+  source_notes: Record<TrustDimensionKey, string>;
+}
+
+/** Compute trust score by reading project state from ProjectDB (Sprint 2 D1').
+ *
+ * Server-side wrapper extracts the five dimensions internally — frontend no
+ * longer needs to hardcode model_convergence_passed=1 and data_sufficiency=1.0
+ * the way client-side computeTrustScore currently does. The returned `sources`
+ * field shows which dims came from real saved data vs defaults vs overrides.
+ *
+ * @param project_id Required.
+ * @param overrides Optional per-dimension direct values (rare, mostly for tests).
+ */
+export async function computeTrustScoreForProject(args: {
+  project_id: string;
+  overrides?: Partial<Record<TrustDimensionKey, number>>;
+}): Promise<ProjectTrustScoreResult> {
+  return invoke<ProjectTrustScoreResult>('compute_trust_score_for_project', {
+    params: args,
+  });
+}
+
 // ─── Phase Magic M-09: Reproduce-in-Python script generator ──────────────────
 
 export interface ReproduceScriptParams {
