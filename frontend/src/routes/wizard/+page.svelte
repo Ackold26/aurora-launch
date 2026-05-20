@@ -17,6 +17,8 @@
   import VerdictPanel from '$lib/components/VerdictPanel.svelte';
   import RadarChart from '$lib/components/RadarChart.svelte';
   import ProgressBar from '$lib/components/ProgressBar.svelte';
+  import ProgressBarMCMC from '$lib/components/ProgressBarMCMC.svelte';
+  import type { McmcPhase } from '$lib/ipc/forecast';
   import ForecastCone from '$lib/components/ForecastCone.svelte';
   import PatternSuggestionCard from '$lib/components/PatternSuggestionCard.svelte';
   import DataPreviewTable from '$lib/components/DataPreviewTable.svelte';
@@ -733,13 +735,15 @@
             </Button>
           {:else}
             <div class="forecast-running">
-              <ProgressBar
-                progress={forecastStatus.progress}
+              <ProgressBarMCMC
+                pct={(forecastStatus.progress ?? 0) * 100}
+                phase={(forecastCompleted ? 'done' : 'sampling') as McmcPhase}
                 elapsedMs={forecastStatus.elapsedMs}
-                etaMs={forecastStatus.etaMs}
-                label={forecastCompleted
+                message={forecastCompleted
                   ? $_('forecast.completed', { values: { seconds: Math.round(forecastStatus.elapsedMs / 1000) } })
-                  : 'Running…'}
+                  : `Период ${forecastPoints.length} из ${forecastHorizon}`}
+                oncancel={cancelForecast}
+                cancelDisabled={forecastCompleted}
               />
               <ForecastCone
                 points={forecastPoints}
@@ -748,11 +752,6 @@
                 height={300}
                 title="Forecast cone (live streaming)"
               />
-              {#if !forecastCompleted}
-                <Button variant="ghost" onclick={cancelForecast}>
-                  {#snippet children()}{$_('wizard.cancel')}{/snippet}
-                </Button>
-              {/if}
             </div>
           {/if}
         {/snippet}
