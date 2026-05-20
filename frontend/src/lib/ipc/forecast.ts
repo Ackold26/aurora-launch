@@ -300,6 +300,40 @@ export async function cancelOptimizeBudget(optimizeHandle: string): Promise<void
   return invoke<void>('cancel_optimize_budget', { optimizeHandle });
 }
 
+// ─── Sprint 2 D5: MCMC OOM pre-flight ────────────────────────────────────────
+
+export type McmcBudgetStatus = 'ok' | 'low_ram' | 'critical';
+export type McmcSuggestedFallback = 'bayesian' | 'ols' | null;
+
+export interface CheckMcmcBudgetParams {
+  /** Override the 4 GB default minimum. */
+  min_required_bytes?: number;
+}
+
+export interface CheckMcmcBudgetResult {
+  status: McmcBudgetStatus;
+  available_bytes: number;
+  total_bytes: number;
+  used_pct: number;
+  /** Plain Russian customer-facing recommendation. */
+  recommendation: string;
+  /** Engine to suggest as fallback when budget is short; null when OK. */
+  suggested_fallback: McmcSuggestedFallback;
+}
+
+/** Pre-flight RAM budget check before MCMC sampling (Sprint 2 D5).
+ *
+ * Frontend invokes BEFORE triggering Bayesian training/forecast so the wizard
+ * can surface a budget warning + OLS downgrade prompt instead of crashing
+ * with MemoryError mid-sample. Safe to call repeatedly — pure psutil snapshot,
+ * no side effects.
+ */
+export async function checkMcmcBudget(
+  params: CheckMcmcBudgetParams = {}
+): Promise<CheckMcmcBudgetResult> {
+  return invoke<CheckMcmcBudgetResult>('check_mcmc_budget', { params });
+}
+
 // ─── Optimize Budget event listener helpers ───────────────────────────────────
 
 export interface OptimizeBudgetCompletedEvent {

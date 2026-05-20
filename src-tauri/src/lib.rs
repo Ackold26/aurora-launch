@@ -92,6 +92,8 @@ pub fn run() {
             commands::forecast::explain_forecast,
             commands::forecast::compare_forecast_versions,
             commands::forecast::compose_forecast_json,
+            // Sprint 2 D5: MCMC OOM pre-flight memory budget
+            commands::forecast::check_mcmc_budget,
             commands::handshake::get_handshake_status,
             // methodology_cert commands (Block 2C)
             commands::methodology_cert::verify_bundle_signature,
