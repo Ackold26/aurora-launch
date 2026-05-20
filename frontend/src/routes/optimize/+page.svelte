@@ -18,6 +18,8 @@
   import { pushToast } from '$lib/stores/toast';
   import Card from '$lib/components/Card.svelte';
   import BudgetSplitChart from '$lib/components/BudgetSplitChart.svelte';
+  import ChartWithDrillDown from '$lib/components/transparency/ChartWithDrillDown.svelte';
+  import NumberWithDrillDown from '$lib/components/transparency/NumberWithDrillDown.svelte';
 
   // ─── Form state ───────────────────────────────────────────────────────────
 
@@ -382,23 +384,43 @@
             <!-- Sum verification -->
             <p class="result-total">
               <strong>{$_('optimize.result.total')}</strong>
-              {formatRub(resultTotalSum)}
+              <NumberWithDrillDown
+                formulaKey="budget_optimizer_marginal_roi"
+                value={formatRub(resultTotalSum)}
+              />
             </p>
 
             <!-- Channel split chart -->
             <div class="chart-wrapper" aria-label="Распределение бюджета по каналам">
-              <BudgetSplitChart channels={result!.channel_split} width={560} height={180} />
+              <ChartWithDrillDown
+                formulaKey="budget_optimizer_marginal_roi"
+                chartTitle="Распределение бюджета по каналам"
+              >
+                {#snippet children()}
+                  <BudgetSplitChart channels={result!.channel_split} width={560} height={180} />
+                {/snippet}
+              </ChartWithDrillDown>
             </div>
 
             <!-- KPI grid -->
             <dl class="kpi-grid">
               <div class="kpi-item">
                 <dt>{$_('optimize.result.kpi.sales')}</dt>
-                <dd>{formatRub(result!.expected_total_sales)}</dd>
+                <dd>
+                  <NumberWithDrillDown
+                    formulaKey="forecast_baseline_projection"
+                    value={formatRub(result!.expected_total_sales)}
+                  />
+                </dd>
               </div>
               <div class="kpi-item">
                 <dt>{$_('optimize.result.kpi.ci')}</dt>
-                <dd>{formatRub(result!.ci_lower)} – {formatRub(result!.ci_upper)}</dd>
+                <dd>
+                  <NumberWithDrillDown
+                    formulaKey="conformal_prediction_interval"
+                    value="{formatRub(result!.ci_lower)} – {formatRub(result!.ci_upper)}"
+                  />
+                </dd>
               </div>
             </dl>
           </div>
@@ -421,14 +443,26 @@
                   <dl class="kpi-grid">
                     <div class="kpi-item">
                       <dt>{$_('optimize.result.kpi.sales')}</dt>
-                      <dd>{formatRub(alt.expected_total_sales)}</dd>
+                      <dd>
+                        <NumberWithDrillDown
+                          formulaKey="forecast_baseline_projection"
+                          value={formatRub(alt.expected_total_sales)}
+                        />
+                      </dd>
                     </div>
                     <div class="kpi-item">
                       <dt>{$_('optimize.result.kpi.ci')}</dt>
                       <dd>{formatRub(alt.ci_lower)} – {formatRub(alt.ci_upper)}</dd>
                     </div>
                   </dl>
-                  <BudgetSplitChart channels={alt.channel_split} width={500} height={140} />
+                  <ChartWithDrillDown
+                    formulaKey="budget_optimizer_marginal_roi"
+                    chartTitle="Распределение бюджета по каналам"
+                  >
+                    {#snippet children()}
+                      <BudgetSplitChart channels={alt.channel_split} width={500} height={140} />
+                    {/snippet}
+                  </ChartWithDrillDown>
                 {/snippet}
               </Card>
             {/each}

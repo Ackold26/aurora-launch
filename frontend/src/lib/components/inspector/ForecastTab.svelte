@@ -11,6 +11,8 @@
   import type { Explanation, TrustScoreResult } from '$lib/ipc/forecast';
   import { detectReproduceMode } from '$lib/utils/reproduce-mode';
   import type { ForecastData } from '$lib/components/inspector/types';
+  import ChartWithDrillDown from '$lib/components/transparency/ChartWithDrillDown.svelte';
+  import NumberWithDrillDown from '$lib/components/transparency/NumberWithDrillDown.svelte';
 
   interface Props {
     forecastData: ForecastData | null;
@@ -37,6 +39,25 @@
   let trustResult = $state<TrustScoreResult | null>(null);
   let trustError = $state<string | null>(null);
   let trustIsRealCompute = $state<boolean>(false);
+
+  // Derived summary stats for NumberWithDrillDown wrappers — Sprint 3 D4
+  const pointMeanDisplay = $derived.by((): string => {
+    if (!forecastData || forecastData.points.length === 0) return '—';
+    const mean = forecastData.points.reduce((s, p) => s + p.point, 0) / forecastData.points.length;
+    return mean.toLocaleString('ru-RU', { maximumFractionDigits: 0 });
+  });
+
+  const ciLowerMeanDisplay = $derived.by((): string => {
+    if (!forecastData || forecastData.points.length === 0) return '—';
+    const mean = forecastData.points.reduce((s, p) => s + p.ciLower, 0) / forecastData.points.length;
+    return mean.toLocaleString('ru-RU', { maximumFractionDigits: 0 });
+  });
+
+  const ciUpperMeanDisplay = $derived.by((): string => {
+    if (!forecastData || forecastData.points.length === 0) return '—';
+    const mean = forecastData.points.reduce((s, p) => s + p.ciUpper, 0) / forecastData.points.length;
+    return mean.toLocaleString('ru-RU', { maximumFractionDigits: 0 });
+  });
 
   // Load explanation when forecastData becomes available
   $effect(() => {
@@ -184,13 +205,49 @@
             />
           </div>
         {/if}
-        <ForecastCone
-          points={forecastData.points}
-          horizonWeeks={forecastData.horizonWeeks}
-          width={620}
-          height={300}
-          title="Forecast cone (saved)"
-        />
+        <ChartWithDrillDown
+          formulaKey="conformal_prediction_interval"
+          chartTitle={$_('inspector.forecast.chart_title', { default: 'Прогноз с доверительным интервалом' })}
+        >
+          {#snippet children()}
+            <ForecastCone
+              points={forecastData.points}
+              horizonWeeks={forecastData.horizonWeeks}
+              width={620}
+              height={300}
+              title="Forecast cone (saved)"
+            />
+          {/snippet}
+        </ChartWithDrillDown>
+        <dl class="forecast-summary-stats">
+          <div class="forecast-stat">
+            <dt>{$_('inspector.forecast.stat_point_mean', { default: 'Средний прогноз' })}</dt>
+            <dd>
+              <NumberWithDrillDown
+                formulaKey="forecast_baseline_projection"
+                value={pointMeanDisplay}
+              />
+            </dd>
+          </div>
+          <div class="forecast-stat">
+            <dt>{$_('inspector.forecast.stat_ci_lower', { default: 'CI нижняя граница (ср.)' })}</dt>
+            <dd>
+              <NumberWithDrillDown
+                formulaKey="conformal_prediction_interval"
+                value={ciLowerMeanDisplay}
+              />
+            </dd>
+          </div>
+          <div class="forecast-stat">
+            <dt>{$_('inspector.forecast.stat_ci_upper', { default: 'CI верхняя граница (ср.)' })}</dt>
+            <dd>
+              <NumberWithDrillDown
+                formulaKey="conformal_prediction_interval"
+                value={ciUpperMeanDisplay}
+              />
+            </dd>
+          </div>
+        </dl>
         {#if explanationLoading}
           <div class="explanation-loading">
             <Skeleton width="100%" height="120px" rounded />
@@ -258,6 +315,32 @@
 
 <style>
   .mode-badge-mount { margin-bottom: var(--spacing-3, 0.75rem); }
+  .forecast-summary-stats {
+    display: flex;
+    gap: var(--spacing-4, 1rem);
+    flex-wrap: wrap;
+    margin: var(--spacing-3, 0.75rem) 0 0 0;
+    padding: var(--spacing-3, 0.75rem);
+    background: color-mix(in srgb, var(--bg-elevated, #F0F2F7) 60%, transparent);
+    border-radius: 6px;
+  }
+  .forecast-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .forecast-stat dt {
+    font-size: var(--typography-fontSize-ui-xs, 0.75rem);
+    color: var(--text-muted, #6b7280);
+    font-weight: 400;
+  }
+  .forecast-stat dd {
+    margin: 0;
+    font-family: var(--font-mono, monospace);
+    font-size: var(--typography-fontSize-ui-sm, 0.875rem);
+    font-weight: 600;
+    color: var(--text-primary, #111827);
+  }
   .forecast-explanation {
     margin-top: var(--spacing-4, 1rem);
     padding: var(--spacing-4, 1rem);

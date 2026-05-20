@@ -3,6 +3,8 @@
   import Card from '$lib/components/Card.svelte';
   import Skeleton from '$lib/components/Skeleton.svelte';
   import RadarChart from '$lib/components/RadarChart.svelte';
+  import ChartWithDrillDown from '$lib/components/transparency/ChartWithDrillDown.svelte';
+  import NumberWithDrillDown from '$lib/components/transparency/NumberWithDrillDown.svelte';
 
   interface Props {
     similarityData: { dimensions: { label: string; value: number }[]; score: number } | null;
@@ -18,12 +20,22 @@
       {#if loading}
         <Skeleton width="100%" height="180px" rounded />
       {:else if similarityData}
-        <RadarChart
-          dimensions={similarityData.dimensions}
-          size={320}
-          title="Similarity (saved)"
-        />
-        <p class="score">Aggregate score: <strong>{(similarityData.score * 100).toFixed(0)}%</strong></p>
+        <ChartWithDrillDown
+          formulaKey="similarity_jensen_shannon"
+          chartTitle={$_('inspector.similarity.chart_title', { default: 'Сходство по 8 измерениям' })}
+        >
+          {#snippet children()}
+            <RadarChart
+              dimensions={similarityData.dimensions}
+              size={320}
+              title="Similarity (saved)"
+            />
+          {/snippet}
+        </ChartWithDrillDown>
+        <p class="score">Aggregate score: <strong><NumberWithDrillDown
+          formulaKey="similarity_jensen_shannon"
+          value={`${(similarityData.score * 100).toFixed(0)}%`}
+        /></strong></p>
       {:else}
         <p class="muted">No similarity entry в bundle (workflow not yet computed).</p>
       {/if}
