@@ -885,3 +885,54 @@ def _cancel_optimize_budget(params: dict[str, Any]) -> dict[str, Any]:
         flag.set()
         return {"cancelled": True}
     return {"cancelled": False}
+
+
+# ─── Sprint 2 D5: MCMC OOM pre-flight ────────────────────────────────────────
+
+
+@register("check_mcmc_budget")
+def _check_mcmc_budget(params: dict[str, Any]) -> dict[str, Any]:
+    """Pre-flight check for MCMC sampling memory budget (Sprint 2 D5).
+
+    Frontend invokes this BEFORE issuing the actual training/Bayesian forecast
+    so the wizard can show a budget warning + OLS downgrade prompt instead of
+    crashing the sidecar with MemoryError mid-sample.
+
+    Params:
+      - min_required_bytes: int (optional, defaults to 4_000_000_000 = 4 GB)
+
+    Returns:
+      - status: "ok" | "low_ram" | "critical"
+      - available_bytes: int
+      - total_bytes: int
+      - used_pct: float
+      - recommendation: str (plain Russian, customer-facing)
+      - suggested_fallback: "bayesian" | "ols" | null
+    """
+    from aurora_launch.utils.mcmc_budget_check import (
+        MIN_RAM_AVAILABLE_BYTES,
+        check_mcmc_budget,
+    )
+
+    raw = params.get("min_required_bytes", MIN_RAM_AVAILABLE_BYTES)
+    try:
+        min_bytes = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"check_mcmc_budget: invalid min_required_bytes={raw!r}: {exc}"
+        ) from exc
+
+    if min_bytes <= 0:
+        raise ValueError(
+            f"check_mcmc_budget: min_required_bytes must be positive, got {min_bytes}"
+        )
+
+    result = check_mcmc_budget(min_required_bytes=min_bytes)
+    return {
+        "status": result.status,
+        "available_bytes": result.available_bytes,
+        "total_bytes": result.total_bytes,
+        "used_pct": result.used_pct,
+        "recommendation": result.recommendation,
+        "suggested_fallback": result.suggested_fallback,
+    }

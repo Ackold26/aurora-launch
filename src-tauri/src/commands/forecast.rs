@@ -224,3 +224,18 @@ pub async fn compare_forecast_versions(
     });
     sidecar.invoke("compare_forecast_versions", params).await
 }
+
+/// Sprint 2 D5: MCMC OOM pre-flight memory budget check.
+///
+/// Pure RAM availability snapshot via psutil — frontend invokes this BEFORE
+/// triggering Bayesian training/forecast so the wizard can show a budget
+/// warning + OLS downgrade prompt instead of crashing with MemoryError.
+///
+/// Returns `{ status, available_bytes, total_bytes, used_pct, recommendation, suggested_fallback }`.
+#[tauri::command]
+pub async fn check_mcmc_budget(
+    sidecar: State<'_, std::sync::Arc<crate::sidecar::SidecarManager>>,
+    params: serde_json::Value,
+) -> AuroraResult<serde_json::Value> {
+    sidecar.invoke("check_mcmc_budget", params).await
+}
