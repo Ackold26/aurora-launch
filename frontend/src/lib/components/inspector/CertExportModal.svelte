@@ -19,12 +19,13 @@
   import { _ } from 'svelte-i18n';
   import type { VerificationResult } from '$ipc/client';
   import { getFormula, type FormulaEntry } from '$lib/utils/formulas';
+  import { focusTrap } from '$lib/utils/focus-trap';
 
   interface Props {
     /** Visibility — controlled by parent. */
     open: boolean;
     /** Verification result (composite_hash, signature provenance, etc). */
-    verification: VerificationResult;
+    verificationResult: VerificationResult;
     /** Absolute path to the bundle .aurora file. */
     bundlePath: string;
     /** App version (for cert footer). */
@@ -33,7 +34,7 @@
     onClose: () => void;
   }
 
-  let { open, verification, bundlePath, appVersion, onClose }: Props = $props();
+  let { open, verificationResult, bundlePath, appVersion, onClose }: Props = $props();
 
   // ── Derived display values ──────────────────────────────────────────────
 
@@ -41,7 +42,7 @@
     bundlePath.split(/[\\\/]/).pop() ?? bundlePath,
   );
 
-  const certIdFull = $derived(verification.composite_hash ?? '');
+  const certIdFull = $derived(verificationResult.composite_hash ?? '');
   const certIdShort = $derived(
     certIdFull.length > 16 ? certIdFull.slice(0, 16) + '…' : certIdFull || '—',
   );
@@ -63,7 +64,7 @@
       sample: 'Demo / Sample',
       warning: 'Не подтверждён',
     };
-    return map[verification.trust_badge] ?? verification.trust_badge;
+    return map[verificationResult.trust_badge] ?? verificationResult.trust_badge;
   });
 
   // Pick a curated set of methodology references — 6 formulas most relevant
@@ -93,40 +94,11 @@
 
   let overlayEl: HTMLElement | undefined = $state();
 
-  /** Return all keyboard-focusable children of el. */
-  function focusable(el: HTMLElement): HTMLElement[] {
-    return Array.from(
-      el.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ),
-    );
-  }
-
+  // Tab wrap is handled by use:focusTrap on the overlay element (see template).
+  // Only Escape is handled inline.
   function handleKeydown(e: KeyboardEvent): void {
     if (e.key === 'Escape') {
       onClose();
-      return;
-    }
-
-    if (e.key === 'Tab' && overlayEl) {
-      const items = focusable(overlayEl);
-      if (items.length === 0) {
-        e.preventDefault();
-        return;
-      }
-      const first = items[0]!;
-      const last = items[items.length - 1]!;
-      if (e.shiftKey) {
-        if (document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
     }
   }
 
@@ -151,6 +123,7 @@
     onkeydown={handleKeydown}
     tabindex="-1"
     bind:this={overlayEl}
+    use:focusTrap
   >
     <header class="cert-export-toolbar">
       <h2 id="cert-export-title">{$_('cert.export.toolbar_title', { default: 'Экспорт сертификата' })}</h2>
@@ -178,7 +151,7 @@
         <dl>
           <dt>Файл:</dt><dd>{bundleFileName}</dd>
           <dt>Cert ID:</dt><dd class="cert-mono" title={certIdFull}>{certIdShort}</dd>
-          <dt>Manifest revision:</dt><dd>{verification.manifest_revision ?? '—'}</dd>
+          <dt>Manifest revision:</dt><dd>{verificationResult.manifest_revision ?? '—'}</dd>
         </dl>
       </section>
 
@@ -187,19 +160,19 @@
         <dl>
           <dt>Уровень доверия:</dt>
           <dd>
-            <span class="cert-badge cert-badge-{verification.trust_badge}">{trustBadgeLabel}</span>
+            <span class="cert-badge cert-badge-{verificationResult.trust_badge}">{trustBadgeLabel}</span>
           </dd>
-          <dt>Источник подписи:</dt><dd>{verification.signature_provenance}</dd>
-          <dt>Подписант:</dt><dd>{verification.signed_by ?? '—'}</dd>
-          <dt>Дата подписи:</dt><dd>{verification.signed_at ?? '—'}</dd>
-          <dt>Отпечаток ключа:</dt><dd class="cert-mono">{verification.key_fingerprint ?? '—'}</dd>
+          <dt>Источник подписи:</dt><dd>{verificationResult.signature_provenance}</dd>
+          <dt>Подписант:</dt><dd>{verificationResult.signed_by ?? '—'}</dd>
+          <dt>Дата подписи:</dt><dd>{verificationResult.signed_at ?? '—'}</dd>
+          <dt>Отпечаток ключа:</dt><dd class="cert-mono">{verificationResult.key_fingerprint ?? '—'}</dd>
           <dt>Статус проверки:</dt>
-          <dd class:cert-warn={!verification.valid}>
-            {verification.valid ? '✓ Подпись валидна' : '✗ Подпись недействительна'}
+          <dd class:cert-warn={!verificationResult.valid}>
+            {verificationResult.valid ? '✓ Подпись валидна' : '✗ Подпись недействительна'}
           </dd>
-          {#if verification.failure_reason}
+          {#if verificationResult.failure_reason}
             <dt>Причина расхождения:</dt>
-            <dd class="cert-warn">{verification.failure_reason}</dd>
+            <dd class="cert-warn">{verificationResult.failure_reason}</dd>
           {/if}
         </dl>
       </section>

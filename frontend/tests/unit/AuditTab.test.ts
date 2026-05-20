@@ -318,15 +318,26 @@ describe('AuditTab — статус error с reason', () => {
 // ---------------------------------------------------------------------------
 
 describe('AuditTab — ошибка IPC (выброс исключения)', () => {
-  it('рендерит .audit-error с role=alert при ошибке IPC', async () => {
-    mockError('Connection refused');
+  it('persistent .audit-error-region с role=alert + aria-live=assertive (A4)', async () => {
+    // A4 (Sprint 4 Batch 4): role=alert lives on the PERSISTENT outer
+    // wrapper .audit-error-region, не on the conditional inner .audit-error.
+    // Wrapper is always in DOM so screen readers reliably register the live
+    // region; inner content fires the announcement when it appears.
     const { container } = render(AuditTab, { bundlePath: '/path/to/bundle.aurora' });
+
+    // Region exists from the start (persistent)
+    const region = container.querySelector('.audit-error-region');
+    expect(region).not.toBeNull();
+    expect(region!.getAttribute('role')).toBe('alert');
+    expect(region!.getAttribute('aria-live')).toBe('assertive');
+
+    // Inner content appears only after error
+    mockError('Connection refused');
     await fireEvent.click(screen.getByText(/Проверить воспроизводимость/).closest('button')!);
     await flushAsync();
 
     const errorEl = container.querySelector('.audit-error');
     expect(errorEl).not.toBeNull();
-    expect(errorEl!.getAttribute('role')).toBe('alert');
   });
 
   it('errorMessage отображается в .audit-error', async () => {
