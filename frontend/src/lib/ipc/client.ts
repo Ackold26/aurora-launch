@@ -233,6 +233,16 @@ export interface AuditQuery {
   operation_filter?: string;
 }
 
+// Sprint 1 — UX Foundation: posterior staleness reminders.
+// Backend stub: list_projects_with_new_actuals returns [] until schema migration
+// adds last_actuals_update_at column (Sprint 2+).
+export interface PendingPosteriorUpdateItem {
+  project_uuid: string;
+  name: string;
+  last_actuals_update_at: string | null;
+  weeks_since_update: number;
+}
+
 export interface FeedbackInput {
   text: string;
   screenshot_path?: string;
@@ -346,6 +356,12 @@ export const ipc = {
   // audit log
   listAuditEntries: (query: AuditQuery = {}) =>
     invoke<AuditEntry[]>('list_audit_entries', { query }),
+
+  // posterior updates (Sprint 1 UX Foundation; backend stub until Sprint 2 schema migration)
+  listPendingPosteriorUpdates: (thresholdWeeks?: number) =>
+    invoke<PendingPosteriorUpdateItem[]>('list_pending_posterior_updates', {
+      threshold_weeks: thresholdWeeks,
+    }),
 
   // build info
   getBuildInfo: () => invoke<BuildInfo>('get_build_info'),
