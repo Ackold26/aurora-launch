@@ -435,6 +435,15 @@ pub struct ReproducibilityResult {
     pub files_checked: u32,
     pub mismatches: Vec<ReproducibilityFileMismatch>,
     pub reason: Option<String>,
+    /// Sprint 4 S1 — composite_bundle_hash_mirror output. Independent
+    /// cross-binding hash that catches per-file hash forgery (manifest tampered
+    /// такой что updated `files[*].sha256` match modified ZIP content). External
+    /// verifiers (signed methodology certificate, methodology_cert.pdf) compare
+    /// this against their signed reference to detect cross-binding violation.
+    /// None if computation failed (e.g., manifest missing `aurora_app_version`
+    /// field — non-BundleManifest format, legacy or corpus_generator JSON).
+    /// Field added by Sprint 4 Batch 2 S1 to close INV-48 anti-tamper gap.
+    pub composite_hash: Option<String>,
 }
 
 #[tauri::command]
@@ -457,6 +466,7 @@ pub async fn verify_reproducibility(
             files_checked: 0,
             mismatches: Vec::new(),
             reason: Some("Файл должен иметь расширение .aurora".into()),
+            composite_hash: None,
         });
     }
     if !raw_path.exists() {
@@ -485,6 +495,13 @@ pub async fn verify_reproducibility(
     }
     let manifest: serde_json::Value = serde_json::from_slice(&manifest_buf)?;
 
+    // Sprint 4 S1 — compute composite_bundle_hash_mirror as cross-binding hash.
+    // External verifiers (methodology_cert.pdf signed by Aurora cloud KMS)
+    // cross-check this против их signed reference. None if manifest doesn't
+    // have aurora_app_version (e.g., corpus_generator JSON format) — caller
+    // shows a "cross-binding unavailable" warning badge in that case.
+    let composite_hash = composite_bundle_hash_mirror(&manifest_buf, &manifest).ok();
+
     // manifest.files is the SSOT for per-file hashes (mirrors Python
     // BundleManifest.files dict). Each entry has shape:
     //   "<entry_name>": { "sha256": "<hex>", "size_bytes": N, ... }
@@ -505,7 +522,29 @@ pub async fn verify_reproducibility(
             None => continue, // skip files without claimed hash (e.g. derived artefacts)
         };
 
-        let mut buf: Vec<u8> = Vec::new();
+        // Sprint 4 S4 — validate hex format of expected hash. Malformed claim
+        // (e.g., "NOT-A-VALID-HEX-HASH") is a manifest error, не divergence,
+        // because it cannot be compared meaningfully to a recomputed hash.
+        // Bail out early with descriptive reason for caller.
+        if expected.len() != 64 || !expected.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Ok(ReproducibilityResult {
+                status: "error".into(),
+                files_checked,
+                mismatches,
+                reason: Some(format!(
+                    "Manifest contains invalid hex hash для entry '{}': expected 64-char lowercase hex, got {} chars",
+                    entry_name,
+                    expected.len()
+                )),
+                composite_hash,
+            });
+        }
+
+        // Sprint 4 S2 — streaming SHA-256 (memory-bounded, ~64 KB working set
+        // regardless of entry size). Replaces `read_to_end(&mut buf)` Vec
+        // allocation which scaled с entry size — vulnerable to zip-bomb OOM.
+        let mut hasher = Sha256::new();
+        let mut chunk = [0u8; 64 * 1024];
         {
             let zip_entry = archive.by_name(entry_name);
             let mut e = match zip_entry {
@@ -521,10 +560,16 @@ pub async fn verify_reproducibility(
                     continue;
                 }
             };
-            e.read_to_end(&mut buf)?;
+            loop {
+                let n = e.read(&mut chunk)?;
+                if n == 0 {
+                    break;
+                }
+                hasher.update(&chunk[..n]);
+            }
         }
 
-        let computed = hex::encode(Sha256::digest(&buf));
+        let computed = hex::encode(hasher.finalize());
         files_checked += 1;
         if computed != expected {
             mismatches.push(ReproducibilityFileMismatch {
@@ -546,6 +591,7 @@ pub async fn verify_reproducibility(
         files_checked,
         mismatches,
         reason: None,
+        composite_hash,
     })
 }
 
@@ -923,7 +969,6 @@ mod tests {
     // ── Tier 2: PENDING Batch 2 (INV-48 attack scenarios — fail today) ──
 
     #[test]
-    #[ignore = "PENDING Batch 2 S1: requires composite_bundle_hash cross-binding"]
     fn per_file_hash_forgery_rejected_via_composite_hash() {
         // INV-48 attack scenario — CRITICAL.
         //
@@ -933,26 +978,17 @@ mod tests {
         //   3. Update manifest.files[*].sha256 to match new content
         //   4. ZIP is self-consistent — Sprint 3 D6 returns "verified"
         //
-        // The Python source (aurora-launch-reproduce CLI mirrored from
-        // generator.py) prevents this via reproducibility_token cross-binding
-        // — SHA256(manifest_sha256 || data_artifacts_hash || version). Rust
-        // port skipped this layer.
+        // Batch 2 S1 closure: verify_reproducibility computes
+        // composite_bundle_hash_mirror (length-prefix encoding of manifest_sha
+        // || sorted_per_file_hashes_concat_sha || aurora_app_version) and
+        // returns it в ReproducibilityResult.composite_hash. External
+        // verifiers (signed methodology_cert.pdf) cross-check.
         //
-        // Batch 2 S1 implementation: verify_reproducibility computes
-        // composite_bundle_hash_mirror (already exists в methodology_cert.rs:39)
-        // and returns it в ReproducibilityResult.composite_hash field. Caller
-        // (UI / methodology cert verifier) cross-checks against externally-known
-        // reference (signed cert PDF).
-        //
-        // For attack DETECTION, this test asserts that the recomputed composite
-        // hash from the forgery does NOT equal the legitimate composite hash
-        // — proving the forgery is distinguishable when an external reference
-        // exists.
-        //
-        // Once Batch 2 S1 lands: remove #[ignore] + test passes.
+        // Attack DETECTION criterion: composite_hash field MUST differ between
+        // legitimate and forged bundles — proving the forgery is distinguishable
+        // when external reference (signed cert) exists.
 
         let dir = tempfile::tempdir().unwrap();
-        // Legitimate bundle
         let legit = build_valid_bundle(
             dir.path(),
             "legit.aurora",
@@ -960,7 +996,6 @@ mod tests {
         );
         let legit_result = run_verify(&legit).expect("legit should verify");
 
-        // Forged bundle — different content, updated per-file hash
         let forged = build_valid_bundle(
             dir.path(),
             "forged.aurora",
@@ -968,21 +1003,27 @@ mod tests {
         );
         let forged_result = run_verify(&forged).expect("forged self-consistent");
 
-        // BEFORE Batch 2 S1: both return "verified" — attack succeeds.
-        // AFTER Batch 2 S1: ReproducibilityResult.composite_hash differs.
-        // (Field doesn't exist yet — this test currently uses placeholder.)
+        // Both bundles are self-consistent (per-file hash matches content), so
+        // both return "verified" status. The forgery is detected via composite
+        // hash divergence когда external reference cross-checks (cert PDF).
+        assert_eq!(legit_result.status, "verified");
+        assert_eq!(forged_result.status, "verified");
 
-        // Placeholder assertion that will compile once composite_hash field added:
-        // assert_ne!(
-        //     legit_result.composite_hash, forged_result.composite_hash,
-        //     "INV-48: forgery composite hash must differ from legitimate"
-        // );
-        let _ = (legit_result, forged_result); // suppress unused warning
-        panic!("PENDING Batch 2 S1 — composite_hash field not yet in ReproducibilityResult");
+        // INV-48 closure: composite_hash MUST differ — proves cross-binding
+        // catches per-file hash forgery when paired with signed external ref.
+        assert!(
+            legit_result.composite_hash.is_some(),
+            "composite_hash must be populated for BundleManifest bundles"
+        );
+        assert!(forged_result.composite_hash.is_some());
+        assert_ne!(
+            legit_result.composite_hash, forged_result.composite_hash,
+            "INV-48: forgery composite hash must differ from legitimate — \
+             this is the cross-binding signal external verifiers use"
+        );
     }
 
     #[test]
-    #[ignore = "PENDING Batch 2 S4: validate hex format of expected_sha256"]
     fn malformed_hash_field_rejected() {
         // Sprint 3 D6 doesn't validate hex format of manifest.files[*].sha256.
         // If field contains "not-a-hash-string" → re-hash returns its hex,
@@ -1029,12 +1070,12 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "PENDING Batch 2 S1: composite_hash field in ReproducibilityResult"]
     fn composite_hash_reported_in_result_for_signed_cert_comparison() {
-        // After Batch 2 S1, ReproducibilityResult includes
-        // `composite_hash: Option<String>` matching composite_bundle_hash_mirror
-        // output. UI compares against methodology cert PDF's claimed composite
-        // hash for cross-binding verification (R8 closure).
+        // Batch 2 S1: ReproducibilityResult.composite_hash matches
+        // composite_bundle_hash_mirror output (length-prefix encoded SHA-256
+        // of manifest_sha256 + sorted_per_file_hashes + aurora_app_version).
+        // UI compares against methodology cert PDF's claimed composite hash
+        // for R8 closure cross-binding verification.
 
         let dir = tempfile::tempdir().unwrap();
         let bundle = build_valid_bundle(
@@ -1045,17 +1086,17 @@ mod tests {
         let result = run_verify(&bundle).expect("should verify");
         assert_eq!(result.status, "verified");
 
-        // Once Batch 2 S1 adds composite_hash field:
-        // assert!(result.composite_hash.is_some());
-        // let h = result.composite_hash.unwrap();
-        // assert_eq!(h.len(), 64, "composite_hash must be 64-char hex SHA-256");
-        // assert!(h.chars().all(|c| c.is_ascii_hexdigit()));
-        let _ = result;
-        panic!("PENDING Batch 2 S1 — composite_hash field not yet present");
+        let h = result
+            .composite_hash
+            .expect("composite_hash must be populated for BundleManifest format");
+        assert_eq!(h.len(), 64, "composite_hash must be 64-char hex SHA-256");
+        assert!(
+            h.chars().all(|c| c.is_ascii_hexdigit()),
+            "composite_hash must contain only hex digits"
+        );
     }
 
     #[test]
-    #[ignore = "PENDING Batch 2 S2: streaming SHA-256 (memory bound)"]
     fn large_entry_does_not_oom_under_streaming() {
         // S2 prevention: replace `read_to_end(&mut buf)` (allocates Vec<u8>
         // size of entire entry) with chunked streaming через

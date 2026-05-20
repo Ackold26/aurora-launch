@@ -102,6 +102,11 @@ export interface ReproducibilityResult {
   files_checked: number;
   mismatches: ReproducibilityFileMismatch[];
   reason: string | null;
+  /** Sprint 4 S1 — composite_bundle_hash_mirror cross-binding hash. UI
+   *  compares against methodology cert PDF's signed reference to detect
+   *  per-file hash forgery (INV-48 closure). Null когда manifest doesn't
+   *  conform to BundleManifest schema (legacy / corpus format). */
+  composite_hash: string | null;
 }
 
 export interface LicenseStatus {
