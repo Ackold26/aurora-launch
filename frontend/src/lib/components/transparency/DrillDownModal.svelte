@@ -12,6 +12,7 @@
   import katex from 'katex';
   import 'katex/dist/katex.min.css';
   import NotificationBanner from '$lib/components/NotificationBanner.svelte';
+  import { getFormula } from '$lib/utils/formulas';
   import type { FormulaEntry } from '$lib/utils/formulas';
 
   // ── Props ────────────────────────────────────────────────────────────────
@@ -21,13 +22,20 @@
     open: boolean;
     /** Close callback. */
     onClose: () => void;
-    /** Formula entry to display (formula_key resolved by parent via getFormula()). */
-    formula: FormulaEntry | null;
+    /** Direct formula entry. Use this OR formulaKey, but not both. */
+    formula?: FormulaEntry | null;
+    /** Lookup-by-key alternative — internally resolves через getFormula(). */
+    formulaKey?: string;
     /** Optional context-specific numeric value to display ("3.7%" for example). */
     contextValue?: string;
   }
 
-  let { open, onClose, formula, contextValue }: Props = $props();
+  let { open, onClose, formula: formulaProp, formulaKey, contextValue }: Props = $props();
+
+  // Resolve final formula — prop wins, else lookup by key.
+  const formula: FormulaEntry | null = $derived(
+    formulaProp !== undefined ? formulaProp : (formulaKey ? getFormula(formulaKey) : null)
+  );
 
   // ── KaTeX rendering ──────────────────────────────────────────────────────
 
@@ -42,6 +50,16 @@
         output: 'html',
         strict: false, // allow cyrillic in \text{}
       });
+      // A3 (Sprint 4 Batch 4): hide MathML duplicate from accessibility tree.
+      // KaTeX 'html' output injects a hidden <math> MathML node alongside the
+      // visual HTML rendering для copy-paste support. Screen readers announce
+      // BOTH the MathML AND our aria-label text_fallback on .dd-math —
+      // double-announcement confuses users ("T equals sum of W i times S i ...
+      // T equals sum of W i times S i where W i sums to 1"). Suppress the
+      // MathML announcement; aria-label provides the canonical accessible name.
+      mathContainer
+        .querySelectorAll('.katex-mathml, annotation')
+        .forEach((el) => el.setAttribute('aria-hidden', 'true'));
     } catch (e) {
       console.warn('[drill-down] KaTeX render failed, using text fallback:', e);
       mathContainer.textContent = formula.text_fallback;

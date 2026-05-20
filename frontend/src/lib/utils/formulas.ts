@@ -346,27 +346,14 @@ export function getFormula(key: string): FormulaEntry | null {
 }
 
 /**
- * Cheap existence check — avoids allocating the FormulaEntry. Useful
- * when wrapping a number and you only want to know whether to render
- * the drill-down affordance.
+ * Extract first sentence of text — first '.' boundary + 1 char (включая '.').
+ * Fallback к full text if no '.' present.
+ *
+ * Used by NumberWithDrillDown (tooltip) + ChartWithDrillDown (subtitle) —
+ * Q2 from Sprint Buffer.
  */
-export function hasFormula(key: string): boolean {
-  return key in FORMULAS;
+export function firstSentence(text: string): string {
+  const dot = text.indexOf('.');
+  return dot !== -1 ? text.slice(0, dot + 1) : text;
 }
 
-/**
- * All registered formula keys (stable order — insertion order is
- * preserved by `Object.keys` since ES2015). Used by tests and the
- * developer-facing transparency catalogue (potential future feature).
- */
-export function getAllFormulaKeys(): string[] {
-  return Object.keys(FORMULAS);
-}
-
-/**
- * Full registry export — primarily for tests + catalogue generation.
- * Avoid using in production code paths; prefer `getFormula(key)`.
- */
-export function getAllFormulas(): FormulaEntry[] {
-  return Object.values(FORMULAS);
-}

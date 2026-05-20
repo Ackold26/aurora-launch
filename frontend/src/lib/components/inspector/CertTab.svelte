@@ -56,7 +56,7 @@
 {#if verification}
   <CertExportModal
     open={exportModalOpen}
-    {verification}
+    verificationResult={verification}
     {bundlePath}
     {appVersion}
     onClose={closeExportModal}

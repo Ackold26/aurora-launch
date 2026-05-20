@@ -14,6 +14,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { fadeIn } from '$lib/services/motion';
+  import { focusTrap } from '$lib/utils/focus-trap';
 
   // ── z-index constants ────────────────────────────────────────────────────
   const Z_BLOCKING_MODAL = 9999;
@@ -79,52 +80,58 @@
         : Z_TOP_BANNER,
   );
 
-  // ── Focus trap ───────────────────────────────────────────────────────────
+  // ── Focus trap + restoration ─────────────────────────────────────────────
 
   let bannerEl: HTMLElement | undefined = $state();
 
-  /** Return all keyboard-focusable children of el. */
-  function focusable(el: HTMLElement): HTMLElement[] {
-    return Array.from(
-      el.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ),
-    );
+  // A5 (Sprint 4 Batch 4): track opener for focus restoration on dismiss.
+  // WCAG 2.4.3 Focus Order — keyboard users должны return to the trigger
+  // element after closing modal, не land на document.body.
+  let previouslyFocused: HTMLElement | null = null;
+
+  /** Common dismiss path — invokes parent onDismiss + restores focus to
+   *  opener (A5). Used by both inline dismiss button и Escape handler. */
+  function dismiss(): void {
+    if (!onDismiss) return;
+    const target = previouslyFocused;
+    previouslyFocused = null;
+    onDismiss();
+    // Parent re-renders (open=false), unmounting us; restore focus on next frame.
+    requestAnimationFrame(() => target?.focus());
   }
 
+  // Tab wrap is handled by use:focusTrap on the modal element (see template).
+  // Only Escape is handled here (inline dismiss).
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape' && onDismiss) {
       event.preventDefault();
-      onDismiss();
-      return;
-    }
-
-    if (event.key === 'Tab' && hasTrap && bannerEl) {
-      const items = focusable(bannerEl);
-      if (items.length === 0) {
-        event.preventDefault();
-        return;
-      }
-      const first: HTMLElement = items[0]!;
-      const last: HTMLElement = items[items.length - 1]!;
-      if (event.shiftKey) {
-        if (document.activeElement === first) {
-          event.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (document.activeElement === last) {
-          event.preventDefault();
-          first.focus();
-        }
-      }
+      // A7 (Sprint 4 Batch 4): stop bubbling so parent's ESC handler doesn't
+      // also fire (cascade-close prevention — e.g., DrillDownModal inside
+      // Inspector pane wouldn't close both modal AND parent inspector tab).
+      event.stopPropagation();
+      dismiss();
     }
   }
 
   // ── Auto-focus on open ───────────────────────────────────────────────────
 
+  /** Return all keyboard-focusable children of el. */
+  function focusable(el: HTMLElement): HTMLElement[] {
+    return Array.from(
+      el.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [role="button"]:not([disabled]), audio[controls], video[controls]',
+      ),
+    );
+  }
+
   $effect(() => {
     if (open && bannerEl) {
+      // A5: save the element that had focus BEFORE banner opened.
+      // Only set on transition open=true (don't overwrite on re-renders mid-open).
+      if (previouslyFocused === null) {
+        const active = document.activeElement;
+        previouslyFocused = active instanceof HTMLElement ? active : null;
+      }
       // Defer one tick so the DOM is fully rendered before focusing.
       requestAnimationFrame(() => {
         if (!bannerEl) return;
@@ -159,6 +166,7 @@
         bind:this={bannerEl}
         onkeydown={handleKeydown}
         tabindex="-1"
+        use:focusTrap
       >
         {@render children?.()}
         {#if actions}
@@ -170,7 +178,7 @@
           <button
             class="nb-dismiss nb-dismiss--modal"
             type="button"
-            onclick={onDismiss}
+            onclick={dismiss}
             aria-label="Закрыть"
           >×</button>
         {/if}
@@ -199,7 +207,7 @@
           <button
             class="nb-dismiss nb-dismiss--banner"
             type="button"
-            onclick={onDismiss}
+            onclick={dismiss}
             aria-label="Закрыть"
           >×</button>
         {/if}

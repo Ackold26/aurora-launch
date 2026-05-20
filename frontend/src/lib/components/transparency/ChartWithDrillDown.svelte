@@ -15,7 +15,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { _ } from 'svelte-i18n';
-  import { getFormula } from '$lib/utils/formulas';
+  import { getFormula, firstSentence } from '$lib/utils/formulas';
   import type { FormulaEntry } from '$lib/utils/formulas';
   import DrillDownModal from './DrillDownModal.svelte';
 
@@ -55,8 +55,7 @@
   const subtitle: string = $derived.by(() => {
     if (subtitleOverride !== undefined) return subtitleOverride;
     if (!formula) return '';
-    const dot = formula.explanation.indexOf('.');
-    return dot !== -1 ? formula.explanation.slice(0, dot + 1) : formula.explanation;
+    return firstSentence(formula.explanation);
   });
 
   // ── Per-instance ID for aria-labelledby ──────────────────────────────────
@@ -208,7 +207,11 @@
     outline-offset: 2px;
   }
 
-  @media (pointer: fine) {
+  /* A6 (Sprint 4 Batch 4): stricter than `pointer: fine` alone — hybrid devices
+     like iPad с trackpad report fine pointer без hover capability, leading к
+     info button hiding на touch. `hover: hover` filters к true mouse-driven
+     interactions only. */
+  @media (hover: hover) and (pointer: fine) {
     /* Pointer device — slightly fade when container not hovered */
     .chart-drill-info {
       opacity: 0.55;

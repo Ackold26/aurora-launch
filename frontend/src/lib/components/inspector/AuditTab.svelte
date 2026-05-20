@@ -41,21 +41,21 @@
     }
   }
 
-  // Status badge tone derived from result
-  const statusTone = $derived.by(() => {
-    if (!result) return 'neutral';
-    if (result.status === 'verified') return 'success';
-    if (result.status === 'diverged') return 'danger';
-    return 'warning';
-  });
-
-  const statusLabel = $derived.by(() => {
-    if (!result) return '';
-    if (result.status === 'verified')
-      return $_('audit.repro.status_verified', { default: 'Воспроизводимо' });
-    if (result.status === 'diverged')
-      return $_('audit.repro.status_diverged', { default: 'Расхождение' });
-    return $_('audit.repro.status_error', { default: 'Ошибка' });
+  // Status badge — null when no result; both tone + label always paired.
+  const statusDisplay = $derived.by(() => {
+    if (!result) return null;
+    if (result.status === 'verified') return {
+      tone: 'success',
+      label: $_('audit.repro.status_verified', { default: 'Воспроизводимо' }),
+    };
+    if (result.status === 'diverged') return {
+      tone: 'danger',
+      label: $_('audit.repro.status_diverged', { default: 'Расхождение' }),
+    };
+    return {
+      tone: 'warning',
+      label: $_('audit.repro.status_error', { default: 'Ошибка' }),
+    };
   });
 </script>
 
@@ -90,66 +90,81 @@
           </button>
         </div>
 
-        {#if phase === 'error' && errorMessage}
-          <div class="audit-error" role="alert">
-            <strong>
-              {$_('audit.repro.error_title', { default: 'Не удалось запустить проверку' })}:
-            </strong>
-            {errorMessage}
-          </div>
-        {/if}
-
-        {#if phase === 'done' && result}
-          <div class="audit-result" data-tone={statusTone} aria-live="polite">
-            <div class="audit-result-header">
-              <span class="audit-result-badge" data-tone={statusTone}>
-                {statusLabel}
-              </span>
-              <span class="audit-result-summary">
-                {$_('audit.repro.files_checked', {
-                  default: 'Проверено файлов: {count}',
-                  values: { count: result.files_checked },
-                })}
-              </span>
+        <!--
+          A4 (Sprint 4 Batch 4): persistent aria-live containers.
+          JAWS/NVDA register live regions only when they're ALREADY in DOM
+          at the moment content appears. If we conditionally render the
+          .audit-error / .audit-result divs via {#if ...}, the screen reader
+          doesn't see the appearance event reliably — announcement skipped.
+          Fix: outer wrapper divs are ALWAYS in DOM с aria-live attributes;
+          inner content is conditionally populated. When state transitions
+          к 'error' or 'done', the new content appears WITHIN an existing
+          live region — guaranteed announcement.
+        -->
+        <div class="audit-error-region" role="alert" aria-live="assertive">
+          {#if phase === 'error' && errorMessage}
+            <div class="audit-error">
+              <strong>
+                {$_('audit.repro.error_title', { default: 'Не удалось запустить проверку' })}:
+              </strong>
+              {errorMessage}
             </div>
+          {/if}
+        </div>
 
-            {#if result.reason}
-              <p class="audit-result-reason">{result.reason}</p>
-            {/if}
-
-            {#if result.mismatches.length > 0}
-              <details class="audit-mismatch-details" open>
-                <summary>
-                  {$_('audit.repro.mismatches_heading', {
-                    default: 'Расхождения ({n})',
-                    values: { n: result.mismatches.length },
+        <div class="audit-result-region" aria-live="polite" aria-atomic="true">
+          {#if phase === 'done' && result && statusDisplay}
+            <div class="audit-result" data-tone={statusDisplay.tone} aria-live="polite">
+              <div class="audit-result-header">
+                <span class="audit-result-badge" data-tone={statusDisplay.tone}>
+                  {statusDisplay.label}
+                </span>
+                <span class="audit-result-summary">
+                  {$_('audit.repro.files_checked', {
+                    default: 'Проверено файлов: {count}',
+                    values: { count: result.files_checked },
                   })}
-                </summary>
-                <ul class="audit-mismatch-list">
-                  {#each result.mismatches as m (m.entry)}
-                    <li class="audit-mismatch-item">
-                      <code class="audit-mismatch-entry">{m.entry}</code>
-                      <div class="audit-mismatch-hashes">
-                        <div>
-                          <span class="audit-mismatch-label">
-                            {$_('audit.repro.expected', { default: 'Ожидалось:' })}
-                          </span>
-                          <code>{m.expected_sha256}</code>
+                </span>
+              </div>
+
+              {#if result.reason}
+                <p class="audit-result-reason">{result.reason}</p>
+              {/if}
+
+              {#if result.mismatches.length > 0}
+                <details class="audit-mismatch-details" open>
+                  <summary>
+                    {$_('audit.repro.mismatches_heading', {
+                      default: 'Расхождения ({n})',
+                      values: { n: result.mismatches.length },
+                    })}
+                  </summary>
+                  <ul class="audit-mismatch-list">
+                    {#each result.mismatches as m (m.entry)}
+                      <li class="audit-mismatch-item">
+                        <code class="audit-mismatch-entry">{m.entry}</code>
+                        <div class="audit-mismatch-hashes">
+                          <div>
+                            <span class="audit-mismatch-label">
+                              {$_('audit.repro.expected', { default: 'Ожидалось:' })}
+                            </span>
+                            <code>{m.expected_sha256}</code>
+                          </div>
+                          <div>
+                            <span class="audit-mismatch-label">
+                              {$_('audit.repro.computed', { default: 'Получено:' })}
+                            </span>
+                            <code>{m.computed_sha256}</code>
+                          </div>
                         </div>
-                        <div>
-                          <span class="audit-mismatch-label">
-                            {$_('audit.repro.computed', { default: 'Получено:' })}
-                          </span>
-                          <code>{m.computed_sha256}</code>
-                        </div>
-                      </div>
-                    </li>
-                  {/each}
-                </ul>
-              </details>
-            {/if}
-          </div>
-        {/if}
+                      </li>
+                    {/each}
+                  </ul>
+                </details>
+              {/if}
+            </div>
+          {/if}
+        </div>
       </section>
     {/snippet}
   </Card>

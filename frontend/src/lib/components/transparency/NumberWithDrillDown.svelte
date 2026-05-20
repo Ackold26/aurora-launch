@@ -13,7 +13,7 @@
 
 <script lang="ts">
   import { _ } from 'svelte-i18n';
-  import { getFormula } from '$lib/utils/formulas';
+  import { getFormula, firstSentence } from '$lib/utils/formulas';
   import type { FormulaEntry } from '$lib/utils/formulas';
   import DrillDownModal from './DrillDownModal.svelte';
 
@@ -41,8 +41,7 @@
 
   const tooltipText: string = $derived.by(() => {
     if (!formula) return '';
-    const dot = formula.explanation.indexOf('.');
-    return dot !== -1 ? formula.explanation.slice(0, dot + 1) : formula.explanation;
+    return firstSentence(formula.explanation);
   });
 
   // ── Modal state ───────────────────────────────────────────────────────────
@@ -145,7 +144,15 @@
   }
 
   /* ── Info button ──────────────────────────────────────────────────────── */
+  /*
+    A1 (Sprint 4 Batch 4 — WCAG 2.5.8 Target Size Minimum, Level AA):
+      Minimum interactive target = 24×24 CSS pixels. Visual button stays
+      16×16 but a ::before pseudo-element extends the click/tap hit area
+      to 24×24 (16 + 4*2 inset). Visual design unchanged для sighted
+      users — accessibility upgraded для motor-impaired / touch users.
+  */
   .number-drill-info {
+    position: relative; /* anchor for ::before hit-area expansion */
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -169,6 +176,15 @@
     margin-bottom: 0.1em; /* optical alignment with text baseline */
   }
 
+  /* A1: invisible hit-area expansion. ::before captures clicks/taps выходящие
+     beyond the visible 16×16 button (4px on each side → 24×24 hit area). */
+  .number-drill-info::before {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    /* No background — invisible. Pointer events propagate through к button. */
+  }
+
   .number-drill-info:focus-visible {
     outline: none; /* parent :focus-within handles outline */
   }
@@ -177,7 +193,13 @@
     background: color-mix(in srgb, var(--accent, #2e5bff) 10%, transparent);
   }
 
-  @media (pointer: fine) {
+  /* A6 (Sprint 4 Batch 4): @media (hover: hover) and (pointer: fine) — stricter
+     than `pointer: fine` alone. Hybrid devices (iPad с trackpad, Surface)
+     report `pointer: fine` но `hover: none` — the previous query incorrectly
+     applied hover-fade на these surfaces, hiding the info button когда trackpad
+     user touched the screen. Combined media query targets ТОЛЬКО true mouse
+     interactions. */
+  @media (hover: hover) and (pointer: fine) {
     /* Pointer device — fade info button when not hovering */
     .number-drill-info {
       opacity: 0.4;
@@ -219,7 +241,8 @@
     /* (pointer:fine guard below handles actual activation) */
   }
 
-  @media (pointer: fine) {
+  /* A6: hover-only activation для tooltip — see info button @media above. */
+  @media (hover: hover) and (pointer: fine) {
     .number-drill[data-tooltip]:hover::after,
     .number-drill[data-tooltip]:focus-within::after {
       opacity: 1;
