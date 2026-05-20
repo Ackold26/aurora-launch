@@ -11,10 +11,16 @@
  * between NotificationBanner + CertExportModal.
  */
 export function focusTrap(node: HTMLElement) {
+  // Sprint 4 Batch 7 Q6-H1: `[role="button"]:not([aria-disabled="true"])`
+  // replaces ineffective `:not([disabled])` filter — `disabled` attribute не
+  // валиден на custom-role elements (e.g., `<span role="button">`);
+  // `aria-disabled="true"` is the ARIA canonical signal для disabled
+  // custom-role buttons. Keep `:not([disabled])` для legacy support где dev
+  // actually set disabled attribute (no harm, just redundant).
   function focusable(): HTMLElement[] {
     return Array.from(
       node.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [role="button"]:not([disabled]), audio[controls], video[controls]',
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [role="button"]:not([aria-disabled="true"]):not([disabled]), audio[controls], video[controls]',
       ),
     );
   }

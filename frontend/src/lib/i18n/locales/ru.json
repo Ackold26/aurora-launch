@@ -434,6 +434,8 @@
   "audit.repro.expected": "Ожидалось:",
   "audit.repro.computed": "Получено:",
   "audit.repro.error_title": "Не удалось запустить проверку",
+  "audit.repro.cross_binding_heading": "Кросс-привязка с сертификатом методологии",
+  "audit.repro.cross_binding_help": "Сверьте этот хеш с указанным в сертификате методологии — если совпадает, файлы не подменялись после подписи сертификата.",
 
   "inspector.forecast.chart_title": "Прогноз с доверительным интервалом",
   "inspector.similarity.chart_title": "Сходство по 8 измерениям"

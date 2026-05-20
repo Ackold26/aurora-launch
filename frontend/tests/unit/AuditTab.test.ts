@@ -378,13 +378,62 @@ describe('AuditTab — ошибка IPC (выброс исключения)', ()
 // ---------------------------------------------------------------------------
 
 describe('AuditTab — ARIA live region', () => {
-  it('.audit-result имеет aria-live="polite"', async () => {
-    mockSuccess();
+  it('persistent .audit-result-region имеет aria-live="polite" (A4)', async () => {
+    // Sprint 4 Batch 7 A4-C1 follow-up: aria-live lives на persistent wrapper
+    // .audit-result-region (always в DOM), не на conditional inner .audit-result.
+    // Inner aria-live was removed чтобы avoid nested live-region double-announce.
     const { container } = render(AuditTab, { bundlePath: '/path/to/bundle.aurora' });
+
+    // Wrapper exists from start (persistent)
+    const region = container.querySelector('.audit-result-region');
+    expect(region).not.toBeNull();
+    expect(region!.getAttribute('aria-live')).toBe('polite');
+
+    // Inner .audit-result MUST NOT have its own aria-live (avoid nesting)
+    mockSuccess();
     await fireEvent.click(screen.getByText(/Проверить воспроизводимость/).closest('button')!);
     await flushAsync();
 
     const result = container.querySelector('.audit-result');
-    expect(result!.getAttribute('aria-live')).toBe('polite');
+    expect(result).not.toBeNull();
+    expect(result!.hasAttribute('aria-live')).toBe(false);
+  });
+
+  it('composite_hash рендерится в .audit-cross-binding details когда populated (C1)', async () => {
+    // Sprint 4 Batch 7 C1: composite_hash surfaced к pilot user через
+    // expandable details panel с instructions. Without UI rendering, INV-48
+    // closure was incomplete at UX layer (forged bundle showed green badge).
+    mockSuccess({ composite_hash: 'abcdef0123456789'.repeat(4) });
+
+    const { container } = render(AuditTab, { bundlePath: '/path/to/bundle.aurora' });
+    await fireEvent.click(screen.getByText(/Проверить воспроизводимость/).closest('button')!);
+    await flushAsync();
+
+    const details = container.querySelector('.audit-cross-binding');
+    expect(details).not.toBeNull();
+    const hashEl = container.querySelector('.audit-cross-binding-hash');
+    expect(hashEl).not.toBeNull();
+    expect(hashEl!.textContent).toBe('abcdef0123456789'.repeat(4));
+  });
+
+  it('composite_hash секция отсутствует когда composite_hash=null (C1)', async () => {
+    // Когда cross-binding unavailable (corpus format или manifest missing
+    // aurora_app_version), composite_hash=null. UI пропускает details panel —
+    // result.reason field (set by Rust H1 fix) surfaces warning через
+    // .audit-result-reason paragraph above.
+    mockSuccess({
+      composite_hash: null,
+      reason: 'Cross-binding hash недоступен (...).',
+    });
+
+    const { container } = render(AuditTab, { bundlePath: '/path/to/bundle.aurora' });
+    await fireEvent.click(screen.getByText(/Проверить воспроизводимость/).closest('button')!);
+    await flushAsync();
+
+    expect(container.querySelector('.audit-cross-binding')).toBeNull();
+    // Reason rendered through existing .audit-result-reason path
+    const reasonEl = container.querySelector('.audit-result-reason');
+    expect(reasonEl).not.toBeNull();
+    expect(reasonEl!.textContent).toContain('Cross-binding');
   });
 });

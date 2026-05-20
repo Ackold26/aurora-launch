@@ -112,9 +112,17 @@
           {/if}
         </div>
 
-        <div class="audit-result-region" aria-live="polite" aria-atomic="true">
+        <!--
+          Sprint 4 Batch 7 A4-C1: aria-atomic removed (was over-announcing
+          entire result block при details/summary toggle, including 50+ mismatch
+          hashes — verbose UX). Inner .audit-result aria-live removed (was
+          causing double-announce nested под outer aria-live="polite" — most
+          AT read content twice). Outer wrapper alone is sufficient как
+          persistent live region.
+        -->
+        <div class="audit-result-region" aria-live="polite">
           {#if phase === 'done' && result && statusDisplay}
-            <div class="audit-result" data-tone={statusDisplay.tone} aria-live="polite">
+            <div class="audit-result" data-tone={statusDisplay.tone}>
               <div class="audit-result-header">
                 <span class="audit-result-badge" data-tone={statusDisplay.tone}>
                   {statusDisplay.label}
@@ -129,6 +137,34 @@
 
               {#if result.reason}
                 <p class="audit-result-reason">{result.reason}</p>
+              {/if}
+
+              <!--
+                Sprint 4 Batch 7 C1: surface composite_hash к pilot user.
+                Без UI rendering, INV-48 closure был incomplete at UX layer —
+                pilot видел зелёный «Воспроизводимо» badge для forged bundle
+                (per-file hashes recomputed). Surfacing the cross-binding hash
+                с instructions enables pilot к manually verify против external
+                signed methodology cert PDF. The composite_hash=null case
+                (cross-binding unavailable) already surfaced through
+                result.reason field above (set by Rust H1 fix when
+                composite_bundle_hash_mirror returns Err).
+              -->
+              {#if result.composite_hash}
+                <details class="audit-cross-binding">
+                  <summary class="audit-cross-binding-summary">
+                    {$_('audit.repro.cross_binding_heading', {
+                      default: 'Кросс-привязка с сертификатом методологии',
+                    })}
+                  </summary>
+                  <p class="audit-cross-binding-help">
+                    {$_('audit.repro.cross_binding_help', {
+                      default:
+                        'Сверьте этот хеш с указанным в сертификате методологии — если совпадает, файлы не подменялись после подписи сертификата.',
+                    })}
+                  </p>
+                  <code class="audit-cross-binding-hash">{result.composite_hash}</code>
+                </details>
               {/if}
 
               {#if result.mismatches.length > 0}
@@ -289,6 +325,42 @@
     font-size: 0.875rem;
     color: var(--text-primary, #111);
     font-style: italic;
+  }
+
+  /* Sprint 4 Batch 7 C1 — composite_hash cross-binding section */
+  .audit-cross-binding {
+    margin-top: var(--spacing-3, 0.75rem);
+    padding: var(--spacing-2, 0.5rem);
+    background: color-mix(in srgb, var(--color-ui-accent-primary, #2E5BFF) 4%, var(--bg-surface, #fff));
+    border: 1px solid color-mix(in srgb, var(--color-ui-accent-primary, #2E5BFF) 20%, transparent);
+    border-radius: 4px;
+  }
+
+  .audit-cross-binding-summary {
+    cursor: pointer;
+    font-weight: 500;
+    color: var(--text-primary, #111);
+    font-size: 0.875rem;
+  }
+
+  .audit-cross-binding-help {
+    margin: var(--spacing-2, 0.5rem) 0 var(--spacing-2, 0.5rem);
+    font-size: 0.8125rem;
+    color: var(--text-secondary, #555);
+    line-height: 1.45;
+  }
+
+  .audit-cross-binding-hash {
+    display: block;
+    padding: var(--spacing-2, 0.5rem);
+    background: var(--bg-surface, #fff);
+    border: 1px solid var(--border-subtle, #d1d5db);
+    border-radius: 3px;
+    font-family: var(--font-mono, monospace);
+    font-size: 0.75rem;
+    color: var(--text-primary, #111);
+    word-break: break-all;
+    user-select: all;
   }
 
   .audit-mismatch-details {
