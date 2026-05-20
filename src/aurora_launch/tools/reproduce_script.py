@@ -27,6 +27,7 @@ Per master-plan §④ M-09 + §⑧ "Reproduce-this-forecast Python code generato
 from __future__ import annotations
 
 import json
+import pprint
 from datetime import datetime, timezone
 from typing import Any
 
@@ -70,12 +71,17 @@ def generate_reproduce_script(
     """
     timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
-    # Pretty-print params для readability в generated script
-    anchors_repr = json.dumps(anchors, ensure_ascii=False, indent=8)
-    spend_plan_repr = json.dumps(spend_plan, ensure_ascii=False, indent=8)
+    # Pretty-print params для embedding as valid Python source. pprint emits
+    # Python literals (None / True / False), unlike json.dumps which emits
+    # JSON (null / true / false) — the latter is a NameError при выполнении
+    # сгенерированного .py. sort_dicts=False preserves user-provided order
+    # so seasonality is last (matches RecipientAnchors field declaration).
+    anchors_repr = pprint.pformat(anchors, indent=4, width=80, sort_dicts=False)
+    spend_plan_repr = pprint.pformat(spend_plan, indent=4, width=80, sort_dicts=False)
     # B-1 security: bundle_path как Python string literal, не raw insertion.
     # json.dumps даёт valid Python-совместимый string literal с escaped
-    # quotes/backslashes/newlines. Защита от injection вида:
+    # quotes/backslashes/newlines (валидно потому что строки совпадают
+    # в JSON и Python). Защита от injection вида:
     #   bundle_path='x"); import os; os.system("..."); Path("y'
     # которая иначе вышла бы за пределы строки и стала executable Python.
     bundle_path_literal = json.dumps(bundle_path)
@@ -161,7 +167,11 @@ with open_lazy(BUNDLE_PATH) as bundle:
     if posterior_entry is None:
         print("ERROR: no proxy posterior entry в bundle")
         sys.exit(2)
-    posterior_bytes = bundle.get_bytes(posterior_entry)
+    # LoadedBundle/LazyLoadedBundle exposes bytes through `files` mapping
+    # (per bundle_container.py:129 + bundle_streaming.py:236 LazyFileMap).
+    # No `get_bytes()` method exists — using dict access keeps script working
+    # on both eager and lazy bundle reads.
+    posterior_bytes = bundle.files[posterior_entry]
 
 posterior_data = deserialize(posterior_bytes)
 
