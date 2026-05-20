@@ -38,6 +38,7 @@ function mockSuccess(overrides: Partial<ReproducibilityResult> = {}) {
     files_checked: 5,
     mismatches: [],
     reason: null,
+    composite_hash: null,
     ...overrides,
   };
   getIpcMock().mockImplementation(async (cmd: string) => {
@@ -120,7 +121,7 @@ describe('AuditTab — фаза running', () => {
     expect(screen.getByText(/Проверяется…/)).toBeTruthy();
 
     // Cleanup — resolve the promise so the component can settle
-    resolveIpc({ status: 'verified', files_checked: 0, mismatches: [], reason: null });
+    resolveIpc({ status: 'verified', files_checked: 0, mismatches: [], reason: null, composite_hash: null });
     await flushAsync();
   });
 
@@ -143,7 +144,7 @@ describe('AuditTab — фаза running', () => {
     const runningBtn = screen.getByText(/Проверяется…/).closest('button') as HTMLButtonElement;
     expect(runningBtn.disabled).toBe(true);
 
-    resolveIpc({ status: 'verified', files_checked: 0, mismatches: [], reason: null });
+    resolveIpc({ status: 'verified', files_checked: 0, mismatches: [], reason: null, composite_hash: null });
     await flushAsync();
   });
 
