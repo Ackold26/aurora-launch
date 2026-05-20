@@ -611,3 +611,497 @@ fn read_local_dev_pubkey(app: &AppHandle) -> Option<[u8; 32]> {
     let signing = SigningKey::from_bytes(&arr);
     Some(signing.verifying_key().to_bytes())
 }
+
+// ── Sprint 4 Batch 1: verify_reproducibility tests (INV-48 enforcement) ──
+//
+// Attack scenarios written FIRST per INV-48 + INV-02 (cryptographic claims
+// need attack scenario tests before implementation).
+//
+// Tests split into two tiers:
+//   - PASSING NOW — Sprint 3 D6 behavior (happy path + obvious tampering)
+//   - #[ignore = "PENDING Batch 2 SX"] — security gaps INV-48 identified;
+//     Batch 2 implementation removes #[ignore] and tests pass.
+//
+// This is TDD discipline for crypto code: spec the attack scenarios, watch
+// them fail predictably, then implement defense, verify pass.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use std::path::Path;
+
+    // ── Fixture builders ────────────────────────────────────────────────
+
+    /// Build a syntactically valid .aurora bundle with given files.
+    /// Manifest.files[*].sha256 is computed from actual content (consistent).
+    /// Manifest follows BundleManifest schema (mirror Python bundle_manifest.py).
+    fn build_valid_bundle(
+        dir: &Path,
+        name: &str,
+        files: &[(&str, &[u8])],
+    ) -> std::path::PathBuf {
+        let path = dir.join(name);
+        let file = std::fs::File::create(&path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let opts: zip::write::SimpleFileOptions =
+            zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+
+        // Build per-file hash map matching actual content
+        let mut files_obj = serde_json::Map::new();
+        for (fname, content) in files {
+            let hash = hex::encode(Sha256::digest(content));
+            files_obj.insert(
+                fname.to_string(),
+                serde_json::json!({
+                    "sha256": hash,
+                    "size_bytes": content.len(),
+                    "schema_version": null,
+                }),
+            );
+        }
+
+        let manifest = serde_json::json!({
+            "manifest_version": "1.0",
+            "schema_version": "3.0",
+            "aurora_app": "Aurora Launch",
+            "aurora_app_version": "0.1.4",
+            "min_app_version": "0.1.0",
+            "created_at": "2026-05-21T00:00:00Z",
+            "last_modified": "2026-05-21T00:00:00Z",
+            "project_id": "00000000-0000-0000-0000-000000000000",
+            "revision": 0,
+            "files": files_obj,
+            "integrity_check": "strict",
+            "compression": "store"
+        });
+
+        zip.start_file("manifest.json", opts).unwrap();
+        zip.write_all(&serde_json::to_vec(&manifest).unwrap()).unwrap();
+
+        for (fname, content) in files {
+            zip.start_file(*fname, opts).unwrap();
+            zip.write_all(content).unwrap();
+        }
+        zip.finish().unwrap();
+        path
+    }
+
+    /// Build a bundle where manifest.json is provided verbatim (allows
+    /// crafting forgeries with tampered hash claims).
+    fn build_custom_manifest_bundle(
+        dir: &Path,
+        name: &str,
+        manifest_json: &[u8],
+        files: &[(&str, &[u8])],
+    ) -> std::path::PathBuf {
+        let path = dir.join(name);
+        let file = std::fs::File::create(&path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let opts: zip::write::SimpleFileOptions =
+            zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+
+        zip.start_file("manifest.json", opts).unwrap();
+        zip.write_all(manifest_json).unwrap();
+
+        for (fname, content) in files {
+            zip.start_file(*fname, opts).unwrap();
+            zip.write_all(content).unwrap();
+        }
+        zip.finish().unwrap();
+        path
+    }
+
+    /// Sync wrapper around async verify_reproducibility.
+    fn run_verify(bundle_path: &Path) -> AuroraResult<ReproducibilityResult> {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(verify_reproducibility(
+            bundle_path.to_string_lossy().to_string(),
+        ))
+    }
+
+    // ── Tier 1: PASSING NOW (Sprint 3 D6 behavior) ──────────────────────
+
+    #[test]
+    fn fresh_bundle_returns_verified() {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = build_valid_bundle(
+            dir.path(),
+            "fresh.aurora",
+            &[
+                ("data/file1.txt", b"hello"),
+                ("data/file2.txt", b"world"),
+            ],
+        );
+        let result = run_verify(&bundle).expect("should not error");
+        assert_eq!(result.status, "verified", "fresh bundle must verify");
+        assert_eq!(result.files_checked, 2);
+        assert!(result.mismatches.is_empty());
+        assert!(result.reason.is_none());
+    }
+
+    #[test]
+    fn tampered_content_returns_diverged() {
+        // Manifest claims hash of "hello"; ZIP contains "HELLO" — divergence
+        // detectable by per-file hash check alone (Sprint 3 D6 behavior).
+        let dir = tempfile::tempdir().unwrap();
+        let claimed_hash = hex::encode(Sha256::digest(b"hello"));
+
+        let manifest = serde_json::json!({
+            "manifest_version": "1.0",
+            "schema_version": "3.0",
+            "aurora_app": "Aurora Launch",
+            "aurora_app_version": "0.1.4",
+            "min_app_version": "0.1.0",
+            "created_at": "2026-05-21T00:00:00Z",
+            "last_modified": "2026-05-21T00:00:00Z",
+            "project_id": "00000000-0000-0000-0000-000000000000",
+            "revision": 0,
+            "files": {
+                "data/file1.txt": {
+                    "sha256": claimed_hash,
+                    "size_bytes": 5,
+                    "schema_version": null
+                }
+            },
+            "integrity_check": "strict",
+            "compression": "store"
+        });
+        let bundle = build_custom_manifest_bundle(
+            dir.path(),
+            "tampered.aurora",
+            &serde_json::to_vec(&manifest).unwrap(),
+            &[("data/file1.txt", b"HELLO")],
+        );
+
+        let result = run_verify(&bundle).expect("should not error");
+        assert_eq!(result.status, "diverged", "content tampering must be caught");
+        assert_eq!(result.mismatches.len(), 1);
+        assert_eq!(result.mismatches[0].entry, "data/file1.txt");
+        assert_eq!(result.mismatches[0].expected_sha256, claimed_hash);
+    }
+
+    #[test]
+    fn non_aurora_extension_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = build_valid_bundle(
+            dir.path(),
+            "evil.zip", // wrong extension
+            &[("data.txt", b"x")],
+        );
+        let result = run_verify(&bundle).expect("non-.aurora returns error status");
+        assert_eq!(result.status, "error");
+        assert!(result.reason.as_deref().unwrap_or("").contains(".aurora"));
+    }
+
+    #[test]
+    fn nonexistent_file_returns_bundle_not_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let bogus = dir.path().join("ghost.aurora");
+        let result = run_verify(&bogus);
+        assert!(matches!(result, Err(AuroraError::BundleNotFound { .. })));
+    }
+
+    #[test]
+    fn missing_manifest_returns_error() {
+        // Build a ZIP with no manifest.json
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = dir.path().join("no_manifest.aurora");
+        let file = std::fs::File::create(&bundle).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let opts: zip::write::SimpleFileOptions =
+            zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+        zip.start_file("data.bin", opts).unwrap();
+        zip.write_all(b"orphan").unwrap();
+        zip.finish().unwrap();
+
+        let result = run_verify(&bundle);
+        assert!(matches!(result, Err(AuroraError::BundleFormat { .. })));
+    }
+
+    #[test]
+    fn manifest_missing_files_key_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let manifest = serde_json::json!({
+            "manifest_version": "1.0",
+            "aurora_app": "Aurora Launch",
+            "aurora_app_version": "0.1.4"
+            // intentionally NO "files" key
+        });
+        let bundle = build_custom_manifest_bundle(
+            dir.path(),
+            "no_files.aurora",
+            &serde_json::to_vec(&manifest).unwrap(),
+            &[],
+        );
+        let result = run_verify(&bundle);
+        assert!(matches!(result, Err(AuroraError::BundleFormat { .. })));
+    }
+
+    #[test]
+    fn missing_file_in_zip_recorded_as_mismatch() {
+        // Manifest claims file X, but ZIP doesn't contain it — Sprint 3 D6
+        // records this as a mismatch with "<missing in ZIP>" sentinel.
+        let dir = tempfile::tempdir().unwrap();
+        let manifest = serde_json::json!({
+            "manifest_version": "1.0",
+            "schema_version": "3.0",
+            "aurora_app": "Aurora Launch",
+            "aurora_app_version": "0.1.4",
+            "min_app_version": "0.1.0",
+            "created_at": "2026-05-21T00:00:00Z",
+            "last_modified": "2026-05-21T00:00:00Z",
+            "project_id": "00000000-0000-0000-0000-000000000000",
+            "revision": 0,
+            "files": {
+                "data/ghost.txt": {
+                    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+                    "size_bytes": 1,
+                    "schema_version": null
+                }
+            },
+            "integrity_check": "strict",
+            "compression": "store"
+        });
+        let bundle = build_custom_manifest_bundle(
+            dir.path(),
+            "missing_file.aurora",
+            &serde_json::to_vec(&manifest).unwrap(),
+            &[], // ZIP has only manifest.json, no data files
+        );
+        let result = run_verify(&bundle).expect("should not error");
+        assert_eq!(result.status, "diverged");
+        assert_eq!(result.mismatches.len(), 1);
+        assert!(result.mismatches[0]
+            .computed_sha256
+            .contains("missing"));
+    }
+
+    #[test]
+    fn files_without_sha256_claim_are_skipped() {
+        // Per Sprint 3 D6: entries без "sha256" field skipped (e.g., derived
+        // artifacts). Not counted as mismatch, not counted as checked.
+        let dir = tempfile::tempdir().unwrap();
+        let manifest = serde_json::json!({
+            "manifest_version": "1.0",
+            "schema_version": "3.0",
+            "aurora_app": "Aurora Launch",
+            "aurora_app_version": "0.1.4",
+            "min_app_version": "0.1.0",
+            "created_at": "2026-05-21T00:00:00Z",
+            "last_modified": "2026-05-21T00:00:00Z",
+            "project_id": "00000000-0000-0000-0000-000000000000",
+            "revision": 0,
+            "files": {
+                "derived/no_hash_file.txt": {
+                    "size_bytes": 5,
+                    "schema_version": null
+                    // no sha256
+                }
+            },
+            "integrity_check": "strict",
+            "compression": "store"
+        });
+        let bundle = build_custom_manifest_bundle(
+            dir.path(),
+            "noclaim.aurora",
+            &serde_json::to_vec(&manifest).unwrap(),
+            &[("derived/no_hash_file.txt", b"hello")],
+        );
+        let result = run_verify(&bundle).expect("should not error");
+        assert_eq!(result.status, "verified");
+        assert_eq!(result.files_checked, 0);
+        assert!(result.mismatches.is_empty());
+    }
+
+    // ── Tier 2: PENDING Batch 2 (INV-48 attack scenarios — fail today) ──
+
+    #[test]
+    #[ignore = "PENDING Batch 2 S1: requires composite_bundle_hash cross-binding"]
+    fn per_file_hash_forgery_rejected_via_composite_hash() {
+        // INV-48 attack scenario — CRITICAL.
+        //
+        // Sprint 3 D6 verify_reproducibility only re-hashes per-file. Attacker:
+        //   1. Replace file content with malicious payload
+        //   2. Compute new sha256 of payload
+        //   3. Update manifest.files[*].sha256 to match new content
+        //   4. ZIP is self-consistent — Sprint 3 D6 returns "verified"
+        //
+        // The Python source (aurora-launch-reproduce CLI mirrored from
+        // generator.py) prevents this via reproducibility_token cross-binding
+        // — SHA256(manifest_sha256 || data_artifacts_hash || version). Rust
+        // port skipped this layer.
+        //
+        // Batch 2 S1 implementation: verify_reproducibility computes
+        // composite_bundle_hash_mirror (already exists в methodology_cert.rs:39)
+        // and returns it в ReproducibilityResult.composite_hash field. Caller
+        // (UI / methodology cert verifier) cross-checks against externally-known
+        // reference (signed cert PDF).
+        //
+        // For attack DETECTION, this test asserts that the recomputed composite
+        // hash from the forgery does NOT equal the legitimate composite hash
+        // — proving the forgery is distinguishable when an external reference
+        // exists.
+        //
+        // Once Batch 2 S1 lands: remove #[ignore] + test passes.
+
+        let dir = tempfile::tempdir().unwrap();
+        // Legitimate bundle
+        let legit = build_valid_bundle(
+            dir.path(),
+            "legit.aurora",
+            &[("payload.bin", b"benign content")],
+        );
+        let legit_result = run_verify(&legit).expect("legit should verify");
+
+        // Forged bundle — different content, updated per-file hash
+        let forged = build_valid_bundle(
+            dir.path(),
+            "forged.aurora",
+            &[("payload.bin", b"MALICIOUS PAYLOAD evil evil evil")],
+        );
+        let forged_result = run_verify(&forged).expect("forged self-consistent");
+
+        // BEFORE Batch 2 S1: both return "verified" — attack succeeds.
+        // AFTER Batch 2 S1: ReproducibilityResult.composite_hash differs.
+        // (Field doesn't exist yet — this test currently uses placeholder.)
+
+        // Placeholder assertion that will compile once composite_hash field added:
+        // assert_ne!(
+        //     legit_result.composite_hash, forged_result.composite_hash,
+        //     "INV-48: forgery composite hash must differ from legitimate"
+        // );
+        let _ = (legit_result, forged_result); // suppress unused warning
+        panic!("PENDING Batch 2 S1 — composite_hash field not yet in ReproducibilityResult");
+    }
+
+    #[test]
+    #[ignore = "PENDING Batch 2 S4: validate hex format of expected_sha256"]
+    fn malformed_hash_field_rejected() {
+        // Sprint 3 D6 doesn't validate hex format of manifest.files[*].sha256.
+        // If field contains "not-a-hash-string" → re-hash returns its hex,
+        // comparison fails as mismatch (with garbage in expected_sha256).
+        // Better: detect invalid hex early, return "error" status with reason.
+        //
+        // Batch 2 S4: validate 64-char lowercase hex pattern, mark "error" если
+        // malformed. Test asserts error status + descriptive reason.
+
+        let dir = tempfile::tempdir().unwrap();
+        let manifest = serde_json::json!({
+            "manifest_version": "1.0",
+            "schema_version": "3.0",
+            "aurora_app": "Aurora Launch",
+            "aurora_app_version": "0.1.4",
+            "min_app_version": "0.1.0",
+            "created_at": "2026-05-21T00:00:00Z",
+            "last_modified": "2026-05-21T00:00:00Z",
+            "project_id": "00000000-0000-0000-0000-000000000000",
+            "revision": 0,
+            "files": {
+                "data/x.txt": {
+                    "sha256": "NOT-A-VALID-HEX-HASH",
+                    "size_bytes": 1,
+                    "schema_version": null
+                }
+            },
+            "integrity_check": "strict",
+            "compression": "store"
+        });
+        let bundle = build_custom_manifest_bundle(
+            dir.path(),
+            "badhex.aurora",
+            &serde_json::to_vec(&manifest).unwrap(),
+            &[("data/x.txt", b"x")],
+        );
+        let result = run_verify(&bundle).expect("should produce error status");
+        assert_eq!(result.status, "error", "malformed hex must yield error status");
+        assert!(
+            result.reason.as_deref().unwrap_or("").contains("hash")
+                || result.reason.as_deref().unwrap_or("").contains("hex"),
+            "reason should mention invalid hash format"
+        );
+    }
+
+    #[test]
+    #[ignore = "PENDING Batch 2 S1: composite_hash field in ReproducibilityResult"]
+    fn composite_hash_reported_in_result_for_signed_cert_comparison() {
+        // After Batch 2 S1, ReproducibilityResult includes
+        // `composite_hash: Option<String>` matching composite_bundle_hash_mirror
+        // output. UI compares against methodology cert PDF's claimed composite
+        // hash for cross-binding verification (R8 closure).
+
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = build_valid_bundle(
+            dir.path(),
+            "ok.aurora",
+            &[("data/file1.txt", b"hello")],
+        );
+        let result = run_verify(&bundle).expect("should verify");
+        assert_eq!(result.status, "verified");
+
+        // Once Batch 2 S1 adds composite_hash field:
+        // assert!(result.composite_hash.is_some());
+        // let h = result.composite_hash.unwrap();
+        // assert_eq!(h.len(), 64, "composite_hash must be 64-char hex SHA-256");
+        // assert!(h.chars().all(|c| c.is_ascii_hexdigit()));
+        let _ = result;
+        panic!("PENDING Batch 2 S1 — composite_hash field not yet present");
+    }
+
+    #[test]
+    #[ignore = "PENDING Batch 2 S2: streaming SHA-256 (memory bound)"]
+    fn large_entry_does_not_oom_under_streaming() {
+        // S2 prevention: replace `read_to_end(&mut buf)` (allocates Vec<u8>
+        // size of entire entry) with chunked streaming через
+        // Sha256::update() in a loop. Eliminates OOM на zip-bomb attack
+        // (huge logical size, tiny compressed).
+        //
+        // Test approach: write a moderately large entry (10 MB), verify
+        // verify_reproducibility completes без exceeding reasonable memory.
+        // Direct OOM resistance verified via inspection (no Vec<u8>
+        // accumulation in implementation post-S2).
+
+        let dir = tempfile::tempdir().unwrap();
+        let large: Vec<u8> = vec![0u8; 10 * 1024 * 1024]; // 10 MB zeros
+        let bundle = build_valid_bundle(
+            dir.path(),
+            "large.aurora",
+            &[("data/bigfile.bin", &large)],
+        );
+        let result = run_verify(&bundle).expect("should verify");
+        assert_eq!(result.status, "verified");
+        assert_eq!(result.files_checked, 1);
+        // Post-S2: streaming impl uses bounded ~64 KB buffer, не Vec::with_capacity(10MB).
+    }
+
+    // ── Edge cases — Sprint 3 D6 behavior, regression coverage ─────────
+
+    #[test]
+    fn malformed_zip_returns_error() {
+        // Not a ZIP at all — random bytes with .aurora extension
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = dir.path().join("not_zip.aurora");
+        std::fs::write(&bundle, b"this is not a zip archive").unwrap();
+        let result = run_verify(&bundle);
+        assert!(matches!(result, Err(AuroraError::BundleFormat { .. })));
+    }
+
+    #[test]
+    fn empty_aurora_filename_extension_check_case_insensitive() {
+        // Sprint 3 D6 uses to_ascii_lowercase() comparison → ".AURORA" should accept
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = build_valid_bundle(
+            dir.path(),
+            "upper.AURORA",
+            &[("data.txt", b"hello")],
+        );
+        let result = run_verify(&bundle).expect("uppercase extension should be accepted");
+        assert_eq!(result.status, "verified");
+    }
+}
