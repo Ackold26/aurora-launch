@@ -1,5 +1,103 @@
 # Changelog
 
+## v0.1.5 — 2026-05-21 (Sprint 4 — Pilot Scenarios + A11y + Sprint 3 Hardening)
+
+Pre-pilot release. Closes Sprint 3 audit P0 findings + adds pharma pilot
+scenarios + A11y core.
+
+### Added — Sprint 4 Batch 1 (Test infrastructure, INV-48 enforcement)
+
+- Rust integration tests для `verify_reproducibility` (14 attack-scenario tests
+  включая fresh bundle / tampered content / forgery detection / hex validation /
+  streaming hash / path traversal).
+- Vitest tests for Sprint 3 transparency components — 85 cases across
+  DrillDownModal + NumberWithDrillDown + ChartWithDrillDown + AuditTab.
+
+### Added — Sprint 4 Batch 2 (Security hardening, INV-48 closure)
+
+- **S1** — composite_bundle_hash cross-binding: `verify_reproducibility` now
+  computes mirror of Python `BundleManifest.composite_bundle_hash()` (length-prefix
+  encoded SHA-256). Result includes `composite_hash` field — external verifiers
+  (signed methodology certificate) cross-check для R8 closure. Closes Sprint 3
+  D6 per-file hash forgery vulnerability.
+- **S2** — streaming SHA-256: per-file hash computation now uses chunked
+  `Sha256::update()` loop (64 KB buffer) instead of `Vec<u8>` accumulation.
+  OOM-resistant on adversarial zip-bomb input.
+- **S4** — hex format validation: `manifest.files[*].sha256` validated как
+  64-char ASCII hex before re-hashing. Malformed → "error" status с descriptive
+  reason (replaces silent recording as garbage mismatch).
+
+### Added — Sprint 4 Batch 3 (Pilot scenarios)
+
+- 3 pharma pilot bundles в `tests/fixtures/pharma_pilot/`:
+  pharma_otc_immune (Кагоцел-class OTC иммунитет), pharma_rx_cardio (Rx
+  cardiology profile), pharma_generic_painkiller (generic анальгетик).
+  Deterministic (seed-based regeneration byte-identical).
+- New CLI command `aurora-corpus generate-pharma-pilot` regenerates bundles.
+
+### Added — Sprint 4 Batch 4 (A11y core, Sprint 3 audit P0)
+
+- **A1** — WCAG 2.5.8 24×24 touch target. `.number-drill-info` 16×16 visual,
+  `::before { inset: -4px }` extends hit area to 24×24.
+- **A3** — KaTeX MathML aria-hidden after render. Prevents double-announce
+  (aria-label text_fallback + MathML duplicate) on screen readers.
+- **A4** — Persistent aria-live regions. AuditTab wraps result/error в
+  always-mounted regions с role=alert / aria-live. JAWS/NVDA reliably register
+  + announce content changes.
+- **A5** — Focus restoration to opener (WCAG 2.4.3). NotificationBanner
+  tracks `previouslyFocused`, restores via `requestAnimationFrame` after
+  `onDismiss` triggers parent re-render.
+- **A6** — `@media (hover: hover) and (pointer: fine)` replaces `pointer: fine`.
+  Hybrid devices (iPad с trackpad) no longer hide info buttons on touch.
+- **A7** — ESC stopPropagation в NotificationBanner. Prevents cascade close
+  через parent's ESC handler (e.g., DrillDownModal inside Inspector).
+
+### Refactored — Sprint 4 Batch 5 (Code quality, Sprint Buffer #30-#34)
+
+- **Q2** — `firstSentence()` helper extracted к `$lib/utils/formulas.ts`.
+  Consolidates duplicate logic between NumberWithDrillDown + ChartWithDrillDown.
+- **Q3** — Dead-code removal: `hasFormula`, `getAllFormulaKeys`, `getAllFormulas`
+  (0 callers) deleted.
+- **Q4** — DrillDownModal accepts both `formula` (direct) and `formulaKey`
+  (lookup) props. Internal $derived resolves prop-wins-over-key.
+- **Q5** — AuditTab `statusTone` + `statusLabel` merged к single `statusDisplay`
+  derived с symmetric `{ tone, label } | null` shape.
+- **Q6** — `$lib/utils/focus-trap.ts` Svelte action. NotificationBanner +
+  CertExportModal both consume via `use:focusTrap` — DRY consolidation.
+- **Q7** — CertExportModal prop `verification` → `verificationResult` rename
+  (disambiguation from parent store).
+
+### Fixed (drive-by, Sprint Buffer #40)
+
+- `commands::similarity::block_3_tests::validate_weights_within_tolerance_passes`
+  failed deterministically due to IEEE 754 rounding edge case
+  (`0.5 + 0.45 = 0.95000000000000004` exceeded `0.05` tolerance by FP epsilon).
+  Test data updated к `(0.5, 0.46)` — sum 0.96, 4% deviation, exact-FP-safe.
+  Underlying validate_weights tolerance check FP-edge bug tracked separately.
+
+### Sprint Buffer items closed
+
+- **#34** — focus trap utility extraction (Q6).
+- **#40** — similarity weights tolerance test FP rounding edge case (drive-by).
+
+### Sprint Buffer items deferred to Sprint 5+
+
+- **#21-#33, #35-#39** — see `aurora-meta/SPRINT_BUFFER.md` (12 items) including
+  ReproduceModal refactor, TrustScore drill-down link, CertExportModal forecast
+  summary, ChartWithDrillDown instance counter scope, verify_reproducibility
+  size sanity check, reproducibility_token JCS canonical в Rust,
+  Rx_pharma.Rx_cardiology category schema, 14 hardcoded Svelte microcopy strings.
+
+---
+
+## v0.1.4 — 2026-05-20 (Sprint 3 — Transparency + Cert)
+
+Tag-only entry — see git log + Sprint 3 closure CC-Sessions для details.
+
+## v0.1.3 — 2026-05-20 (Sprint 2 — MCMC Safety + Wait UX)
+
+Tag-only entry — see git log + Sprint 2 closure CC-Sessions для details.
+
 ## v0.1.2-b05 — 2026-05-08 (post-audit-2 hardening)
 
 ### Audit fixes (B-A2-1..3 + H-A2-1..7 + M-A2-1..7)
