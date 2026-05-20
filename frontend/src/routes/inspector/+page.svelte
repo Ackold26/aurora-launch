@@ -5,7 +5,7 @@
 
 <script lang="ts">
   import { _ } from 'svelte-i18n';
-  import { activeBundle, readEntryJson } from '$lib/stores/bundle';
+  import { activeBundle, manifestSummary, readEntryJson } from '$lib/stores/bundle';
   import { ipc } from '$ipc/client';
   import type { VerificationResult } from '$ipc/client';
   import MetadataTab from '$lib/components/inspector/MetadataTab.svelte';
@@ -213,7 +213,12 @@
       {/if}
       {#if visited.has('cert')}
         <div hidden={activeTab !== 'cert'}>
-          <CertTab verification={verification} verifying={verifying} />
+          <CertTab
+            verification={verification}
+            verifying={verifying}
+            bundlePath={$activeBundle?.path ?? ''}
+            appVersion={$manifestSummary?.aurora_app_version ?? ''}
+          />
         </div>
       {/if}
       {#if visited.has('audit')}
