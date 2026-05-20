@@ -155,5 +155,74 @@ def generate_all_cmd(output_dir: Path, seed_base: int) -> None:
     click.secho(f"\n✓ Generated {len(targets)} corpus projects in {output_dir}", fg="green")
 
 
+@main.command("generate-pharma-pilot")
+@click.option(
+    "--output-dir",
+    type=click.Path(path_type=Path),
+    default=Path("tests/fixtures/pharma_pilot"),
+    help="Output directory for 3 pharma pilot bundles.",
+)
+def generate_pharma_pilot_cmd(output_dir: Path) -> None:
+    """Generate 3 pharma pilot bundles for Sprint 4 pilot scenarios.
+
+    Outputs:
+      - pharma_otc_immune.aurora.json (OTC immune defence, Кагоцел-class)
+      - pharma_rx_cardio.aurora.json (Rx cardiology — uses OTC_pharma.OTC_cold_flu
+        as closest available; Sprint Buffer item for proper Rx_pharma.* category
+        in Sprint 5)
+      - pharma_generic_painkiller.aurora.json (generic analgesic)
+
+    Bundles are deterministic: same seed → identical bundle hash.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    pilots = [
+        # (filename, spec_kwargs)
+        ("pharma_otc_immune.aurora.json", {
+            "seed": 1001,
+            "category_l3": "OTC_pharma.OTC_cold_flu",
+            "variant": "high_seasonality",
+            "n_weeks": 156,
+            "pricing_tier": "MAINSTREAM",
+            "brand_size": "CHALLENGER",
+            "media_maturity": "ALWAYS_ON",
+            "lifecycle": "MATURE",
+        }),
+        ("pharma_rx_cardio.aurora.json", {
+            "seed": 1002,
+            "category_l3": "OTC_pharma.OTC_cold_flu",
+            "variant": "baseline",
+            "n_weeks": 104,
+            "pricing_tier": "PREMIUM",
+            "brand_size": "LEADER",
+            "media_maturity": "DORMANT",
+            "lifecycle": "MATURE",
+        }),
+        ("pharma_generic_painkiller.aurora.json", {
+            "seed": 1003,
+            "category_l3": "OTC_pharma.OTC_pain",
+            "variant": "volatile",
+            "n_weeks": 104,
+            "pricing_tier": "ECONOMY",
+            "brand_size": "NICHE",
+            "media_maturity": "PROMO_DRIVEN",
+            "lifecycle": "MATURE",
+        }),
+    ]
+
+    for filename, kwargs in pilots:
+        spec = SyntheticProjectSpec(**kwargs)  # type: ignore[arg-type]
+        path = generate_synthetic_project(spec, output_dir)
+        # Rename from default <category>_<variant>_seed<N>.aurora.json to pharma_*.aurora.json
+        # Use replace() (atomic on POSIX; on Windows overwrites existing target).
+        target = output_dir / filename
+        if path != target:
+            path.replace(target)
+        click.echo(f"  ✓ {target.name}")
+
+    click.secho(f"\n✓ Generated 3 pharma pilot bundles in {output_dir}", fg="green")
+    click.echo("  Bundles deterministic — same seed = identical bundle hash")
+
+
 if __name__ == "__main__":
     main()

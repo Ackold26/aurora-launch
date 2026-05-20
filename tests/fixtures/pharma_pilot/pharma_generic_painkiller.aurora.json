@@ -1,0 +1,1189 @@
+{
+  "schema_version": "3.0",
+  "aurora_launch_version": "0.1.0-b05",
+  "project_type": "synthetic_corpus",
+  "spec": {
+    "seed": 1003,
+    "category_l3": "OTC_pharma.OTC_pain",
+    "variant": "volatile",
+    "n_weeks": 104,
+    "n_channels": 6,
+    "pricing_tier": "ECONOMY",
+    "brand_size": "NICHE",
+    "distribution": "NATIONAL",
+    "media_maturity": "PROMO_DRIVEN",
+    "lifecycle": "MATURE"
+  },
+  "data": {
+    "meta": {
+      "spec": {
+        "seed": 1003,
+        "category_l3": "OTC_pharma.OTC_pain",
+        "variant": "volatile",
+        "n_weeks": 104,
+        "n_channels": 6,
+        "pricing_tier": "ECONOMY",
+        "brand_size": "NICHE",
+        "distribution": "NATIONAL",
+        "media_maturity": "PROMO_DRIVEN",
+        "lifecycle": "MATURE"
+      },
+      "channels": [
+        "TV",
+        "Digital",
+        "OOH",
+        "Radio",
+        "Print",
+        "Cinema"
+      ],
+      "n_weeks": 104,
+      "rng_algorithm": "PCG64",
+      "kpi_type": "sales",
+      "kpi_field_name": "sales_volume"
+    },
+    "response_params": {
+      "adstock_decay": [
+        0.4875514736537267,
+        0.5013411620437644,
+        0.5489358654377703,
+        0.582158311496837,
+        0.6004225723352155,
+        0.5946195736279354
+      ],
+      "hill_gamma": [
+        1.9425683593553043,
+        2.276802765047603,
+        2.761750246265694,
+        2.4187153826067216,
+        1.782145156105374,
+        1.6829104022136292
+      ],
+      "hill_k_normalized": [
+        1.2071974956272638,
+        1.3628907711700844,
+        0.8895257185114104,
+        0.6147605781444323,
+        1.0355834505973793,
+        1.0280202273126233
+      ],
+      "beta": [
+        0.2159640708680683,
+        0.07187550624811288,
+        0.24402270183603192,
+        0.1922739733800758,
+        0.06699767807722826,
+        0.21750190475047276
+      ],
+      "category_table_used": true
+    },
+    "seasonality_52w": [
+      -0.11052396800663612,
+      -0.10579570550819467,
+      -0.09662720888044735,
+      -0.09312552348259565,
+      -0.08988404839555392,
+      -0.08022533265886578,
+      -0.07281575724820943,
+      -0.06647429687496281,
+      -0.05375519902468432,
+      -0.042546315653968714,
+      -0.03731596714762788,
+      -0.030094051552632766,
+      -0.014784708899142499,
+      -0.008329314415546553,
+      0.01280044007162907,
+      0.02297828991066031,
+      0.03822498180490594,
+      0.04093386193974917,
+      0.06147799441989707,
+      0.06202131698222673,
+      0.07018045729059517,
+      0.07821649061617508,
+      0.08484984363543371,
+      0.093261881529616,
+      0.10083560907968626,
+      0.10154959778088896,
+      0.09966441805412227,
+      0.10888173976407747,
+      0.09933894784124826,
+      0.09969743514278755,
+      0.08648403289783609,
+      0.07924793699030278,
+      0.07238378526089506,
+      0.07174259534215185,
+      0.06568126787098971,
+      0.04493607054944226,
+      0.033506811234956406,
+      0.024302078659414323,
+      0.012998305344353478,
+      -0.0021843543859705644,
+      -0.019332366548453828,
+      -0.030280440010956207,
+      -0.030411486147238632,
+      -0.04446502385692526,
+      -0.05821842372150553,
+      -0.06470144555092637,
+      -0.0773937774441113,
+      -0.08346207185847904,
+      -0.0822713907327599,
+      -0.08470805119923515,
+      -0.0996951162667391,
+      -0.0973801902796778
+    ],
+    "weekly_data": [
+      {
+        "period_date": "2024-01-01",
+        "sales_volume": 1231500.9862188874,
+        "spend_tv": 764405.7590734622,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-01-08",
+        "sales_volume": 1417601.0377078538,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-01-15",
+        "sales_volume": 923245.1727009956,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-01-22",
+        "sales_volume": 1562927.083677196,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-01-29",
+        "sales_volume": 1912281.3638690733,
+        "spend_tv": 764405.7590734622,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-02-05",
+        "sales_volume": 1205427.7900922801,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-02-12",
+        "sales_volume": 1539844.367948225,
+        "spend_tv": 0.0,
+        "spend_digital": 1520770.3781742272,
+        "spend_ooh": 1085000.2063267112,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-02-19",
+        "sales_volume": 661831.0417990312,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 1085000.2063267112,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-02-26",
+        "sales_volume": 1046315.5382297433,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-03-04",
+        "sales_volume": 1730726.2956435315,
+        "spend_tv": 0.0,
+        "spend_digital": 1520770.3781742272,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-03-11",
+        "sales_volume": 905393.1370559776,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-03-18",
+        "sales_volume": 1467190.5862714467,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 1044869.3041113145,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-03-25",
+        "sales_volume": 1769453.885299085,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 901510.511024994,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-04-01",
+        "sales_volume": 1415209.2552606203,
+        "spend_tv": 0.0,
+        "spend_digital": 1520770.3781742272,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-04-08",
+        "sales_volume": 1920694.7506908344,
+        "spend_tv": 0.0,
+        "spend_digital": 1520770.3781742272,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-04-15",
+        "sales_volume": 1351958.4869994586,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-04-22",
+        "sales_volume": 2240067.2806100966,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 205644.09394205114
+      },
+      {
+        "period_date": "2024-04-29",
+        "sales_volume": 1034010.2777822859,
+        "spend_tv": 764405.7590734622,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 1044869.3041113145,
+        "spend_cinema": 205644.09394205114
+      },
+      {
+        "period_date": "2024-05-06",
+        "sales_volume": 1581913.2691536478,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-05-13",
+        "sales_volume": 1482919.4977558977,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-05-20",
+        "sales_volume": 1650621.0331131485,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-05-27",
+        "sales_volume": 2194386.8458635127,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 1085000.2063267112,
+        "spend_radio": 0.0,
+        "spend_print": 1044869.3041113145,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-06-03",
+        "sales_volume": 1487433.5757909326,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 901510.511024994,
+        "spend_print": 1044869.3041113145,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-06-10",
+        "sales_volume": 2178510.0002824166,
+        "spend_tv": 764405.7590734622,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-06-17",
+        "sales_volume": 1659960.160625741,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-06-24",
+        "sales_volume": 1565647.0809989884,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-07-01",
+        "sales_volume": 1478185.232886843,
+        "spend_tv": 0.0,
+        "spend_digital": 1520770.3781742272,
+        "spend_ooh": 0.0,
+        "spend_radio": 901510.511024994,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-07-08",
+        "sales_volume": 1915743.4401832581,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-07-15",
+        "sales_volume": 2331133.8364671413,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-07-22",
+        "sales_volume": 1690724.4270715693,
+        "spend_tv": 0.0,
+        "spend_digital": 1520770.3781742272,
+        "spend_ooh": 0.0,
+        "spend_radio": 901510.511024994,
+        "spend_print": 1044869.3041113145,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-07-29",
+        "sales_volume": 1491359.610771101,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-08-05",
+        "sales_volume": 938552.5721929298,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-08-12",
+        "sales_volume": 834839.0388681666,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-08-19",
+        "sales_volume": 1106656.427063043,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-08-26",
+        "sales_volume": 1897997.0442123655,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 1085000.2063267112,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-09-02",
+        "sales_volume": 1381864.1742086043,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 901510.511024994,
+        "spend_print": 0.0,
+        "spend_cinema": 205644.09394205114
+      },
+      {
+        "period_date": "2024-09-09",
+        "sales_volume": 1162141.7987491759,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-09-16",
+        "sales_volume": 1277924.3191601378,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-09-23",
+        "sales_volume": 1487753.8145203881,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 901510.511024994,
+        "spend_print": 1044869.3041113145,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-09-30",
+        "sales_volume": 1011955.5535856386,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-10-07",
+        "sales_volume": 770902.226322533,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-10-14",
+        "sales_volume": 1374707.8111635523,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-10-21",
+        "sales_volume": 1591294.1161363812,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-10-28",
+        "sales_volume": 1099247.1496762268,
+        "spend_tv": 764405.7590734622,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-11-04",
+        "sales_volume": 1601034.0816074878,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 205644.09394205114
+      },
+      {
+        "period_date": "2024-11-11",
+        "sales_volume": 1641331.2974165347,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 205644.09394205114
+      },
+      {
+        "period_date": "2024-11-18",
+        "sales_volume": 1567365.7705743613,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-11-25",
+        "sales_volume": 1637861.752637117,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 1044869.3041113145,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-12-02",
+        "sales_volume": 1069647.1187767603,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-12-09",
+        "sales_volume": 999027.3514410054,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-12-16",
+        "sales_volume": 838531.073273912,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-12-23",
+        "sales_volume": 1678672.5278997219,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 901510.511024994,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2024-12-30",
+        "sales_volume": 1390353.7508358175,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-01-06",
+        "sales_volume": 306179.78847782983,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-01-13",
+        "sales_volume": 1470823.3433850193,
+        "spend_tv": 0.0,
+        "spend_digital": 1520770.3781742272,
+        "spend_ooh": 1085000.2063267112,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-01-20",
+        "sales_volume": 1707517.7424979082,
+        "spend_tv": 0.0,
+        "spend_digital": 1520770.3781742272,
+        "spend_ooh": 0.0,
+        "spend_radio": 901510.511024994,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-01-27",
+        "sales_volume": 1421398.408194466,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 1085000.2063267112,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-02-03",
+        "sales_volume": 1659099.4807713514,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 1085000.2063267112,
+        "spend_radio": 901510.511024994,
+        "spend_print": 0.0,
+        "spend_cinema": 205644.09394205114
+      },
+      {
+        "period_date": "2025-02-10",
+        "sales_volume": 1623418.1125720802,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-02-17",
+        "sales_volume": 1352907.7871332683,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-02-24",
+        "sales_volume": 1028796.6774723534,
+        "spend_tv": 764405.7590734622,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-03-03",
+        "sales_volume": 2100188.4832836194,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-03-10",
+        "sales_volume": 1570226.169288475,
+        "spend_tv": 0.0,
+        "spend_digital": 1520770.3781742272,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-03-17",
+        "sales_volume": 1564423.7564152663,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 1085000.2063267112,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-03-24",
+        "sales_volume": 510826.3704033088,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-03-31",
+        "sales_volume": 1603266.8280059132,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-04-07",
+        "sales_volume": 1058697.909414057,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 901510.511024994,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-04-14",
+        "sales_volume": 2041042.701502395,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 1085000.2063267112,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-04-21",
+        "sales_volume": 1554835.9735707832,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-04-28",
+        "sales_volume": 2080500.505702609,
+        "spend_tv": 764405.7590734622,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 1044869.3041113145,
+        "spend_cinema": 205644.09394205114
+      },
+      {
+        "period_date": "2025-05-05",
+        "sales_volume": 1669696.8003641656,
+        "spend_tv": 764405.7590734622,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 1044869.3041113145,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-05-12",
+        "sales_volume": 1621643.9836468403,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-05-19",
+        "sales_volume": 2138115.5823840024,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 1044869.3041113145,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-05-26",
+        "sales_volume": 1931205.2103637618,
+        "spend_tv": 764405.7590734622,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-06-02",
+        "sales_volume": 1649423.0284294235,
+        "spend_tv": 764405.7590734622,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-06-09",
+        "sales_volume": 2142290.8445332996,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 205644.09394205114
+      },
+      {
+        "period_date": "2025-06-16",
+        "sales_volume": 1071849.257135944,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 1085000.2063267112,
+        "spend_radio": 0.0,
+        "spend_print": 1044869.3041113145,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-06-23",
+        "sales_volume": 1821092.128386012,
+        "spend_tv": 0.0,
+        "spend_digital": 1520770.3781742272,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-06-30",
+        "sales_volume": 1564002.7941643938,
+        "spend_tv": 0.0,
+        "spend_digital": 1520770.3781742272,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-07-07",
+        "sales_volume": 2481457.994261884,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-07-14",
+        "sales_volume": 1823450.5895603388,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 1085000.2063267112,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-07-21",
+        "sales_volume": 1423920.290303949,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 1085000.2063267112,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-07-28",
+        "sales_volume": 2103521.658085836,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 901510.511024994,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-08-04",
+        "sales_volume": 1129700.1685567766,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-08-11",
+        "sales_volume": 1407304.6515835056,
+        "spend_tv": 0.0,
+        "spend_digital": 1520770.3781742272,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 1044869.3041113145,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-08-18",
+        "sales_volume": 2168963.8555181012,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 901510.511024994,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-08-25",
+        "sales_volume": 2297967.597979482,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-09-01",
+        "sales_volume": 1253434.1367869922,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 205644.09394205114
+      },
+      {
+        "period_date": "2025-09-08",
+        "sales_volume": 1725023.9381822043,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-09-15",
+        "sales_volume": 1481355.5248674077,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 1085000.2063267112,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-09-22",
+        "sales_volume": 1475870.3735004556,
+        "spend_tv": 764405.7590734622,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-09-29",
+        "sales_volume": 1867817.875016137,
+        "spend_tv": 764405.7590734622,
+        "spend_digital": 1520770.3781742272,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 1044869.3041113145,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-10-06",
+        "sales_volume": 1953417.2472133532,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-10-13",
+        "sales_volume": 1594644.6221545623,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 205644.09394205114
+      },
+      {
+        "period_date": "2025-10-20",
+        "sales_volume": 1376480.1403158288,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-10-27",
+        "sales_volume": 1176681.619272973,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-11-03",
+        "sales_volume": 1164545.0388186092,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 205644.09394205114
+      },
+      {
+        "period_date": "2025-11-10",
+        "sales_volume": 1858570.767581316,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 205644.09394205114
+      },
+      {
+        "period_date": "2025-11-17",
+        "sales_volume": 1927742.3805723328,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-11-24",
+        "sales_volume": 1285693.302363292,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-12-01",
+        "sales_volume": 1606783.8828278952,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 901510.511024994,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-12-08",
+        "sales_volume": 2238520.301586435,
+        "spend_tv": 764405.7590734622,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 205644.09394205114
+      },
+      {
+        "period_date": "2025-12-15",
+        "sales_volume": 860412.3259750105,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      },
+      {
+        "period_date": "2025-12-22",
+        "sales_volume": 396369.9905627682,
+        "spend_tv": 0.0,
+        "spend_digital": 0.0,
+        "spend_ooh": 0.0,
+        "spend_radio": 0.0,
+        "spend_print": 0.0,
+        "spend_cinema": 0.0
+      }
+    ],
+    "canonical_columns": [
+      "period_date",
+      "sales_volume",
+      "spend_tv",
+      "spend_digital",
+      "spend_ooh",
+      "spend_radio",
+      "spend_print",
+      "spend_cinema"
+    ]
+  },
+  "data_artifacts_hash": "06138326ff05cfdf2e78751b10d5870ab8db498a6bebda3bb2afdef63455c50f",
+  "manifest_sha256": "177db74bd2907f213410d23bfdd21ad50ecaffce168250a09f2232755d4f2988",
+  "reproducibility_token": "d60783da5e7d7bfd001c7b991eb455ee56441c754f3188bf823330c34802c439"
+}
