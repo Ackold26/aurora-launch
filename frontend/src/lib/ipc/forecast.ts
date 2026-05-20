@@ -334,6 +334,39 @@ export async function checkMcmcBudget(
   return invoke<CheckMcmcBudgetResult>('check_mcmc_budget', { params });
 }
 
+// ─── Sprint 2 D4': MCMC iteration progress events ────────────────────────────
+
+export type McmcPhase = 'adaptation' | 'sampling' | 'diagnostics' | 'done';
+
+export interface McmcProgressEvent {
+  /** Correlation id linking ticks to a training/forecast job. */
+  handle: string;
+  /** Progress 0..100. Backend clamps out-of-range values. */
+  pct: number;
+  /** Human-readable status text. */
+  message: string;
+  /** Phase label for progress indicator. */
+  phase: McmcPhase;
+}
+
+/** Subscribe to MCMC iteration progress events emitted by training pipelines.
+ *
+ * Backend (aurora_engines.train_model) accepts a ``progress_callback``; Aurora
+ * Launch sidecar wires that to ``sidecar://mcmc_progress`` events via the
+ * ``build_mcmc_progress_callback`` factory. Frontend wait UX subscribes here
+ * to drive the progress bar + tip rotation timer.
+ *
+ * Note: as of Sprint 2 there is no IPC handler that triggers training (no
+ * customer-facing wizard training step yet). The listener wiring is ready
+ * so the UI flows light up immediately когда training UI lands — tracked
+ * как Sprint Buffer #20.
+ */
+export function onMcmcProgress(
+  callback: (event: McmcProgressEvent) => void
+): Promise<UnlistenFn> {
+  return listen<McmcProgressEvent>('sidecar://mcmc_progress', (e) => callback(e.payload));
+}
+
 // ─── Optimize Budget event listener helpers ───────────────────────────────────
 
 export interface OptimizeBudgetCompletedEvent {
