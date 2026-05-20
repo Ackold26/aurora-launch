@@ -222,7 +222,9 @@
         </div>
       {/if}
       {#if visited.has('audit')}
-        <div hidden={activeTab !== 'audit'}><AuditTab /></div>
+        <div hidden={activeTab !== 'audit'}>
+          <AuditTab bundlePath={$activeBundle?.path ?? ''} />
+        </div>
       {/if}
     </div>
   </section>

@@ -90,6 +90,20 @@ export interface VerifyBundleInput {
   trust_local_dev: boolean;
 }
 
+// Sprint 3 D6 — reproducibility verification
+export interface ReproducibilityFileMismatch {
+  entry: string;
+  expected_sha256: string;
+  computed_sha256: string;
+}
+
+export interface ReproducibilityResult {
+  status: 'verified' | 'diverged' | 'error';
+  files_checked: number;
+  mismatches: ReproducibilityFileMismatch[];
+  reason: string | null;
+}
+
 export interface LicenseStatus {
   state: 'active' | 'grace' | 'expired' | 'invalid' | 'no_license' | 'degraded';
   tier: string | null;
@@ -327,6 +341,10 @@ export const ipc = {
       signature_hex: string;
       composite_hash_hex: string;
     }>('generate_local_dev_signature', { bundlePath }),
+
+  // Sprint 3 D6: bundle reproducibility verification
+  verifyReproducibility: (bundlePath: string) =>
+    invoke<ReproducibilityResult>('verify_reproducibility', { bundlePath }),
 
   // license
   currentLicenseStatus: () => invoke<LicenseStatus>('current_license_status'),

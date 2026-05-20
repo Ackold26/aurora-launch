@@ -406,6 +406,149 @@ pub async fn generate_local_dev_signature(
     })
 }
 
+// ── Sprint 3 D6: verify_reproducibility ──────────────────────────────────
+//
+// Mirror of `aurora-launch-reproduce` CLI semantics: re-hash every file inside
+// the bundle ZIP and compare against the per-file `sha256` claims в manifest.
+// Verified = all files match; Diverged = any file's bytes have changed since
+// manifest creation; Error = bundle malformed (missing manifest, unreadable
+// ZIP, hash field absent).
+//
+// Security:
+//   - bundle_path validated за input boundary (exists + .aurora extension).
+//   - Canonicalisation prevents path-traversal via "../" prefix tricks.
+//   - SHA-256 used (already a dependency for composite hash).
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ReproducibilityFileMismatch {
+    pub entry: String,
+    pub expected_sha256: String,
+    pub computed_sha256: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ReproducibilityResult {
+    /// "verified" — all files match manifest claims.
+    /// "diverged" — at least one file's bytes differ from manifest claim.
+    /// "error"    — bundle malformed (caller shows `reason` to user).
+    pub status: String,
+    pub files_checked: u32,
+    pub mismatches: Vec<ReproducibilityFileMismatch>,
+    pub reason: Option<String>,
+}
+
+#[tauri::command]
+pub async fn verify_reproducibility(
+    bundle_path: String,
+) -> AuroraResult<ReproducibilityResult> {
+    use std::io::Read;
+
+    // Input validation: .aurora extension + canonicalize to prevent traversal.
+    let raw_path = PathBuf::from(&bundle_path);
+    if raw_path
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_ascii_lowercase())
+        .as_deref()
+        != Some("aurora")
+    {
+        return Ok(ReproducibilityResult {
+            status: "error".into(),
+            files_checked: 0,
+            mismatches: Vec::new(),
+            reason: Some("Файл должен иметь расширение .aurora".into()),
+        });
+    }
+    if !raw_path.exists() {
+        return Err(AuroraError::BundleNotFound {
+            path: raw_path.display().to_string(),
+        });
+    }
+    let path = raw_path
+        .canonicalize()
+        .map_err(|e| AuroraError::Other(format!("canonicalize: {e}")))?;
+
+    // Open ZIP + read manifest.json.
+    let file = std::fs::File::open(&path)?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| AuroraError::BundleFormat {
+        reason: format!("cannot open ZIP: {e}"),
+    })?;
+    let mut manifest_buf = Vec::new();
+    {
+        let mut mf =
+            archive
+                .by_name("manifest.json")
+                .map_err(|_| AuroraError::BundleFormat {
+                    reason: "missing manifest.json".into(),
+                })?;
+        mf.read_to_end(&mut manifest_buf)?;
+    }
+    let manifest: serde_json::Value = serde_json::from_slice(&manifest_buf)?;
+
+    // manifest.files is the SSOT for per-file hashes (mirrors Python
+    // BundleManifest.files dict). Each entry has shape:
+    //   "<entry_name>": { "sha256": "<hex>", "size_bytes": N, ... }
+    let files = manifest
+        .get("files")
+        .and_then(|v| v.as_object())
+        .ok_or_else(|| AuroraError::BundleFormat {
+            reason: "manifest.files missing or not object".into(),
+        })?;
+
+    let mut mismatches: Vec<ReproducibilityFileMismatch> = Vec::new();
+    let mut files_checked: u32 = 0;
+
+    // Iterate all manifest entries and re-hash from ZIP.
+    for (entry_name, entry_meta) in files.iter() {
+        let expected = match entry_meta.get("sha256").and_then(|v| v.as_str()) {
+            Some(s) => s,
+            None => continue, // skip files without claimed hash (e.g. derived artefacts)
+        };
+
+        let mut buf: Vec<u8> = Vec::new();
+        {
+            let zip_entry = archive.by_name(entry_name);
+            let mut e = match zip_entry {
+                Ok(e) => e,
+                Err(_) => {
+                    // Manifest claims a file that's not in the ZIP — divergence.
+                    mismatches.push(ReproducibilityFileMismatch {
+                        entry: entry_name.clone(),
+                        expected_sha256: expected.to_string(),
+                        computed_sha256: "<missing in ZIP>".to_string(),
+                    });
+                    files_checked += 1;
+                    continue;
+                }
+            };
+            e.read_to_end(&mut buf)?;
+        }
+
+        let computed = hex::encode(Sha256::digest(&buf));
+        files_checked += 1;
+        if computed != expected {
+            mismatches.push(ReproducibilityFileMismatch {
+                entry: entry_name.clone(),
+                expected_sha256: expected.to_string(),
+                computed_sha256: computed,
+            });
+        }
+    }
+
+    let status = if mismatches.is_empty() {
+        "verified"
+    } else {
+        "diverged"
+    };
+
+    Ok(ReproducibilityResult {
+        status: status.into(),
+        files_checked,
+        mismatches,
+        reason: None,
+    })
+}
+
 /// Block 3 BLOCKER-2 fix: real Ed25519 PEM SPKI extraction.
 ///
 /// Decodes PKCS#8 SubjectPublicKeyInfo PEM с OID 1.3.101.112 (Ed25519 per

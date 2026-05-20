@@ -100,6 +100,8 @@ pub fn run() {
             // methodology_cert commands (Block 2C)
             commands::methodology_cert::verify_bundle_signature,
             commands::methodology_cert::generate_local_dev_signature,
+            // Sprint 3 D6: bundle reproducibility verification
+            commands::methodology_cert::verify_reproducibility,
             // license commands
             commands::license::current_license_status,
             commands::license::has_feature,
