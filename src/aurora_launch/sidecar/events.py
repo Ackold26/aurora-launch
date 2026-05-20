@@ -11,10 +11,11 @@ parent receives messages without OS buffering delays.
 
 from __future__ import annotations
 
+import contextlib
 import sys
 import threading
 from collections.abc import Callable
-from typing import Any, IO, Literal
+from typing import IO, Any, Literal
 
 from aurora_launch.sidecar.protocol import Event
 
@@ -117,9 +118,8 @@ def build_mcmc_progress_callback(
     """
 
     def _cb(pct: float, message: str) -> None:
-        try:
+        # Defence-in-depth: emit failure must not crash training thread.
+        with contextlib.suppress(Exception):
             emit_mcmc_progress(handle=handle, pct=pct, message=message, phase=phase)
-        except Exception:  # noqa: BLE001 — defence-in-depth, never break training
-            pass
 
     return _cb

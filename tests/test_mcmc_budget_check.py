@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import threading
 import time
 from collections import namedtuple
-from typing import Any, Callable
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -14,12 +13,10 @@ from aurora_launch.utils import mcmc_budget_check as mbc
 from aurora_launch.utils.mcmc_budget_check import (
     ABORT_RAM_THRESHOLD_PCT,
     MIN_RAM_AVAILABLE_BYTES,
-    BudgetCheckResult,
     MemoryMonitor,
     check_mcmc_budget,
     format_bytes_human,
 )
-
 
 # ─── Test helpers ─────────────────────────────────────────────────────────────
 
@@ -105,9 +102,11 @@ class TestCheckMcmcBudgetStatusMapping:
         assert result.used_pct == 37.5
 
     def test_result_is_frozen_dataclass(self) -> None:
+        from dataclasses import FrozenInstanceError
+
         with patch.object(mbc.psutil, "virtual_memory", return_value=_make_vmem()):
             result = check_mcmc_budget()
-        with pytest.raises(Exception):
+        with pytest.raises(FrozenInstanceError):
             result.status = "tampered"  # type: ignore[misc]
 
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from typing import Any
 
 import pytest
 
@@ -16,7 +15,6 @@ from aurora_launch.engines.trust_score_project import (
     extract_similarity_score,
     extract_uncertainty_inverse,
 )
-
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -321,8 +319,10 @@ class TestComputeTrustScoreForProject:
         assert result.sources["methodology_certified"] == "default"
 
     def test_result_is_frozen_dataclass(self) -> None:
+        from dataclasses import FrozenInstanceError
+
         result = compute_trust_score_for_project({}, {})
-        with pytest.raises(Exception):
+        with pytest.raises(FrozenInstanceError):
             result.score = 999  # type: ignore[misc]
 
     def test_diagnostic_count_matches_existing_compute_trust_score(self) -> None:

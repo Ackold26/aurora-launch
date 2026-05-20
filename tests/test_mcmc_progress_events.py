@@ -4,14 +4,11 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
-
 from aurora_launch.sidecar import events
 from aurora_launch.sidecar.events import (
     build_mcmc_progress_callback,
     emit_mcmc_progress,
 )
-
 
 # ─── emit_mcmc_progress — event name + payload shape ──────────────────────────
 
