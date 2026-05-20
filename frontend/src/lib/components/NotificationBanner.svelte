@@ -97,7 +97,15 @@
     previouslyFocused = null;
     onDismiss();
     // Parent re-renders (open=false), unmounting us; restore focus on next frame.
-    requestAnimationFrame(() => target?.focus());
+    // Sprint 4 Batch 7 A5-H2: guard with isConnected — opener may have been
+    // removed from DOM during parent's render cycle (e.g., list item delete
+    // triggered the modal close). .focus() on a disconnected element is a
+    // silent no-op; explicit guard makes the no-op intentional + debuggable.
+    requestAnimationFrame(() => {
+      if (target && target.isConnected) {
+        target.focus();
+      }
+    });
   }
 
   // Tab wrap is handled by use:focusTrap on the modal element (see template).
@@ -115,11 +123,17 @@
 
   // ── Auto-focus on open ───────────────────────────────────────────────────
 
-  /** Return all keyboard-focusable children of el. */
+  /** Return all keyboard-focusable children of el. Mirrors focus-trap.ts
+   *  selector — kept inline because called from $effect auto-focus path
+   *  (different timing from Tab-wrap action). Sprint 4 Batch 7 Q6-H1:
+   *  `[role="button"]:not([aria-disabled="true"])` replaces ineffective
+   *  `:not([disabled])` filter — `disabled` attribute is не valid на
+   *  custom-role elements (e.g., `<span role="button">`); `aria-disabled`
+   *  is the ARIA canonical signal для disabled custom controls. */
   function focusable(el: HTMLElement): HTMLElement[] {
     return Array.from(
       el.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [role="button"]:not([disabled]), audio[controls], video[controls]',
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [role="button"]:not([aria-disabled="true"]):not([disabled]), audio[controls], video[controls]',
       ),
     );
   }

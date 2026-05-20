@@ -359,3 +359,92 @@ describe('DrillDownModal — similarity_jensen_shannon (4 inputs, URL)', () => {
     expect(footer!.textContent).toContain(formulaWithUrl.provenance.citation);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Sprint 4 Batch 7 A7-H1 — ESC stopPropagation regression test
+// ---------------------------------------------------------------------------
+// NotificationBanner handleKeydown calls preventDefault + stopPropagation
+// when Escape is pressed. Без stopPropagation, parent с свой ESC handler
+// получит the event too — cascade-close (e.g., DrillDownModal внутри
+// Inspector tab would close BOTH modal AND parent inspector tab).
+
+describe('DrillDownModal — ESC propagation (Sprint 4 Batch 7 A7)', () => {
+  it('ESC внутри modal does NOT bubble к parent keydown handler', async () => {
+    const onClose = vi.fn();
+    const parentHandler = vi.fn();
+
+    // Mount component normally (we don't have access к parent listener attach
+    // via @testing-library/svelte rendering). Instead attach listener к
+    // document — verify it isn't called когда ESC fires inside modal.
+    document.addEventListener('keydown', parentHandler);
+
+    try {
+      render(DrillDownModal, defaultProps({ onClose }));
+      await flushAsync();
+
+      const dialog = screen.queryByRole('dialog');
+      expect(dialog).not.toBeNull();
+
+      // Fire ESC directly на the dialog element (where NotificationBanner's
+      // handleKeydown is attached). The handler calls stopPropagation —
+      // document-level listener должен NOT receive the event.
+      await fireEvent.keyDown(dialog!, { key: 'Escape', code: 'Escape' });
+
+      // onClose was called (ESC handler fired)
+      expect(onClose).toHaveBeenCalled();
+      // Parent document listener should NOT have received the event
+      expect(parentHandler).not.toHaveBeenCalled();
+    } finally {
+      document.removeEventListener('keydown', parentHandler);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sprint 4 Batch 7 Q4 — formulaKey lookup path coverage
+// ---------------------------------------------------------------------------
+// Q4 added `formulaKey?: string` prop. Previously zero test coverage для
+// the lookup path. Verify both happy и miss cases.
+
+describe('DrillDownModal — formulaKey lookup path (Sprint 4 Batch 7 Q4)', () => {
+  it('formulaKey валидное → resolves через getFormula', async () => {
+    // Omit `formula` entirely — Props with exactOptionalPropertyTypes:true
+    // rejects explicit `undefined`. Absence of formula prop falls к formulaKey.
+    const { container } = render(DrillDownModal, {
+      open: true,
+      onClose: vi.fn(),
+      formulaKey: 'trust_score_8d',
+      contextValue: '85',
+    });
+    await flushAsync();
+
+    const title = container.querySelector('#drill-title');
+    expect(title).not.toBeNull();
+    expect(title!.textContent).toContain(formulaNoUrl.title);
+  });
+
+  it('formulaKey unknown → renders fallback', async () => {
+    render(DrillDownModal, {
+      open: true,
+      onClose: vi.fn(),
+      formulaKey: 'no_such_key_in_registry',
+    });
+    await flushAsync();
+
+    expect(screen.getByText(/Нет данных для отображения формулы/)).toBeTruthy();
+  });
+
+  it('formula={null} explicit overrides formulaKey (Q4-H1 documented behaviour)', async () => {
+    // Caller passing formula=null AND valid formulaKey: null wins (deliberate
+    // override). Renders fallback. Documented в Props JSDoc.
+    render(DrillDownModal, {
+      open: true,
+      onClose: vi.fn(),
+      formula: null, // explicit null
+      formulaKey: 'trust_score_8d', // valid, but ignored
+    });
+    await flushAsync();
+
+    expect(screen.getByText(/Нет данных для отображения формулы/)).toBeTruthy();
+  });
+});

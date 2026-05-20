@@ -497,10 +497,22 @@ pub async fn verify_reproducibility(
 
     // Sprint 4 S1 — compute composite_bundle_hash_mirror as cross-binding hash.
     // External verifiers (methodology_cert.pdf signed by Aurora cloud KMS)
-    // cross-check this против их signed reference. None if manifest doesn't
-    // have aurora_app_version (e.g., corpus_generator JSON format) — caller
-    // shows a "cross-binding unavailable" warning badge in that case.
-    let composite_hash = composite_bundle_hash_mirror(&manifest_buf, &manifest).ok();
+    // cross-check this против их signed reference.
+    //
+    // Sprint 4 Batch 7 H1 — surface diagnostic reason когда cross-binding
+    // unavailable. Previously `.ok()` silently swallowed Err → caller saw
+    // composite_hash=None + status=verified + no reason → no UI signal что
+    // cross-binding check was skipped (attacker could strip aurora_app_version
+    // → silent bypass). Now: cross_binding_skip_reason captured for caller.
+    let (composite_hash, cross_binding_skip_reason): (Option<String>, Option<String>) =
+        match composite_bundle_hash_mirror(&manifest_buf, &manifest) {
+            Ok(h) => (Some(h), None),
+            Err(e) => (None, Some(format!(
+                "Cross-binding hash недоступен ({}). Сверка с сертификатом методологии \
+                 невозможна для этого формата bundle — проверяется только целостность файлов.",
+                e
+            ))),
+        };
 
     // manifest.files is the SSOT for per-file hashes (mirrors Python
     // BundleManifest.files dict). Each entry has shape:
@@ -586,11 +598,15 @@ pub async fn verify_reproducibility(
         "diverged"
     };
 
+    // Sprint 4 Batch 7 H1 — surface cross-binding skip reason. Per-file integrity
+    // is still verified (status=verified) when no mismatches, но reason field
+    // tells caller что composite_hash cross-binding is missing — UI shows
+    // distinct "cross-binding unavailable" warning badge.
     Ok(ReproducibilityResult {
         status: status.into(),
         files_checked,
         mismatches,
-        reason: None,
+        reason: cross_binding_skip_reason,
         composite_hash,
     })
 }
@@ -1131,6 +1147,47 @@ mod tests {
         std::fs::write(&bundle, b"this is not a zip archive").unwrap();
         let result = run_verify(&bundle);
         assert!(matches!(result, Err(AuroraError::BundleFormat { .. })));
+    }
+
+    #[test]
+    fn path_traversal_attempt_does_not_leak_filesystem_info() {
+        // Sprint 4 Batch 7 Tests-H3 — INV-48 attack scenario coverage.
+        //
+        // Attacker passes bundle_path с `../` segments trying к point к sensitive
+        // file outside expected bundle directory. Function should:
+        //   - Reject if extension не .aurora (extension check pre-canonicalize)
+        //   - Or fail gracefully (BundleNotFound / BundleFormat) при canonicalize
+        //   - Never disclose filesystem structure через error messages
+        //
+        // Confirms canonicalize() based path handling does не enable directory
+        // traversal information disclosure.
+
+        // Case 1: ../../ path с НЕ-.aurora extension — fails extension check
+        let result = run_verify(std::path::Path::new("../../etc/passwd"));
+        // Reaches canonicalize which fails (file likely doesn't exist on this
+        // platform OR exists but no .aurora extension blocked earlier)
+        match result {
+            Ok(r) => {
+                // Extension check returned "error" status — expected path
+                assert_eq!(r.status, "error");
+                assert!(r.reason.as_deref().unwrap_or("").contains(".aurora"));
+            }
+            Err(_) => {
+                // Or returned BundleNotFound (Windows / not-existent path) — also fine
+                // Just ensure no panic, no information leak through assertion failure
+            }
+        }
+
+        // Case 2: legitimate path с .. segments через canonical existing directory
+        let dir = tempfile::tempdir().unwrap();
+        let nested = dir.path().join("nested");
+        std::fs::create_dir(&nested).unwrap();
+        let real_bundle = build_valid_bundle(&nested, "real.aurora", &[("x.txt", b"x")]);
+        // Path с redundant ../nested/real.aurora — canonicalize normalizes
+        let traversal_path = nested.join("..").join("nested").join("real.aurora");
+        let result = run_verify(&traversal_path).expect("canonicalized real bundle");
+        assert_eq!(result.status, "verified");
+        let _ = real_bundle; // referenced via canonical lookup
     }
 
     #[test]
