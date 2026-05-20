@@ -19,7 +19,6 @@ import time
 import uuid
 from typing import Any
 
-from aurora_launch import __version__
 from aurora_launch.sidecar import events
 
 
@@ -917,7 +916,7 @@ def _compute_trust_score_for_project(params: dict[str, Any]) -> dict[str, Any]:
     from aurora_launch.engines.trust_score_project import compute_trust_score_for_project
     from aurora_launch.persistence.project_db import ProjectDBError
 
-    SidecarStorageError = _SidecarStorageError()
+    storage_error_cls = _SidecarStorageError()
 
     project_id_raw = params.get("project_id")
     if not project_id_raw or not isinstance(project_id_raw, str):
@@ -936,7 +935,7 @@ def _compute_trust_score_for_project(params: dict[str, Any]) -> dict[str, Any]:
     db = _get_project_db()
     try:
         detail = db.get_project(project_id)
-    except (ProjectDBError, SidecarStorageError) as exc:
+    except (ProjectDBError, storage_error_cls) as exc:
         raise ValueError(
             f"compute_trust_score_for_project: project {project_id!r} not found: {exc}"
         ) from exc
@@ -951,10 +950,9 @@ def _compute_trust_score_for_project(params: dict[str, Any]) -> dict[str, Any]:
             files = dict(loaded.files)
             # Merge version-level metadata over project-level so latest wins
             metadata = {**metadata, **dict(loaded.metadata)}
-        except (ProjectDBError, SidecarStorageError) as exc:
+        except (ProjectDBError, storage_error_cls):
             # Soft-fail: continue с metadata only, mark has_saved_version=false
             has_saved_version = False
-            _ = exc
 
     result = compute_trust_score_for_project(
         metadata,
