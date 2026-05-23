@@ -287,12 +287,9 @@ describe('ChartWithDrillDown — chart body container', () => {
 // ---------------------------------------------------------------------------
 
 describe('ChartWithDrillDown — уникальный titleId на каждый экземпляр', () => {
-  // PENDING Sprint 4 / component fix: The _instanceCounter in ChartWithDrillDown.svelte
-  // is declared in <script lang="ts"> (instance scope), not <script module> (module scope).
-  // Each component instantiation resets the counter to 0, so both instances get cdd1.
-  // Fix: move `let _instanceCounter = 0` to a <script module> block in the component.
-  // Until the component is fixed this test correctly documents the current limitation.
-  it.skip('два экземпляра имеют разные titleId (PENDING: counter is instance-scoped, not module-scoped)', () => {
+  // Sprint 5 D8 #35: counter moved к <script module> block — теперь properly
+  // module-scoped, два экземпляра получают разные cdd<N> titleId values.
+  it('два экземпляра имеют разные titleId', () => {
     const { container: c1 } = render(ChartWithDrillDownHarness, {
       formulaKey: KNOWN_KEY,
       chartTitle: 'График 1',
