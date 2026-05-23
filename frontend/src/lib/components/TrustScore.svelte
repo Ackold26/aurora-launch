@@ -38,18 +38,28 @@
     score: number;
     verdict?: string;
     diagnostics?: DiagnosticDetail[];
-    expertMode?: boolean;
+    /**
+     * Sprint 8 D4 (#47): renamed from `expertMode` (inverted semantic confused
+     * readers — ForecastTab passed `!trustIsRealCompute` meaning "we're in
+     * preview state, show extra cautionary diagnostics").
+     *
+     * When true: shows expand/collapse toggle button + (when expanded) the
+     * diagnostics section. Production integration: ForecastTab passes
+     * `previewMode={!trustIsRealCompute}` so preview-state users (similarity-
+     * only fallback, no Bayesian fit) see additional diagnostics to compensate
+     * для missing rigorous compute. Real-compute users get clean Manager mode.
+     */
+    previewMode?: boolean;
   }
 
   let {
     score,
     verdict,
     diagnostics = [],
-    expertMode = false,
+    previewMode = false,
   }: Props = $props();
 
-  // Sprint 6 D5 #22 — drill-down link для 8-dim trust score formula. Только в
-  // expert mode (Manager mode user видит только score + verdict, не formula).
+  // Sprint 6 D5 #22 — drill-down link для 8-dim trust score formula.
   let explainOpen = $state(false);
   function openExplain() {
     explainOpen = true;
@@ -81,11 +91,10 @@
     <div class="trust-label">{$_("trustScore.label")}</div>
     <div class="trust-header-actions">
       <!-- Sprint 6 audit pass V1: explain link is educational (about methodology),
-           not diagnostic clutter — visible regardless of expertMode. Pharma pilot
-           users с real trust score equally want methodology explanation, не
-           только preview/fallback users. Gated by expertMode would hide button
-           в production где `expertMode={!trustIsRealCompute}` integration pattern
-           used (ForecastTab.svelte:296). -->
+           not diagnostic clutter — visible regardless of previewMode. Pharma
+           pilot users с real trust score equally want methodology explanation,
+           не только preview/fallback users. Sprint 8 D4: prop renamed
+           expertMode → previewMode (#47 — clearer semantic). -->
       <button
         type="button"
         class="trust-explain-link"
@@ -93,7 +102,7 @@
       >
         {$_("trustScore.explain_8d_button", { default: "Что значат эти 8 измерений?" })}
       </button>
-      {#if expertMode}
+      {#if previewMode}
         <button
           type="button"
           class="trust-expand-toggle"
@@ -119,7 +128,7 @@
     </div>
   </div>
 
-  {#if expertMode && expanded && diagnostics.length > 0}
+  {#if previewMode && expanded && diagnostics.length > 0}
     <section id="trust-diagnostics" class="trust-diagnostics" aria-label={$_("trustScore.diagnostics_label")}>
       <h4 class="trust-diagnostics-title">{$_("trustScore.diagnostics_title")}</h4>
       <dl class="trust-diagnostics-list">
