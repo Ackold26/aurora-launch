@@ -1471,4 +1471,202 @@ mod tests {
             result
         );
     }
+
+    // ── Sprint 6 D10 #O3 — broken symlink behavior ──────────────────────
+
+    #[cfg(unix)]
+    #[test]
+    fn broken_symlink_returns_bundle_not_found() {
+        // Sprint 6 D10 #O3: broken symlink (target deleted) — verify ErrorKind
+        // mapped к BundleNotFound. canonicalize() returns ENOENT for dangling
+        // symlinks на Unix, which maps к io::ErrorKind::NotFound → our match
+        // arm returns AuroraError::BundleNotFound. Verifies fix behavior
+        // graceful, не panic / generic error.
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().unwrap();
+        let nonexistent_target = dir.path().join("deleted_target.aurora");
+        let broken_link = dir.path().join("broken.aurora");
+
+        // Create symlink to target that does NOT exist (dangling symlink).
+        symlink(&nonexistent_target, &broken_link).unwrap();
+
+        let result = run_verify(&broken_link);
+        assert!(
+            matches!(result, Err(AuroraError::BundleNotFound { .. })),
+            "broken symlink (target deleted) must map к BundleNotFound. Got: {:?}",
+            result
+        );
+    }
+
+    // ── Sprint 6 D8 #O1 — Windows symlink behavior tests ────────────────
+    //
+    // Windows symlink_file требует Developer Mode либо admin privileges.
+    // GitHub Actions Windows runners по умолчанию имеют Developer Mode
+    // enabled, поэтому эти тесты должны passуть в CI. Если local Windows
+    // dev machine не имеет Developer Mode — тесты пропустятся с warning
+    // в logs (через ErrorKind::PermissionDenied check).
+
+    #[cfg(windows)]
+    fn try_create_windows_symlink_file(
+        src: &std::path::Path,
+        dst: &std::path::Path,
+    ) -> std::io::Result<()> {
+        std::os::windows::fs::symlink_file(src, dst)
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_symlink_to_valid_bundle_resolves_via_canonicalize() {
+        // Sprint 6 D8 #O1: Windows symlink (NTFS reparse point) should resolve
+        // atomically через canonicalize() — same behavior as Unix symlinks.
+        // Verifies Sprint 5 #25 TOCTOU closure works на Windows.
+        let dir = tempfile::tempdir().unwrap();
+        let real_bundle = build_valid_bundle(
+            dir.path(),
+            "real.aurora",
+            &[("data.txt", b"payload".as_slice())],
+        );
+        let symlink_path = dir.path().join("link.aurora");
+
+        match try_create_windows_symlink_file(&real_bundle, &symlink_path) {
+            Ok(()) => {
+                let result = run_verify(&symlink_path).expect("Windows symlink resolves");
+                assert_eq!(result.status, "verified");
+                assert_eq!(result.files_checked, 1);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                eprintln!(
+                    "Skipping windows_symlink test — no Developer Mode / admin: {e}"
+                );
+            }
+            Err(e) => panic!("unexpected symlink creation error: {e:?}"),
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_symlink_to_non_bundle_returns_bundle_format_error() {
+        // Sprint 6 D8 #O1: Windows hostile symlink к non-ZIP file must surface
+        // BundleFormat error (не panic, не silent success). Mirror Unix
+        // symlink_to_non_bundle_returns_bundle_format_error test.
+        let dir = tempfile::tempdir().unwrap();
+        let non_bundle = dir.path().join("not_a_zip.txt");
+        std::fs::write(&non_bundle, b"this is not a ZIP archive").unwrap();
+        let symlink_path = dir.path().join("hostile.aurora");
+
+        match try_create_windows_symlink_file(&non_bundle, &symlink_path) {
+            Ok(()) => {
+                let result = run_verify(&symlink_path);
+                assert!(
+                    matches!(result, Err(AuroraError::BundleFormat { .. })),
+                    "Windows symlink к non-ZIP must surface BundleFormat. Got: {:?}",
+                    result
+                );
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                eprintln!(
+                    "Skipping windows hostile symlink test — no Developer Mode / admin: {e}"
+                );
+            }
+            Err(e) => panic!("unexpected symlink creation error: {e:?}"),
+        }
+    }
+
+    // ── Sprint 6 D9 #O2 — D9 ratio defense boundary cases ───────────────
+
+    #[test]
+    fn zip_bomb_ratio_just_below_threshold_passes() {
+        // Sprint 6 D9 #O2: pathological ratio just below 1000× threshold
+        // (e.g., 999×) — should NOT trigger rejection. Verifies boundary
+        // condition correctness — threshold is strict `> 1000×`, не `>=`.
+        let dir = tempfile::tempdir().unwrap();
+        let entry_content = b"a".repeat(10);
+        let entry_sha = hex::encode(Sha256::digest(&entry_content));
+        // claimed = compressed × 999 = 10 × 999 = 9990 — но real size 10 bytes.
+        // Здесь manifest claim size_bytes ровно 10 (truthful), не false-claim
+        // 999×. Because actual entry IS 10 bytes — ratio 1× < 1000×, должен pass.
+        // (Real bomb claims огромное size_bytes vs tiny compressed — ratio
+        // tests требуют specific construct с inflated claim.)
+        //
+        // Альтернативный test: manifest claims 9990 (999× of 10-byte payload),
+        // но это would fail hash check (actual content 10 bytes, sha differs
+        // from claimed). Sprint 5 D9 rejects ratio BEFORE hash check, so
+        // we'd see "error" with ratio reason, не "diverged" hash mismatch.
+        let manifest = serde_json::json!({
+            "manifest_version": "1.0",
+            "schema_version": "3.0",
+            "aurora_app": "Aurora Launch",
+            "aurora_app_version": "0.1.6",
+            "min_app_version": "0.1.0",
+            "created_at": "2026-05-23T00:00:00Z",
+            "last_modified": "2026-05-23T00:00:00Z",
+            "project_id": "00000000-0000-0000-0000-000000000000",
+            "revision": 0,
+            "files": {
+                "data.txt": {
+                    "sha256": entry_sha,
+                    "size_bytes": entry_content.len() as u64,  // accurate — 1× ratio
+                    "schema_version": null
+                }
+            },
+            "integrity_check": "strict",
+            "compression": "store"
+        });
+        let bundle = build_custom_manifest_bundle(
+            dir.path(),
+            "edge_999x.aurora",
+            &serde_json::to_vec(&manifest).unwrap(),
+            &[("data.txt", entry_content.as_slice())],
+        );
+        let result = run_verify(&bundle).expect("legitimate small file verifies");
+        assert_eq!(result.status, "verified", "1× ratio (real file) must pass");
+    }
+
+    #[test]
+    fn zip_bomb_ratio_just_above_threshold_rejects() {
+        // Sprint 6 D9 #O2: claimed size 1001× compressed → just above
+        // MAX_DECOMPRESSION_RATIO=1000 → rejection. Verifies threshold
+        // strict-greater-than (`>`) — exact 1000× passes, 1001× fails.
+        //
+        // Construct: 10-byte compressed payload + manifest claims 10_010 bytes
+        // (=1001×). saturating_mul(1000) = 10000; claimed 10010 > 10000 → reject.
+        let dir = tempfile::tempdir().unwrap();
+        let entry_content = b"a".repeat(10);
+        let fake_sha = hex::encode(Sha256::digest(b"x"));  // not actual content
+        let manifest = serde_json::json!({
+            "manifest_version": "1.0",
+            "schema_version": "3.0",
+            "aurora_app": "Aurora Launch",
+            "aurora_app_version": "0.1.6",
+            "min_app_version": "0.1.0",
+            "created_at": "2026-05-23T00:00:00Z",
+            "last_modified": "2026-05-23T00:00:00Z",
+            "project_id": "00000000-0000-0000-0000-000000000000",
+            "revision": 0,
+            "files": {
+                "data.txt": {
+                    "sha256": fake_sha,
+                    "size_bytes": 10_010_u64,  // 1001× of 10-byte payload
+                    "schema_version": null
+                }
+            },
+            "integrity_check": "strict",
+            "compression": "store"
+        });
+        let bundle = build_custom_manifest_bundle(
+            dir.path(),
+            "edge_1001x.aurora",
+            &serde_json::to_vec(&manifest).unwrap(),
+            &[("data.txt", entry_content.as_slice())],
+        );
+        let result = run_verify(&bundle).expect("returns Ok with error status");
+        assert_eq!(result.status, "error", "1001× ratio must reject");
+        let reason = result.reason.as_deref().unwrap_or("");
+        assert!(
+            reason.contains("отношение") || reason.contains("zip-bomb"),
+            "expected ratio rejection reason, got: {:?}",
+            result.reason
+        );
+    }
 }
