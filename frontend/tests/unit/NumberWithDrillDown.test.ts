@@ -93,16 +93,17 @@ describe('NumberWithDrillDown — деградация при неизвестн
 // ---------------------------------------------------------------------------
 
 describe('NumberWithDrillDown — известный formulaKey', () => {
-  it('рендерит .number-drill-value (role=button) со значением', () => {
+  it('рендерит .number-drill-value (native <button>) со значением', () => {
     const { container } = render(NumberWithDrillDown, {
       formulaKey: KNOWN_KEY,
       value: '0.87',
     });
 
-    const valueSpan = container.querySelector('.number-drill-value');
-    expect(valueSpan).not.toBeNull();
-    expect(valueSpan!.getAttribute('role')).toBe('button');
-    expect(valueSpan!.textContent).toBe('0.87');
+    const valueEl = container.querySelector('.number-drill-value');
+    expect(valueEl).not.toBeNull();
+    // Sprint 8 D3 (#29): native <button> вместо <span role="button">
+    expect(valueEl!.tagName).toBe('BUTTON');
+    expect(valueEl!.textContent).toBe('0.87');
   });
 
   it('рендерит .number-drill-info кнопку', () => {

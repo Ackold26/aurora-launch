@@ -253,7 +253,7 @@
       if (!targetPath) {
         const { save } = await import('@tauri-apps/plugin-dialog');
         const picked = await save({
-          title: 'Сохранить файл проекта',
+          title: $_('layout.save_dialog.title'),
           defaultPath: 'project.aurora',
           filters: [{ name: 'Aurora bundle', extensions: ['aurora'] }],
         });
@@ -266,13 +266,13 @@
       await saveBundleTo(targetPath);
       pushToast({
         level: 'success',
-        title: 'Сохранено',
+        title: $_('layout.toast.saved'),
         body: targetPath,
       });
     } catch (e) {
       pushToast({
         level: 'danger',
-        title: 'Не удалось сохранить',
+        title: $_('layout.toast.save_failed'),
         body: e instanceof Error ? e.message : String(e),
       });
     } finally {
@@ -292,7 +292,7 @@
     } catch (e) {
       pushToast({
         level: 'danger',
-        title: 'Feedback capture failed',
+        title: $_('layout.toast.feedback_failed'),
         body: String(e)
       });
     }
@@ -321,7 +321,7 @@
       {/if}
     </div>
 
-    <nav class="app-nav" aria-label="Primary navigation">
+    <nav class="app-nav" aria-label={$_('layout.nav.aria_label')}>
       <a href="/" data-sveltekit-preload-data="hover">{$_('nav.welcome')}</a>
       <a href="/wizard">{$_('nav.wizard')}</a>
       <a href="/inspector">{$_('nav.inspector')}</a>
@@ -334,7 +334,7 @@
     <div class="header-meta">
       {#if $activeBundle}
         <!-- M-08: revision badge tooltip explains optimistic concurrency role -->
-        <abbr title="Версия файла проекта. Увеличивается при каждом сохранении — защищает от конфликтов при параллельной работе.">
+        <abbr title={$_('layout.revision_badge.tooltip')}>
           <Badge variant="info" size="sm">
             {#snippet children()}r{$activeBundle.revision}{/snippet}
           </Badge>
@@ -346,10 +346,10 @@
           class="save-btn"
           onclick={triggerSave}
           disabled={saving || !$isDirty}
-          aria-label="Сохранить файл проекта (Ctrl+S)"
+          aria-label={$_('layout.save_button.aria_label')}
           title="Ctrl+S"
         >
-          {saving ? 'Сохранение…' : 'Сохранить'}
+          {saving ? $_('layout.save_button.saving') : $_('layout.save_button.save')}
         </button>
       {/if}
     </div>
@@ -359,7 +359,7 @@
     {#if $isLoading}
       <div class="loading-screen" aria-busy="true">
         <span class="logo big">◆</span>
-        <span>Loading…</span>
+        <span>{$_('layout.loading_screen')}</span>
       </div>
     {:else}
       {@render children()}
@@ -425,7 +425,7 @@
             {$_('feedback.submit')}
           </button>
         </div>
-        <p class="feedback-hint">Cmd+Shift+F · Esc to close</p>
+        <p class="feedback-hint">{$_('layout.feedback_hint')}</p>
       </div>
     </div>
   {/if}

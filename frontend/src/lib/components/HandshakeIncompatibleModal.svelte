@@ -14,6 +14,7 @@
   // ARIA delegated to base component. level='error' — no dismiss, force restart.
 
   import { onMount, onDestroy } from 'svelte';
+  import { _ } from 'svelte-i18n';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { ipc, type HandshakeResult } from '$ipc/client';
   import NotificationBanner from './NotificationBanner.svelte';
@@ -66,23 +67,20 @@
   autoFocusSelector=".nb-btn--primary"
 >
   {#snippet children()}
-    <h2 id="handshake-modal-title" class="modal-title">Несовместимая версия Aurora Launch</h2>
+    <h2 id="handshake-modal-title" class="modal-title">{$_('handshake_modal.title')}</h2>
     <p class="reason">
-      {result?.reason ?? 'Внутренний сервис расчётов не совместим с этой версией Aurora.'}
+      {result?.reason ?? $_('handshake_modal.default_reason')}
     </p>
     {#if result?.advice}
       <p class="advice">{result.advice}</p>
     {/if}
-    <p class="warning-box">
-      Продолжать работу <strong>небезопасно</strong> — данные проектов могут
-      быть повреждены.
-    </p>
+    <p class="warning-box">{$_('handshake_modal.warning')}</p>
   {/snippet}
 
   {#snippet actions()}
     <!-- H-7 (audit 4.5 / Phase 1.A): canonical accent token via nb-btn--primary. -->
     <button class="nb-btn nb-btn--primary" type="button" onclick={reload}>
-      Перезапустить приложение
+      {$_('handshake_modal.button_restart')}
     </button>
   {/snippet}
 </NotificationBanner>
