@@ -64,31 +64,31 @@ describe('TrustScore', () => {
 
   // ---------- expert mode ----------
 
-  it('expertMode=false → expand/collapse toggle button hidden', () => {
-    render(TrustScore, defaultProps({ expertMode: false }));
+  it('previewMode=false → expand/collapse toggle button hidden', () => {
+    render(TrustScore, defaultProps({ previewMode: false }));
     // Sprint 6 audit pass V1: explain link visible regardless of mode (ungated).
-    // Expand toggle remains expertMode-gated. Match toggle specifically.
+    // Expand toggle remains previewMode-gated. Match toggle specifically.
     expect(screen.queryByRole('button', { name: /Подробнее|Свернуть/ })).toBeNull();
   });
 
-  it('expertMode=true → toggle button visible', () => {
-    render(TrustScore, defaultProps({ expertMode: true }));
+  it('previewMode=true → toggle button visible', () => {
+    render(TrustScore, defaultProps({ previewMode: true }));
     // Sprint 6 D5 #22: ≥2 buttons in expert mode — explain link + expand toggle.
     // Match expand toggle specifically by its label.
     expect(screen.getByRole('button', { name: /Подробнее|Свернуть/ })).toBeTruthy();
   });
 
-  it('expertMode=false → diagnostics section absent', () => {
+  it('previewMode=false → diagnostics section absent', () => {
     render(TrustScore, defaultProps({
-      expertMode: false,
+      previewMode: false,
       diagnostics: [{ label: 'R̂', value: '1.00', status: 'good' }]
     }));
     expect(screen.queryByLabelText('Подробная диагностика')).toBeNull();
   });
 
-  it('toggle expanded → diagnostics visible when expertMode=true and diagnostics provided', async () => {
+  it('toggle expanded → diagnostics visible when previewMode=true and diagnostics provided', async () => {
     render(TrustScore, defaultProps({
-      expertMode: true,
+      previewMode: true,
       diagnostics: [{ label: 'R̂', value: '1.00', status: 'good' }]
     }));
     // Sprint 6 D5 #22: select expand toggle (not explain link).
@@ -101,22 +101,22 @@ describe('TrustScore', () => {
   // ---------- Sprint 6 D5 #22 — explain link drill-down ----------
   //
   // Sprint 6 audit pass V1 decision: explain link visible regardless of
-  // expertMode — educational link ≠ diagnostic clutter. Production integration
-  // (ForecastTab.svelte:296) uses `expertMode={!trustIsRealCompute}` semantic
+  // previewMode — educational link ≠ diagnostic clutter. Production integration
+  // (ForecastTab.svelte:296) uses `previewMode={!trustIsRealCompute}` semantic
   // что would hide button для real-compute pilot users — undesirable.
 
-  it('explain link "Что значат эти 8 измерений?" visible in expertMode=true', () => {
-    render(TrustScore, defaultProps({ expertMode: true }));
+  it('explain link "Что значат эти 8 измерений?" visible in previewMode=true', () => {
+    render(TrustScore, defaultProps({ previewMode: true }));
     expect(screen.getByRole('button', { name: /8 измерений/ })).toBeTruthy();
   });
 
-  it('explain link visible in expertMode=false (educational, ungated)', () => {
-    render(TrustScore, defaultProps({ expertMode: false }));
+  it('explain link visible in previewMode=false (educational, ungated)', () => {
+    render(TrustScore, defaultProps({ previewMode: false }));
     expect(screen.getByRole('button', { name: /8 измерений/ })).toBeTruthy();
   });
 
   it('click explain link → DrillDownModal opens с trust_score_8d formula', async () => {
-    render(TrustScore, defaultProps({ expertMode: true }));
+    render(TrustScore, defaultProps({ previewMode: true }));
     const btn = screen.getByRole('button', { name: /8 измерений/ });
     await fireEvent.click(btn);
     // Modal title from formulas.ts: "Trust Score (8 измерений)"
