@@ -22,6 +22,7 @@
 
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { _ } from 'svelte-i18n';
   import { ipc } from '$ipc/client';
   import { open as openDialog } from '@tauri-apps/plugin-dialog';
 
@@ -53,9 +54,7 @@
       bundles = result.bundles;
     } catch (err) {
       errorMsg =
-        err instanceof Error
-          ? err.message
-          : 'Не удалось загрузить список примеров. Попробуйте перезапустить приложение.';
+        err instanceof Error ? err.message : $_('wizard.proxy.error_fallback');
     } finally {
       loading = false;
     }
@@ -82,7 +81,7 @@
         selectedPath = filePath;
         // Extract basename for the label.
         const basename = filePath.split(/[\\/]/).pop() ?? filePath;
-        selectedLabel = `Свой файл: ${basename}`;
+        selectedLabel = $_('wizard.proxy.custom_file_prefix', { values: { basename } });
       }
     } catch {
       // User cancelled — no-op.
@@ -92,22 +91,20 @@
 
 <section class="proxy-picker">
   <header class="picker-header">
-    <h2 class="picker-heading">Шаг 2 — Выберите прокси-бренд</h2>
-    <p class="picker-subtitle">
-      Aurora использует данные похожего бренда как образец для прогноза
-    </p>
+    <h2 class="picker-heading">{$_('wizard.proxy.heading')}</h2>
+    <p class="picker-subtitle">{$_('wizard.proxy.subtitle')}</p>
   </header>
 
   <!-- Sample bundle cards -->
   {#if loading}
-    <p class="loading-msg" aria-live="polite" aria-busy="true">Загружаем примеры…</p>
+    <p class="loading-msg" aria-live="polite" aria-busy="true">{$_('wizard.proxy.loading')}</p>
   {:else if errorMsg}
     <p class="error-msg" role="alert">{errorMsg}</p>
   {:else}
     <div
       class="card-grid"
       role="radiogroup"
-      aria-label="Выбор прокси-бренда"
+      aria-label={$_('wizard.proxy.cards_aria_label')}
     >
       {#each bundles as bundle (bundle.id)}
         {@const isSelected =
@@ -124,11 +121,11 @@
         >
           <span class="card-label">{bundle.label}</span>
           <span class="card-sub">
-            Готовый пример Aurora
+            {$_('wizard.proxy.card_subtitle')}
             {#if bundle.exists}
-              · <span class="card-available">✓ Файл доступен</span>
+              · <span class="card-available">{$_('wizard.proxy.card_available')}</span>
             {:else}
-              · <span class="card-unavailable">Файл не найден</span>
+              · <span class="card-unavailable">{$_('wizard.proxy.card_unavailable')}</span>
             {/if}
           </span>
         </button>
@@ -137,7 +134,7 @@
   {/if}
 
   <!-- Divider -->
-  <div class="divider" aria-hidden="true"><span class="divider-label">или</span></div>
+  <div class="divider" aria-hidden="true"><span class="divider-label">{$_('wizard.proxy.divider_or')}</span></div>
 
   <!-- Custom upload -->
   <button
@@ -145,13 +142,13 @@
     class="upload-btn"
     onclick={handleUpload}
   >
-    📁 Загрузить свой .aurora файл
+    {$_('wizard.proxy.upload_button')}
   </button>
 
   <!-- Selection indicator -->
   {#if selectedLabel !== null}
     <p class="selected-indicator" aria-live="polite">
-      Выбран: <strong>{selectedLabel}</strong>
+      {$_('wizard.proxy.selected_indicator_label')} <strong>{selectedLabel}</strong>
     </p>
   {/if}
 </section>

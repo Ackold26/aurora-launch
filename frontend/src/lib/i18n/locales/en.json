@@ -446,5 +446,17 @@
   "transparency.drill_down.output_heading": "Result",
   "transparency.drill_down.provenance_heading": "Source",
   "transparency.number_drill.info_aria": "Formula details: {title}",
-  "transparency.number_drill.value_aria": "{value} — click for details"
+  "transparency.number_drill.value_aria": "{value} — click for details",
+  "wizard.proxy.heading": "Step 2 — Select a proxy brand",
+  "wizard.proxy.subtitle": "Aurora uses data from a similar brand as a forecast template",
+  "wizard.proxy.loading": "Loading examples…",
+  "wizard.proxy.error_fallback": "Failed to load the example list. Try restarting the application.",
+  "wizard.proxy.cards_aria_label": "Proxy brand selection",
+  "wizard.proxy.card_subtitle": "Ready-made Aurora example",
+  "wizard.proxy.card_available": "✓ File available",
+  "wizard.proxy.card_unavailable": "File not found",
+  "wizard.proxy.divider_or": "or",
+  "wizard.proxy.upload_button": "📁 Upload your own .aurora file",
+  "wizard.proxy.custom_file_prefix": "Custom file: {basename}",
+  "wizard.proxy.selected_indicator_label": "Selected:"
 }

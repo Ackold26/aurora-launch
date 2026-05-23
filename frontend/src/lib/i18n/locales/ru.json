@@ -406,7 +406,6 @@
   "dashboard.quick.inspector.hint": "Прогнозы и подписи",
   "dashboard.quick.settings.title": "Настройки",
   "dashboard.quick.settings.hint": "Тема, локаль, телеметрия",
-
   "transparency.drill_down.close_button": "Закрыть",
   "transparency.drill_down.inputs_heading": "Входные значения",
   "transparency.drill_down.output_heading": "Результат",
@@ -416,7 +415,6 @@
   "transparency.number_drill.value_aria": "{value} — нажмите для деталей",
   "transparency.chart_drill.info_aria": "Подробнее о методике: {chartTitle}",
   "transparency.chart_drill.info_label": "Как считается?",
-
   "cert.export.open_button": "Экспортировать сертификат (PDF)",
   "cert.export.toolbar_title": "Экспорт сертификата",
   "cert.export.print_button": "Сохранить PDF",
@@ -433,7 +431,6 @@
   "cert.export.generated_at": "Сертификат сгенерирован:",
   "cert.export.app_version": "Версия Aurora Launch:",
   "cert.export.disclaimer": "Aurora Launch © Aurora AI. Документ не является юридически обязывающим, а отражает результаты статистической методологии прогнозирования.",
-
   "audit.repro.heading": "Проверка воспроизводимости",
   "audit.repro.description": "Сверяет SHA-256 каждого файла внутри бандла с заявленными в манифесте значениями. «Воспроизводимо» — все файлы соответствуют записанным хэшам.",
   "audit.repro.button_run": "Проверить воспроизводимость",
@@ -448,7 +445,18 @@
   "audit.repro.error_title": "Не удалось запустить проверку",
   "audit.repro.cross_binding_heading": "Кросс-привязка с сертификатом методологии",
   "audit.repro.cross_binding_help": "Сверьте этот хеш с указанным в сертификате методологии — если совпадает, файлы не подменялись после подписи сертификата.",
-
   "inspector.forecast.chart_title": "Прогноз с доверительным интервалом",
-  "inspector.similarity.chart_title": "Сходство по 8 измерениям"
+  "inspector.similarity.chart_title": "Сходство по 8 измерениям",
+  "wizard.proxy.heading": "Шаг 2 — Выберите прокси-бренд",
+  "wizard.proxy.subtitle": "Aurora использует данные похожего бренда как образец для прогноза",
+  "wizard.proxy.loading": "Загружаем примеры…",
+  "wizard.proxy.error_fallback": "Не удалось загрузить список примеров. Попробуйте перезапустить приложение.",
+  "wizard.proxy.cards_aria_label": "Выбор прокси-бренда",
+  "wizard.proxy.card_subtitle": "Готовый пример Aurora",
+  "wizard.proxy.card_available": "✓ Файл доступен",
+  "wizard.proxy.card_unavailable": "Файл не найден",
+  "wizard.proxy.divider_or": "или",
+  "wizard.proxy.upload_button": "📁 Загрузить свой .aurora файл",
+  "wizard.proxy.custom_file_prefix": "Свой файл: {basename}",
+  "wizard.proxy.selected_indicator_label": "Выбран:"
 }
