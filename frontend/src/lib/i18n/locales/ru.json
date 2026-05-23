@@ -458,5 +458,20 @@
   "wizard.proxy.divider_or": "или",
   "wizard.proxy.upload_button": "📁 Загрузить свой .aurora файл",
   "wizard.proxy.custom_file_prefix": "Свой файл: {basename}",
-  "wizard.proxy.selected_indicator_label": "Выбран:"
+  "wizard.proxy.selected_indicator_label": "Выбран:",
+  "handshake_modal.title": "Несовместимая версия Aurora Launch",
+  "handshake_modal.default_reason": "Внутренний сервис расчётов не совместим с этой версией Aurora.",
+  "handshake_modal.warning": "Продолжать работу небезопасно — данные проектов могут быть повреждены.",
+  "handshake_modal.button_restart": "Перезапустить приложение",
+  "layout.save_dialog.title": "Сохранить файл проекта",
+  "layout.toast.saved": "Сохранено",
+  "layout.toast.save_failed": "Не удалось сохранить",
+  "layout.toast.feedback_failed": "Не удалось отправить отзыв",
+  "layout.nav.aria_label": "Главная навигация",
+  "layout.revision_badge.tooltip": "Версия файла проекта. Увеличивается при каждом сохранении — защищает от конфликтов при параллельной работе.",
+  "layout.save_button.aria_label": "Сохранить файл проекта (Ctrl+S)",
+  "layout.save_button.saving": "Сохранение…",
+  "layout.save_button.save": "Сохранить",
+  "layout.loading_screen": "Загрузка…",
+  "layout.feedback_hint": "Cmd+Shift+F · Esc для закрытия"
 }

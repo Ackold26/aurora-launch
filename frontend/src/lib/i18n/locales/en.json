@@ -458,5 +458,20 @@
   "wizard.proxy.divider_or": "or",
   "wizard.proxy.upload_button": "📁 Upload your own .aurora file",
   "wizard.proxy.custom_file_prefix": "Custom file: {basename}",
-  "wizard.proxy.selected_indicator_label": "Selected:"
+  "wizard.proxy.selected_indicator_label": "Selected:",
+  "handshake_modal.title": "Incompatible Aurora Launch version",
+  "handshake_modal.default_reason": "Internal computation service is not compatible with this version of Aurora.",
+  "handshake_modal.warning": "Continuing work is unsafe — project data may be corrupted.",
+  "handshake_modal.button_restart": "Restart application",
+  "layout.save_dialog.title": "Save project file",
+  "layout.toast.saved": "Saved",
+  "layout.toast.save_failed": "Failed to save",
+  "layout.toast.feedback_failed": "Failed to capture feedback",
+  "layout.nav.aria_label": "Primary navigation",
+  "layout.revision_badge.tooltip": "Project file revision. Increments on each save — guards against conflicts in parallel work.",
+  "layout.save_button.aria_label": "Save project file (Ctrl+S)",
+  "layout.save_button.saving": "Saving…",
+  "layout.save_button.save": "Save",
+  "layout.loading_screen": "Loading…",
+  "layout.feedback_hint": "Cmd+Shift+F · Esc to close"
 }

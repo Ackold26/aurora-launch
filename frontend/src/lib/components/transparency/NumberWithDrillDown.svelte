@@ -56,8 +56,9 @@
     modalOpen = false;
   }
 
-  // ── Keyboard handler for the value span (role=button) ────────────────────
-
+  // Native <button> handles Enter/Space → click in real browsers, but jsdom
+  // doesn't fire synthetic click on fireEvent.keyDown — keep handler defensive
+  // for test compatibility (no behavioral change in production).
   function handleValueKeydown(e: KeyboardEvent): void {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
@@ -82,17 +83,21 @@
     class="number-drill {extraClass}"
     data-tooltip={tooltipText}
   >
-    <span
+    <!--
+      Sprint 8 D3 (#29): native <button> вместо <span role="button"> per ARIA
+      APG — better OS accessibility integration (NVDA/JAWS/VoiceOver). CSS reset
+      preserves inline appearance.
+    -->
+    <button
+      type="button"
       class="number-drill-value"
-      role="button"
-      tabindex="0"
       aria-label={$_('transparency.number_drill.value_aria', {
         default: '{value} — нажмите для деталей',
         values: { value },
       })}
       onclick={openModal}
       onkeydown={handleValueKeydown}
-    >{value}</span>
+    >{value}</button>
 
     <button
       type="button"
@@ -129,8 +134,17 @@
     outline-offset: 2px;
   }
 
-  /* ── Value span (role=button) ─────────────────────────────────────────── */
+  /* ── Value button (Sprint 8 D3 — native <button> с CSS reset) ─────────── */
   .number-drill-value {
+    /* Reset native button chrome to preserve inline span appearance */
+    appearance: none;
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    display: inline;
     cursor: pointer;
     /* Subtle underline hint for interactivity */
     text-decoration: underline;
