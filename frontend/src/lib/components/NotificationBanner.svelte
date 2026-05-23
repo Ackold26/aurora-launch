@@ -13,6 +13,7 @@
 
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import { _ } from 'svelte-i18n';
   import { fadeIn } from '$lib/services/motion';
   import { focusTrap } from '$lib/utils/focus-trap';
 
@@ -193,7 +194,7 @@
             class="nb-dismiss nb-dismiss--modal"
             type="button"
             onclick={dismiss}
-            aria-label="Закрыть"
+            aria-label={$_('notification_banner.close_aria')}
           >×</button>
         {/if}
       </div>
@@ -222,7 +223,7 @@
             class="nb-dismiss nb-dismiss--banner"
             type="button"
             onclick={dismiss}
-            aria-label="Закрыть"
+            aria-label={$_('notification_banner.close_aria')}
           >×</button>
         {/if}
       </div>

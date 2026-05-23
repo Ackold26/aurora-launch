@@ -476,5 +476,20 @@
   "layout.feedback_hint": "Cmd+Shift+F · Esc для закрытия",
   "wizard.toast.validation_failed.body_fallback": "Проверьте данные и роли колонок.",
   "wizard.save_dialog.title": "Сохранить файл проекта Aurora Launch",
-  "wizard.toast.saved.title": "Файл проекта сохранён"
+  "wizard.toast.saved.title": "Файл проекта сохранён",
+  "notification_banner.close_aria": "Закрыть",
+  "inspector.reproduce.toast.copy_success.title": "Скопировано",
+  "inspector.reproduce.toast.copy_success.body": "{count} символов в буфере обмена",
+  "inspector.reproduce.toast.copy_error.title": "Не удалось скопировать",
+  "inspector.reproduce.title": "🐍 Воспроизвести прогноз в Python",
+  "inspector.reproduce.intro_save_prefix": "Сохраните этот скрипт как ",
+  "inspector.reproduce.intro_save_suffix": " + .aurora bundle.",
+  "inspector.reproduce.intro_run_prefix": "Запустите ",
+  "inspector.reproduce.intro_run_suffix": ".",
+  "inspector.reproduce.preview_badge": "⚠️ Превью v0.1.0:",
+  "inspector.reproduce.preview_explanation": "параметры запуска и план медиа пока приближённые — скорректируйте их вручную. Точное воспроизведение появится в следующем обновлении.",
+  "inspector.reproduce.bit_equal": "Прогноз будет идентичным до бита.",
+  "inspector.reproduce.copy_button": "📋 Скопировать в буфер",
+  "inspector.reproduce.download_button": "💾 Скачать .py",
+  "inspector.reproduce.code_aria": "Сгенерированный Python-скрипт"
 }

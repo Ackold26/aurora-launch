@@ -14,6 +14,7 @@
 -->
 
 <script lang="ts">
+  import { _ } from 'svelte-i18n';
   import Skeleton from '$lib/components/Skeleton.svelte';
   import NotificationBanner from '$lib/components/NotificationBanner.svelte';
   import { pushToast } from '$lib/stores/toast';
@@ -34,13 +35,13 @@
       await navigator.clipboard.writeText(script);
       pushToast({
         level: 'success',
-        title: 'Скопировано',
-        body: `${script.length} символов в буфере обмена`,
+        title: $_('inspector.reproduce.toast.copy_success.title'),
+        body: $_('inspector.reproduce.toast.copy_success.body', { values: { count: script.length } }),
       });
     } catch (e) {
       pushToast({
         level: 'danger',
-        title: 'Не удалось скопировать',
+        title: $_('inspector.reproduce.toast.copy_error.title'),
         body: e instanceof Error ? e.message : String(e),
       });
     }
@@ -62,16 +63,16 @@
 >
   {#snippet children()}
     <h2 id="reproduce-modal-title" class="reproduce-modal-title">
-      🐍 Воспроизвести прогноз в Python
+      {$_('inspector.reproduce.title')}
     </h2>
     <p class="reproduce-modal-intro">
-      Сохраните этот скрипт как <code>{filename}</code> + .aurora bundle.
-      Запустите <code>python {filename}</code>.
+      {$_('inspector.reproduce.intro_save_prefix')}<code>{filename}</code>{$_('inspector.reproduce.intro_save_suffix')}
+      {$_('inspector.reproduce.intro_run_prefix')}<code>python {filename}</code>{$_('inspector.reproduce.intro_run_suffix')}
       {#if isPreview}
-        <strong class="reproduce-preview-badge">⚠️ Превью v0.1.0:</strong>
-        параметры запуска и план медиа пока приближённые — скорректируйте их вручную. Точное воспроизведение появится в следующем обновлении.
+        <strong class="reproduce-preview-badge">{$_('inspector.reproduce.preview_badge')}</strong>
+        {$_('inspector.reproduce.preview_explanation')}
       {:else}
-        Прогноз будет идентичным до бита.
+        {$_('inspector.reproduce.bit_equal')}
       {/if}
     </p>
     <div class="reproduce-actions">
@@ -81,7 +82,7 @@
         onclick={copyScript}
         disabled={loading || !script}
       >
-        📋 Скопировать в буфер
+        {$_('inspector.reproduce.copy_button')}
       </button>
       <a
         class="reproduce-action-btn secondary"
@@ -89,7 +90,7 @@
         download={filename}
         role="button"
       >
-        💾 Скачать .py
+        {$_('inspector.reproduce.download_button')}
       </a>
     </div>
     {#if loading}
@@ -104,7 +105,7 @@
         class="reproduce-code"
         tabindex="0"
         role="region"
-        aria-label="Сгенерированный Python-скрипт"
+        aria-label={$_('inspector.reproduce.code_aria')}
       ><code>{script}</code></pre>
     {/if}
   {/snippet}
