@@ -1,5 +1,66 @@
 # Changelog
 
+## v0.2.1 — 2026-05-23 (Sprint 7 — Pre-pilot finalization Tier B1)
+
+Incremental pre-pilot release. Closes Sprint Buffer #24 (Windows timer flakes)
++ partial closure #39 (ProxyPickerCard) and #45 (EN i18n parity). Manual smoke
+test D1-B deferred (требует Антона); Tier B2/B3 architectural items (D5-B…D10-B)
+defer к Sprint 8 candidate.
+
+### Localization — Sprint 7 Batch 1 D2-B (Sprint Buffer #45)
+
+- **en.json full parity backfill** — 25 missing keys → RU/EN parity 448=448
+  (then 460=460 после Batch 2). All pilot-facing namespaces:
+  - `audit.repro.*` (14 keys) — reproducibility verification panel
+  - `inspector.{forecast,similarity}.chart_title` (2 keys) — chart titles
+  - `transparency.{chart_drill,drill_down,number_drill}.*` (9 keys) —
+    drill-down modal + a11y aria-labels
+- Scope decision (vs Sprint 7 promt original split): backfilled all 25 keys
+  vs deferring «advanced» 10 — все находились в pilot-visible flow paths, no
+  legitimate «advanced/expert» subset to defer. #45 fully closed.
+
+### Tests — Sprint 7 Batch 1 D3-B (Sprint Buffer #24)
+
+- **Windows timer-driven flakes skipped** в
+  `tests/test_phase_scale_s17_forecast_budget.py`. Class-level skipif
+  для `TestBudgetZeroImmediateCancel` (2 methods) — Timer thread sometimes
+  starts after pipeline first `_check_cancel()` call on Windows runners.
+  Existing macOS skipif для
+  `TestCancelEventReset::test_second_call_succeeds_after_first_times_out`
+  extended → `("darwin", "win32")` (same timer family, per
+  `feedback_grep_all_primary_callsites_when_wrapping`).
+- Sprint Buffer #24 reference run 26153497516.
+
+### UX — Sprint 7 Batch 2 D4-B (Sprint Buffer #39 partial)
+
+- **ProxyPickerCard i18n extraction** — 12 hardcoded RU strings → `wizard.proxy.*`
+  keys with EN parity. Strings: heading, subtitle, loading, error_fallback,
+  cards_aria_label, card_subtitle, card_available, card_unavailable, divider_or,
+  upload_button, custom_file_prefix ({basename}), selected_indicator_label.
+- **inspector/+page.svelte verified clean** — all user-facing strings already
+  i18n'ed via `$_('inspector.tab.*')`, `$_('audit.empty')`, `$_('welcome.cta.sample')`.
+  No work needed (audit doc only listed microcopy improvements, not extraction).
+- **Defer к Sprint 8** (lower pilot impact): `+layout.svelte`,
+  `HandshakeIncompatibleModal`, `+page.svelte` welcome hardcoded strings.
+
+### Deferred from Sprint 7 (Sprint 8 candidates)
+
+- **D1-B manual smoke** — requires Антона (Tauri dev mode + AuditTab manual click)
+- **D5-B…D10-B Tier B2/B3** — ReproduceModal NotificationBanner refactor (#21),
+  span[role=button] → native button (#29), ForecastTab expertMode semantic review
+  (#46 — product-strategy question), THREAT_MODEL.md (~2h Opus max), proptest
+  setup, Sprint Buffer template Impact/Effort
+
+### Verification
+
+- vitest **733/734** pass (1 skipped) — no regression
+- cargo unit tests **68/68** pass (doctest paths.rs:15 pre-existing, ignored by CI)
+- pytest `test_phase_scale_s17_forecast_budget` **11 passed / 3 skipped** (0 failed)
+- svelte-check 0 errors (2 pre-existing warnings)
+- RU/EN parity **460=460**
+
+---
+
 ## v0.2.0 — 2026-05-23 (Sprint 6 — Pilot Finalization & full pre-pilot release)
 
 Full pre-pilot release. Closes 4 Sprint Buffer items (#22 TrustScore drill-down,
