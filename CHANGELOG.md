@@ -1,5 +1,65 @@
 # Changelog
 
+## v0.2.2-hotfix — 2026-05-23 (Sprint 8 audit follow-up)
+
+Post-ship audit (parallel Opus + Sonnet agents) обнаружил 5 MEDIUM findings.
+Все 5 fixed inline на `fix/sprint-8-audit-hotfix` branch перед next sprint.
+
+### Bug fixes
+
+- **ReproduceModal auto-focus → empty download (B1).** Sprint 8 D2 refactor
+  delegated focus к `NotificationBanner.focusable()` which queries
+  `a[href]` indiscriminately. During `loading=true` (script generation in
+  progress), Copy button disabled, Download `<a>` has empty `data:text/x-python,`
+  URI → first focusable. User pressing Enter would download empty `reproduce.py`.
+  Fix: pass `autoFocusSelector=".nb-dismiss--modal"` к NotificationBanner —
+  focuses close-X button (always present когда onDismiss provided). Restores
+  v0.2.1 behavior где `closeButtonEl.focus()` explicitly.
+
+- **HandshakeIncompatibleModal lost `<strong>` emphasis (A#1).** Sprint 8 D1
+  i18n extraction flattened `<strong>небезопасно</strong>` к plain string.
+  Fix: `{@html $_('handshake_modal.warning')}` + embedded `<strong>` в JSON.
+  Source = project-controlled, no XSS surface. Bold emphasis на critical
+  "unsafe to continue" warning restored.
+
+### CHANGELOG accuracy correction
+
+- **#39 "fully closed" claim был overstated.** v0.2.2 declared Sprint Buffer
+  #39 закрыт but wizard/+page.svelte still had 3 hardcoded RU strings:
+  validation failed body fallback (line 300), save dialog title (line 579),
+  toast title file saved (line 628). Hotfix extracts эти 3 strings к
+  `wizard.{save_dialog.title, toast.{validation_failed.body_fallback,saved.title}}`
+  с EN parity. #39 *now* fully closed (excluding ReproduceModal — separate
+  Sprint Buffer #48 scope).
+
+### Documentation
+
+- **E2E test doc comment stale.** `tests/e2e/m09-reproduce-python.spec.ts:13`
+  claimed "Modal closes on Escape key or backdrop click" — backdrop dismiss
+  intentionally removed Sprint 8 D2. Updated comment к accurately reflect
+  current behavior + cross-reference.
+
+### Verification
+
+- vitest 733/734 (no regression)
+- svelte-check 0 errors
+- RU/EN parity 478=478 (was 475=475 + 3 wizard keys)
+
+### Audit findings deferred (Sprint 9 candidates)
+
+- LOW: `title="Ctrl+S"` redundant с aria-label (`+layout.svelte:350`)
+- LOW: `Cmd+Shift+F` Mac-centric on Windows (`+layout.svelte`)
+- LOW: NotificationBanner hardcoded `Закрыть` aria-label (cross-modal — affects
+  all level=prompt/error consumers, separate scope)
+- LOW: Version drift pyproject.toml 0.2.0 / package.json 0.1.0 / Cargo.toml
+  0.2.2 (pre-existing Sprint 0/1 tech debt, Sprint Buffer candidate)
+- NICE: ReproduceModal vertical rhythm visual smoke check
+- NICE: `previewMode` rename — still semantically inverted in convention
+  (true = MORE diagnostics). Future polish: `showAdvancedDiagnostics`
+  positive name.
+
+---
+
 ## v0.2.2 — 2026-05-23 (Sprint 8 — Tech debt Tier B2)
 
 Tech debt cleanup release. Closes Sprint Buffer #21 (ReproduceModal refactor),

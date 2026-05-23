@@ -47,11 +47,18 @@
   }
 </script>
 
+<!--
+  autoFocusSelector targets close-X button — safe default during loading state
+  when Copy button is disabled и Download <a> has empty data URI (would
+  download empty file if Enter pressed on auto-focused link). Sprint 8 audit
+  hotfix B1 — restores old v0.2.1 behavior где `closeButtonEl.focus()`.
+-->
 <NotificationBanner
   level="prompt"
   {open}
   onDismiss={onclose}
   titleId="reproduce-modal-title"
+  autoFocusSelector=".nb-dismiss--modal"
 >
   {#snippet children()}
     <h2 id="reproduce-modal-title" class="reproduce-modal-title">

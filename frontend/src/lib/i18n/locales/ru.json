@@ -461,7 +461,7 @@
   "wizard.proxy.selected_indicator_label": "Выбран:",
   "handshake_modal.title": "Несовместимая версия Aurora Launch",
   "handshake_modal.default_reason": "Внутренний сервис расчётов не совместим с этой версией Aurora.",
-  "handshake_modal.warning": "Продолжать работу небезопасно — данные проектов могут быть повреждены.",
+  "handshake_modal.warning": "Продолжать работу <strong>небезопасно</strong> — данные проектов могут быть повреждены.",
   "handshake_modal.button_restart": "Перезапустить приложение",
   "layout.save_dialog.title": "Сохранить файл проекта",
   "layout.toast.saved": "Сохранено",
@@ -473,5 +473,8 @@
   "layout.save_button.saving": "Сохранение…",
   "layout.save_button.save": "Сохранить",
   "layout.loading_screen": "Загрузка…",
-  "layout.feedback_hint": "Cmd+Shift+F · Esc для закрытия"
+  "layout.feedback_hint": "Cmd+Shift+F · Esc для закрытия",
+  "wizard.toast.validation_failed.body_fallback": "Проверьте данные и роли колонок.",
+  "wizard.save_dialog.title": "Сохранить файл проекта Aurora Launch",
+  "wizard.toast.saved.title": "Файл проекта сохранён"
 }

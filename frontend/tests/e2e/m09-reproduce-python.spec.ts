@@ -10,7 +10,9 @@
  *   - Script rendered in <pre class="reproduce-code"><code>...</code></pre>
  *   - generate_reproduce_script returns { script: string, suggested_filename: string }
  *     (NOT script_python — actual ipc/forecast.ts field name is `script`)
- *   - Modal closes on Escape key or backdrop click (or close button ✕)
+ *   - Modal closes on Escape key OR close button ✕
+ *     (backdrop click dismiss intentionally removed Sprint 8 D2 — NotificationBanner
+ *      level="prompt" requires intentional dismiss)
  *   - Button requires activeBundle + forecastData to be non-null
  *
  * Strategy:
