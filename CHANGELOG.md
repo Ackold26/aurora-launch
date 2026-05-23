@@ -1,5 +1,99 @@
 # Changelog
 
+## v0.1.6 — 2026-05-23 (Sprint 5 — Pilot Hardening & Security MEDIUM closure)
+
+Pre-pilot hardening release. Closes Sprint 3 audit MEDIUM security findings
+(#25 TOCTOU + #26 CLI injection) + H2 Tokio concurrency closure + 2 Sprint 4
+discoveries (#35 a11y instance counter + #36 zip-bomb time defense). Includes
+Opus max audit pass перед PR.
+
+### Security — Sprint 5 Batch 3 (Sprint Buffer #25 + #26)
+
+- **#25** — TOCTOU race closure в `verify_reproducibility`. Previously called
+  `raw_path.exists()` then separate `canonicalize()` — attacker window для
+  symlink swap. Single canonicalize() call с `ErrorKind::NotFound` mapped к
+  `BundleNotFound`, other kinds к `Other`. INV-48 attack tests: 1 cross-platform
+  regression + 2 `#[cfg(unix)]` symlink scenarios.
+- **#26** — CLI command injection sanitization. `bundleFileName` embedded в
+  `aurora-launch-reproduce "{name}" {hash}` `<pre>` block — chars outside
+  `[A-Za-z0-9._\-() ]` могли escape double-quote и execute arbitrary commands
+  при copy-paste к shell. Whitelist sanitizer + placeholder `<имя_файла>` +
+  warning UI prompting manual substitution. 17 vitest cases (3 whitelist + 13
+  injection vectors + 1 display preservation). New i18n key
+  `cert.export.unsafe_filename_warning`.
+
+### Concurrency — Sprint 5 Batch 4 (Sprint 4 Batch 7 H2 deferred)
+
+- `verify_reproducibility` async fn выполняет sync I/O (std::fs::File::open +
+  zip + streaming SHA-256 над всем bundle). Под concurrent UI load это
+  blocks Tokio worker thread → IPC dispatch starves. Refactored через
+  `tokio::task::spawn_blocking`: outer async wrapper unchanged (Tauri contract
+  preserved), sync body extracted в private `verify_reproducibility_blocking`.
+  JoinError → `AuroraError::Other`. Concurrent test (4 parallel calls на
+  2-worker multi_thread runtime) passes без deadlock.
+
+### Defense-in-depth — Sprint 5 Batch 5 (Sprint Buffer #36)
+
+- **#36** — zip-bomb time exhaustion defense. Sprint 4 S2 streaming SHA-256
+  prevented OOM, но attacker мог claim massive `size_bytes` в manifest с tiny
+  ZIP compressed payload → hash loop crunches фабрикованный logical size.
+  Upfront ratio check (`MAX_DECOMPRESSION_RATIO = 1000`) между
+  `archive.by_name()` и hash loop. Pathological ratios → `status="error"` с
+  descriptive RU reason. Threshold safely выше realistic compression ratios.
+
+### Accessibility — Sprint 5 Batch 5 (Sprint Buffer #35)
+
+- **#35** — `ChartWithDrillDown` instance counter moved из `<script lang="ts">`
+  (instance scope) в `<script module>` block (module scope). Previously каждый
+  component instantiation reset counter к 0 → two ChartWithDrillDown на same
+  page получали same `cdd1` titleId → aria-labelledby collisions. Vitest case
+  «два экземпляра имеют разные titleId» un-skipped и passes.
+
+### Hardened — Sprint 5 audit pass (Opus max)
+
+- TOCTOU residual race (canonicalize ↔ File::open OS-level window) documented
+  в code comment с Aurora Launch threat model rationale. Full closure требует
+  `fdpath()` pattern (cross-platform unstable) — tracked для server / multi-
+  tenant deployment.
+- Newline + carriage return injection test cases (`bundle\nrm.aurora`,
+  `bundle\rls -la.aurora`) added к CertExportModal.test.ts.
+- 5 secondary findings (O1-O5) documented для Sprint 6 — Windows symlink
+  behavior, D9 boundary cases, broken symlink, spawn_blocking pool exhaustion,
+  en.json i18n fallback.
+
+### Hygiene — Sprint 5 Batch 1
+
+- 7 CC-Sessions historical logs (Sprint 0 → Sprint 4) committed напрямую в
+  main. Sprint Buffer audit — 7 Sprint 4 closures (#27, #28, #30, #31, #32,
+  #33, #34) перенесены к `aurora-meta/SPRINT_BUFFER_ARCHIVE.md`.
+
+### Sprint Buffer discoveries (deferred к Sprint 6)
+
+- **#41** — bundle.rs sibling fns (`open_bundle`, `list_bundle_entries`,
+  `read_bundle_entry`, `save_bundle`) имеют тот же anti-pattern что closed H2.
+  `State<'_, AppState>` lifetime juggling делает spawn_blocking refactor
+  сложнее — ~2-3h estimate.
+
+### Verification
+
+| Suite | Result |
+|---|---|
+| cargo test --lib | 56 passed, 0 failed (+3 since v0.1.5) |
+| cargo test --lib commands::methodology_cert::tests | 19 passed (+4 для #25, #36, H2) |
+| npx vitest run tests/unit/ | 730 passed, 1 skipped (was 727/2; +2 newline/CR injection, -1 #35 un-skip) |
+| npx svelte-check | 0 errors, 2 pre-existing warnings |
+
+### Backward compatibility
+
+- `verify_reproducibility` IPC signature unchanged. ReproducibilityResult fields
+  unchanged.
+- CertExportModal props unchanged. New i18n key `cert.export.unsafe_filename_warning`
+  с `default` RU fallback — graceful если EN locale ключ отсутствует.
+- D9 size sanity check uses `if let Some` — backward compat с manifests без
+  `size_bytes` field.
+
+---
+
 ## v0.1.5 — 2026-05-21 (Sprint 4 — Pilot Scenarios + A11y + Sprint 3 Hardening)
 
 Pre-pilot release. Closes Sprint 3 audit P0 findings + adds pharma pilot
