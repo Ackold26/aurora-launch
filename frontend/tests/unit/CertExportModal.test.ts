@@ -101,6 +101,10 @@ describe('CertExportModal — shell injection vectors (Sprint 5 D3 #26)', () => 
     'bundle\\";rm.aurora',
     // Cyrillic content (UTF-8 outside ASCII whitelist) — placeholder rendered
     'бандл.aurora',
+    // Newline injection — could split command (no path separator)
+    'bundle\nrm.aurora',
+    // Carriage return — может скрыть injected content в terminal display
+    'bundle\rls -la.aurora',
     // Tab char (whitespace control)
     'bundle\trm.aurora',
     // Ampersand для background job (cmd & cmd2)
