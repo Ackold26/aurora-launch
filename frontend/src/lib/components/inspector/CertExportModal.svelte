@@ -42,6 +42,20 @@
     bundlePath.split(/[\\\/]/).pop() ?? bundlePath,
   );
 
+  // Sprint 5 D3 #26 — sanitize filename для CLI <pre> context. Filename
+  // embedded в shell-quoting position (`aurora-launch-reproduce "{name}" ...`)
+  // — chars outside whitelist могут escape quoting (e.g. `bundle"; rm -rf $HOME #.aurora`)
+  // и execute arbitrary commands при copy-paste к shell.  Whitelist: ASCII
+  // alphanumerics, dot, underscore, dash, parens, space. Other names render
+  // placeholder + user manually substitutes filename.
+  const SAFE_FILENAME_PATTERN = /^[A-Za-z0-9._\-() ]+$/;
+  const bundleFileNameForCli = $derived(
+    SAFE_FILENAME_PATTERN.test(bundleFileName) ? bundleFileName : '<имя_файла>',
+  );
+  const bundleFileNameUnsafe = $derived(
+    !SAFE_FILENAME_PATTERN.test(bundleFileName),
+  );
+
   const certIdFull = $derived(verificationResult.composite_hash ?? '');
   const certIdShort = $derived(
     certIdFull.length > 16 ? certIdFull.slice(0, 16) + '…' : certIdFull || '—',
@@ -198,7 +212,14 @@
         <p>
           {$_('cert.export.repro_intro', { default: 'Для проверки бандла на bit-equal соответствие используйте CLI:' })}
         </p>
-        <pre class="cert-cmd cert-mono">aurora-launch-reproduce "{bundleFileName}" {certIdFull || '<hash>'}</pre>
+        <pre class="cert-cmd cert-mono">aurora-launch-reproduce "{bundleFileNameForCli}" {certIdFull || '<hash>'}</pre>
+        {#if bundleFileNameUnsafe}
+          <p class="cert-warning" role="note">
+            {$_('cert.export.unsafe_filename_warning', {
+              default: 'Имя файла содержит спецсимволы. В команде выше показан placeholder &lt;имя_файла&gt; — подставьте фактическое имя файла вручную при запуске.',
+            })}
+          </p>
+        {/if}
         <p class="cert-fineprint">
           {$_('cert.export.repro_explanation', {
             default: 'Команда сверит композитный hash бандла с зафиксированным в сертификате значением. Расхождение указывает на изменение содержимого бандла или версии Aurora Launch, использованной при его сборке.',
@@ -434,6 +455,16 @@
   .cert-fineprint {
     color: #555;
     font-size: 0.8125rem;
+  }
+
+  .cert-warning {
+    color: #92400e;
+    background: #fef3c7;
+    border-left: 3px solid #d97706;
+    padding: 8px 12px;
+    margin: 8px 0;
+    font-size: 0.875rem;
+    border-radius: 2px;
   }
 
   .cert-footer {

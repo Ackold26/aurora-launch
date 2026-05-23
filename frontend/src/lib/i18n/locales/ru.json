@@ -418,6 +418,7 @@
   "cert.export.section_reproducibility": "Воспроизводимость",
   "cert.export.repro_intro": "Для проверки бандла на bit-equal соответствие используйте CLI:",
   "cert.export.repro_explanation": "Команда сверит композитный hash бандла с зафиксированным в сертификате значением. Расхождение указывает на изменение содержимого бандла или версии Aurora Launch, использованной при его сборке.",
+  "cert.export.unsafe_filename_warning": "Имя файла содержит спецсимволы. В команде выше показан placeholder <имя_файла> — подставьте фактическое имя файла вручную при запуске.",
   "cert.export.generated_at": "Сертификат сгенерирован:",
   "cert.export.app_version": "Версия Aurora Launch:",
   "cert.export.disclaimer": "Aurora Launch © Aurora AI. Документ не является юридически обязывающим, а отражает результаты статистической методологии прогнозирования.",
