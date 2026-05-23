@@ -64,9 +64,11 @@ describe('TrustScore', () => {
 
   // ---------- expert mode ----------
 
-  it('expertMode=false → toggle button hidden', () => {
+  it('expertMode=false → expand/collapse toggle button hidden', () => {
     render(TrustScore, defaultProps({ expertMode: false }));
-    expect(screen.queryByRole('button')).toBeNull();
+    // Sprint 6 audit pass V1: explain link visible regardless of mode (ungated).
+    // Expand toggle remains expertMode-gated. Match toggle specifically.
+    expect(screen.queryByRole('button', { name: /Подробнее|Свернуть/ })).toBeNull();
   });
 
   it('expertMode=true → toggle button visible', () => {
@@ -97,15 +99,20 @@ describe('TrustScore', () => {
   });
 
   // ---------- Sprint 6 D5 #22 — explain link drill-down ----------
+  //
+  // Sprint 6 audit pass V1 decision: explain link visible regardless of
+  // expertMode — educational link ≠ diagnostic clutter. Production integration
+  // (ForecastTab.svelte:296) uses `expertMode={!trustIsRealCompute}` semantic
+  // что would hide button для real-compute pilot users — undesirable.
 
-  it('expertMode=true → explain link "Что значат эти 8 измерений?" visible', () => {
+  it('explain link "Что значат эти 8 измерений?" visible in expertMode=true', () => {
     render(TrustScore, defaultProps({ expertMode: true }));
     expect(screen.getByRole('button', { name: /8 измерений/ })).toBeTruthy();
   });
 
-  it('expertMode=false → explain link hidden (manager mode hides drill-down)', () => {
+  it('explain link visible in expertMode=false (educational, ungated)', () => {
     render(TrustScore, defaultProps({ expertMode: false }));
-    expect(screen.queryByRole('button', { name: /8 измерений/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /8 измерений/ })).toBeTruthy();
   });
 
   it('click explain link → DrillDownModal opens с trust_score_8d formula', async () => {
