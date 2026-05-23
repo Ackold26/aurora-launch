@@ -489,6 +489,14 @@ fn verify_reproducibility_blocking(
     // exists() check и path resolution. canonicalize() returns ErrorKind::NotFound
     // for missing files (mapped к BundleNotFound) или resolves symlinks atomically
     // — attacker не может swap path между existence check и use.
+    //
+    // **Residual race (accepted):** Между `canonicalize()` resolving и
+    // `File::open(&path)` below остаётся узкое OS-level window — attacker с
+    // write access к resolved location может swap содержимое или удалить файл.
+    // Полное закрытие требует fdpath() pattern (cross-platform unstable).
+    // Для Aurora Launch threat model (single-user desktop app, bundles в
+    // user-controlled FS) — приемлемый residual risk. Full closure tracked
+    // для server / multi-tenant deployment если applicable.
     let path = match raw_path.canonicalize() {
         Ok(p) => p,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
