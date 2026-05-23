@@ -41,6 +41,130 @@ mod block_3_tests {
         assert!(entry_name_safe("models/proxy.pickle"));
         assert!(entry_name_safe("nested/deeply/file.bin"));
     }
+
+    // ── Sprint 6 D7 #41 — spawn_blocking refactor tests ─────────────────
+
+    use sha2::Digest;
+    use std::io::Write;
+
+    /// Helper: build minimal valid .aurora bundle для testing _blocking helpers.
+    fn build_test_bundle(dir: &std::path::Path, name: &str) -> PathBuf {
+        let entry_content = b"hello world".to_vec();
+        let entry_sha = hex::encode(sha2::Sha256::digest(&entry_content));
+        let manifest = serde_json::json!({
+            "manifest_version": "1.0",
+            "schema_version": "3.0",
+            "revision": 0,
+            "files": {
+                "data.txt": {
+                    "sha256": entry_sha,
+                    "size_bytes": entry_content.len() as u64,
+                }
+            },
+        });
+        let manifest_bytes = serde_json::to_vec_pretty(&manifest).unwrap();
+
+        let bundle_path = dir.join(name);
+        let file = std::fs::File::create(&bundle_path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let opts: zip::write::SimpleFileOptions = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        zip.start_file(MANIFEST_FILENAME, opts).unwrap();
+        zip.write_all(&manifest_bytes).unwrap();
+        zip.start_file("data.txt", opts).unwrap();
+        zip.write_all(&entry_content).unwrap();
+        zip.finish().unwrap();
+        bundle_path
+    }
+
+    #[test]
+    fn open_bundle_blocking_returns_handle_for_valid_zip() {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = build_test_bundle(dir.path(), "test.aurora");
+        let result =
+            open_bundle_blocking(bundle.to_string_lossy().to_string()).expect("open succeeds");
+        assert_eq!(result.0.source_format, "zip");
+        assert!(result.0.size_bytes > 0);
+        assert_eq!(result.0.revision, 0);
+        assert!(!result.2.is_empty(), "handle_id non-empty");
+    }
+
+    #[test]
+    fn open_bundle_blocking_rejects_nonexistent_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let bogus = dir.path().join("ghost.aurora");
+        let result = open_bundle_blocking(bogus.to_string_lossy().to_string());
+        assert!(matches!(result, Err(AuroraError::BundleNotFound { .. })));
+    }
+
+    #[test]
+    fn list_bundle_entries_blocking_returns_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = build_test_bundle(dir.path(), "test.aurora");
+        let entries = list_bundle_entries_blocking(bundle).expect("list succeeds");
+        assert_eq!(entries.len(), 1, "manifest.json filtered out");
+        assert_eq!(entries[0], "data.txt");
+    }
+
+    #[test]
+    fn read_bundle_entry_blocking_returns_payload() {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = build_test_bundle(dir.path(), "test.aurora");
+        let manifest_files = serde_json::json!({
+            "data.txt": {
+                "sha256": hex::encode(sha2::Sha256::digest(b"hello world")),
+                "size_bytes": 11_u64,
+            }
+        });
+        let payload = read_bundle_entry_blocking(bundle, manifest_files, "data.txt".into())
+            .expect("read succeeds");
+        assert_eq!(payload.entry, "data.txt");
+        assert_eq!(payload.size_bytes, 11);
+        assert_eq!(payload.sha256_hex.len(), 64);
+    }
+
+    #[test]
+    fn concurrent_blocking_helpers_do_not_starve_runtime() {
+        // INV-48 attack scenario для #41 (Tokio worker starvation): без
+        // spawn_blocking wrap, 4 parallel async calls к open/list/read would
+        // each block runtime worker. С wrap — все progress concurrently.
+        //
+        // Test verifies _blocking helpers callable from multi_thread runtime
+        // с only 2 workers + 4 concurrent tasks через spawn_blocking. Without
+        // wrap (если refactor regresses) — potential deadlock либо severe latency.
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = build_test_bundle(dir.path(), "concurrent.aurora");
+
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let bundle_path = bundle.clone();
+        let results: Vec<bool> = rt.block_on(async move {
+            let p1 = bundle_path.clone();
+            let p2 = bundle_path.clone();
+            let p3 = bundle_path.clone();
+            let p4 = bundle_path.clone();
+            let h1 = tokio::task::spawn_blocking(move || list_bundle_entries_blocking(p1));
+            let h2 = tokio::task::spawn_blocking(move || list_bundle_entries_blocking(p2));
+            let h3 = tokio::task::spawn_blocking(move || list_bundle_entries_blocking(p3));
+            let h4 = tokio::task::spawn_blocking(move || list_bundle_entries_blocking(p4));
+            let (r1, r2, r3, r4) = tokio::join!(h1, h2, h3, h4);
+            vec![
+                r1.unwrap().is_ok(),
+                r2.unwrap().is_ok(),
+                r3.unwrap().is_ok(),
+                r4.unwrap().is_ok(),
+            ]
+        });
+
+        assert_eq!(results.len(), 4);
+        for (i, ok) in results.into_iter().enumerate() {
+            assert!(ok, "concurrent task {i} should succeed");
+        }
+    }
 }
 
 /// Block 3 HIGH-1 fix: zip-slip defense (mirrors Python eager + lazy readers).
@@ -71,6 +195,26 @@ pub async fn open_bundle(
     state: State<'_, AppState>,
     path: String,
 ) -> AuroraResult<BundleHandleSummary> {
+    // Sprint 6 D7 #41 — spawn_blocking wrap. open_bundle does std::fs::metadata
+    // + ZIP read + zip-slip validation — all sync I/O blocking Tokio worker.
+    // Pattern mirrors Sprint 5 D4 H2 verify_reproducibility refactor.
+    let (summary, handle, handle_id) =
+        tokio::task::spawn_blocking(move || open_bundle_blocking(path))
+            .await
+            .map_err(|e| AuroraError::Other(format!("open_bundle task panicked: {e}")))??;
+
+    state
+        .bundles
+        .lock()
+        .map_err(|_| AuroraError::Other("bundle map poisoned".into()))?
+        .insert(handle_id, handle);
+
+    Ok(summary)
+}
+
+fn open_bundle_blocking(
+    path: String,
+) -> AuroraResult<(BundleHandleSummary, OpenBundleHandle, String)> {
     let path = PathBuf::from(path);
     if !path.exists() {
         return Err(AuroraError::BundleNotFound {
@@ -179,13 +323,7 @@ pub async fn open_bundle(
         revision,
     };
 
-    state
-        .bundles
-        .lock()
-        .map_err(|_| AuroraError::Other("bundle map poisoned".into()))?
-        .insert(handle_id, handle);
-
-    Ok(summary)
+    Ok((summary, handle, handle_id))
 }
 
 #[tauri::command]
@@ -205,18 +343,27 @@ pub async fn list_bundle_entries(
     state: State<'_, AppState>,
     handle_id: String,
 ) -> AuroraResult<Vec<String>> {
-    let bundles = state
-        .bundles
-        .lock()
-        .map_err(|_| AuroraError::Other("bundle map poisoned".into()))?;
-    let handle = bundles
-        .get(&handle_id)
-        .ok_or(AuroraError::BundleHandleInvalid {
-            handle_id: handle_id.clone(),
-        })?;
-    let path = handle.path.clone();
-    drop(bundles);
+    let path = {
+        let bundles = state
+            .bundles
+            .lock()
+            .map_err(|_| AuroraError::Other("bundle map poisoned".into()))?;
+        let handle = bundles
+            .get(&handle_id)
+            .ok_or(AuroraError::BundleHandleInvalid {
+                handle_id: handle_id.clone(),
+            })?;
+        handle.path.clone()
+    };
 
+    // Sprint 6 D7 #41 — spawn_blocking wrap. ZIP re-open + central directory
+    // read can stall на large bundles. Same pattern as open_bundle/verify_reproducibility.
+    tokio::task::spawn_blocking(move || list_bundle_entries_blocking(path))
+        .await
+        .map_err(|e| AuroraError::Other(format!("list_bundle_entries task panicked: {e}")))?
+}
+
+fn list_bundle_entries_blocking(path: PathBuf) -> AuroraResult<Vec<String>> {
     let file = std::fs::File::open(&path)?;
     let archive = zip::ZipArchive::new(file).map_err(|e| AuroraError::BundleFormat {
         reason: format!("re-open ZIP: {e}"),
@@ -242,23 +389,40 @@ pub async fn read_bundle_entry(
     handle_id: String,
     entry: String,
 ) -> AuroraResult<BundleEntryPayload> {
-    let bundles = state
-        .bundles
-        .lock()
-        .map_err(|_| AuroraError::Other("bundle map poisoned".into()))?;
-    let handle = bundles
-        .get(&handle_id)
-        .ok_or(AuroraError::BundleHandleInvalid {
-            handle_id: handle_id.clone(),
-        })?;
-    let path = handle.path.clone();
-    let manifest_files = handle
-        .manifest_json
-        .get("files")
-        .cloned()
-        .unwrap_or(serde_json::Value::Object(Default::default()));
-    drop(bundles);
+    let (path, manifest_files) = {
+        let bundles = state
+            .bundles
+            .lock()
+            .map_err(|_| AuroraError::Other("bundle map poisoned".into()))?;
+        let handle = bundles
+            .get(&handle_id)
+            .ok_or(AuroraError::BundleHandleInvalid {
+                handle_id: handle_id.clone(),
+            })?;
+        let path = handle.path.clone();
+        let manifest_files = handle
+            .manifest_json
+            .get("files")
+            .cloned()
+            .unwrap_or(serde_json::Value::Object(Default::default()));
+        (path, manifest_files)
+    };
 
+    // Sprint 6 D7 #41 — spawn_blocking wrap. read_bundle_entry does std::fs +
+    // ZIP read + SHA-256 hash + base64 encode для potentially large entry —
+    // blocking Tokio worker. Same pattern as Sprint 5 D4 H2.
+    tokio::task::spawn_blocking(move || {
+        read_bundle_entry_blocking(path, manifest_files, entry)
+    })
+    .await
+    .map_err(|e| AuroraError::Other(format!("read_bundle_entry task panicked: {e}")))?
+}
+
+fn read_bundle_entry_blocking(
+    path: PathBuf,
+    manifest_files: serde_json::Value,
+    entry: String,
+) -> AuroraResult<BundleEntryPayload> {
     let entry_meta = manifest_files
         .get(&entry)
         .ok_or(AuroraError::BundleEntryNotFound { entry: entry.clone() })?;
