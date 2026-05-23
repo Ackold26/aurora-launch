@@ -95,7 +95,15 @@ fn validate_weights(weights: &std::collections::BTreeMap<String, f64>) -> Result
         }
     }
     let total: f64 = weights.values().sum();
-    if (total - 1.0).abs() > 0.05 {
+    // Sprint 6 D3 #40 — explicit 1e-9 epsilon margin против FP rounding на
+    // 0.05 boundary. Production weights summing к 0.95 ± FP epsilon (boundary
+    // case of ±5% tolerance) могут produce (sum - 1.0).abs() = 0.050000000000000044
+    // (IEEE 754 imprecision, e.g., 0.5 + 0.45). Без epsilon → false-positive
+    // reject в некоторых input orderings. Epsilon 1e-9 (~10⁻⁹) safely absorbs
+    // FP imprecision (~10⁻¹⁶ scale) без widening real tolerance к legitimate
+    // over-budget cases (next reject threshold remains effectively 5.0000001%).
+    const TOLERANCE_EPSILON: f64 = 1e-9;
+    if (total - 1.0).abs() > 0.05 + TOLERANCE_EPSILON {
         return Err(AuroraError::Other(format!(
             "weights_used must sum to ~1.0 (±0.05), got {total:.4}"
         )));
@@ -148,15 +156,45 @@ mod block_3_tests {
 
     #[test]
     fn validate_weights_within_tolerance_passes() {
-        // Sprint Buffer #40 (Sprint 4 drive-by fix): test data 0.5 + 0.45
-        // hit IEEE 754 rounding edge case. (0.5 + 0.45) - 1.0 evaluates к
-        // -0.050000000000000044 due к 0.45 not being exact-FP. abs() > 0.05
-        // tripped (false-positive) reject. Use 0.46 instead — sum 0.96 yields
-        // -0.04 (exact FP), well within tolerance. Underlying FP-edge bug в
-        // validate_weights tolerance check remains: tracked separately. Test
-        // intent preserved (sum within 5% tolerance MUST pass).
-        let w = weights(&[("a", 0.5), ("b", 0.46)]); // sum 0.96 (~4% off)
+        // Sprint 6 D3 #40 — restored к original 0.5 + 0.45 (sum 0.95) тест-case
+        // что hit FP-edge case в Sprint 4. После epsilon fix эти inputs passes
+        // deterministically. Sprint Buffer #40 closed: underlying tolerance
+        // check теперь FP-safe.
+        let w = weights(&[("a", 0.5), ("b", 0.45)]); // sum 0.95 (5% off, FP-edge)
         assert!(validate_weights(&w).is_ok());
+    }
+
+    #[test]
+    fn validate_weights_fp_edge_0_95_passes_after_epsilon_fix() {
+        // Sprint 6 D3 #40 — INV-48 attack scenario: production weights summing
+        // к 0.95 ± FP epsilon (boundary case of ±5% tolerance) могут produce
+        // (sum - 1.0).abs() = 0.050000000000000044 due к IEEE 754 imprecision.
+        // Без epsilon margin → false-positive reject в некоторых orderings.
+        // С +1e-9 epsilon → deterministic accept.
+        //
+        // Test premise verify'ит actual FP edge surfaces; assertion verify'ит
+        // fix accepts.
+        let w = weights(&[("a", 0.5), ("b", 0.45)]);
+        let sum: f64 = w.values().sum();
+        assert!(
+            (sum - 1.0).abs() > 0.05,
+            "test premise: (sum - 1.0).abs() should hit FP edge above raw 0.05 \
+             boundary (got {:.20})",
+            (sum - 1.0).abs()
+        );
+        assert!(
+            validate_weights(&w).is_ok(),
+            "FP-edge 0.95 sum must pass tolerance check after epsilon fix"
+        );
+    }
+
+    #[test]
+    fn validate_weights_clearly_off_still_rejects_after_epsilon_fix() {
+        // Sanity: real over-tolerance (6% off) MUST still reject after epsilon
+        // widening. Verifies +1e-9 epsilon не silently broadens tolerance к
+        // legitimate-reject ranges.
+        let w = weights(&[("a", 0.53), ("b", 0.53)]); // sum 1.06 (6% off)
+        assert!(validate_weights(&w).is_err());
     }
 
     #[test]
