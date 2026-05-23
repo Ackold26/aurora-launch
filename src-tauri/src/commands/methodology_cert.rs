@@ -593,6 +593,37 @@ fn verify_reproducibility_blocking(
                     continue;
                 }
             };
+
+            // Sprint 5 D9 #36 — zip-bomb size ratio defense. Sprint 4 S2 streaming
+            // SHA-256 prevented OOM, но CPU time exhaustion остаётся: attacker
+            // declares huge size_bytes в manifest (e.g., 10 GB), zip body tiny
+            // (e.g., 1 KB Stored). Streaming hash crunches фабрикованный logical
+            // size без бенефита legitимности. Upfront ratio check ДО hashing
+            // rejects pathological ratios (logical/compressed > 1000×). Threshold
+            // safely above realistic compression ratios (text ~30-50%, JSON ~10-20%).
+            const MAX_DECOMPRESSION_RATIO: u64 = 1000;
+            if let Some(claimed_size) =
+                entry_meta.get("size_bytes").and_then(|v| v.as_u64())
+            {
+                let compressed = e.compressed_size();
+                if compressed > 0
+                    && claimed_size > compressed.saturating_mul(MAX_DECOMPRESSION_RATIO)
+                {
+                    return Ok(ReproducibilityResult {
+                        status: "error".into(),
+                        files_checked,
+                        mismatches,
+                        reason: Some(format!(
+                            "Подозрительное соотношение размеров для '{}': заявлено \
+                             {} байт, упаковано {} байт (отношение > {}×) — \
+                             отказ для защиты от zip-bomb атаки",
+                            entry_name, claimed_size, compressed, MAX_DECOMPRESSION_RATIO
+                        )),
+                        composite_hash,
+                    });
+                }
+            }
+
             loop {
                 let n = e.read(&mut chunk)?;
                 if n == 0 {
@@ -1272,6 +1303,69 @@ mod tests {
         let result = run_verify(&symlink_path).expect("symlink resolves к real bundle");
         assert_eq!(result.status, "verified");
         assert_eq!(result.files_checked, 1);
+    }
+
+    // ── Sprint 5 D9 #36 — zip-bomb size ratio defense ──────────────────
+
+    #[test]
+    fn zip_bomb_size_ratio_rejected_before_hashing() {
+        // INV-48 attack scenario для #36: build bundle с manifest claiming
+        // огромный size_bytes (10 GB) но actual ZIP entry compressed_size
+        // tiny. Sprint 4 S2 streaming SHA-256 prevents OOM, но CPU still
+        // crunches фабрикованный logical size — DoS via time exhaustion.
+        // Sprint 5 D9 closes via upfront ratio check ДО hashing.
+        let dir = tempfile::tempdir().unwrap();
+        let fake_hash = hex::encode(Sha256::digest(b"x"));
+        let manifest = serde_json::json!({
+            "manifest_version": "1.0",
+            "schema_version": "3.0",
+            "aurora_app": "Aurora Launch",
+            "aurora_app_version": "0.1.6",
+            "min_app_version": "0.1.0",
+            "created_at": "2026-05-23T00:00:00Z",
+            "last_modified": "2026-05-23T00:00:00Z",
+            "project_id": "00000000-0000-0000-0000-000000000000",
+            "revision": 0,
+            "files": {
+                "bomb.bin": {
+                    "sha256": fake_hash,
+                    "size_bytes": 10_000_000_000_u64,
+                    "schema_version": null
+                }
+            },
+            "integrity_check": "strict",
+            "compression": "store"
+        });
+        let bundle = build_custom_manifest_bundle(
+            dir.path(),
+            "bomb.aurora",
+            &serde_json::to_vec(&manifest).unwrap(),
+            &[("bomb.bin", b"x")],
+        );
+
+        let result = run_verify(&bundle).expect("returns Ok with error status");
+        assert_eq!(result.status, "error");
+        let reason = result.reason.as_deref().unwrap_or("");
+        assert!(
+            reason.contains("отношение") || reason.contains("zip-bomb") || reason.contains("Подозрительное"),
+            "expected zip-bomb ratio rejection reason, got: {:?}",
+            result.reason
+        );
+    }
+
+    #[test]
+    fn small_legitimate_file_within_ratio_passes() {
+        // Sanity: легитимный small file (1 KB plain text) не triggers ratio
+        // rejection даже если compresses well. Sprint 5 D9 threshold MAX
+        // (1000×) safely above realistic legitimate compression ratios.
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = build_valid_bundle(
+            dir.path(),
+            "small.aurora",
+            &[("data/small.txt", b"hello world")],
+        );
+        let result = run_verify(&bundle).expect("legitimate bundle verifies");
+        assert_eq!(result.status, "verified");
     }
 
     // ── Sprint 5 D4 H2 — concurrent verify не blocks Tokio runtime ──────

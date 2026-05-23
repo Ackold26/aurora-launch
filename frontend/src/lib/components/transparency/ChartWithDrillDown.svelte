@@ -12,20 +12,27 @@
   INV-14: no motion artefacts in this component (no animations to reduce).
 -->
 
-<script lang="ts">
-  import type { Snippet } from 'svelte';
-  import { _ } from 'svelte-i18n';
-  import { getFormula, firstSentence } from '$lib/utils/formulas';
-  import type { FormulaEntry } from '$lib/utils/formulas';
-  import DrillDownModal from './DrillDownModal.svelte';
-
-  // ── Instance ID (module-level counter, SSR-safe) ─────────────────────────
+<script module lang="ts">
+  // ── Instance ID (module-level counter, shared across instances) ──────────
+  //
+  // Sprint 5 D8 #35: counter must be в `<script module>` block для proper
+  // module-level scope. Previously declared в `<script lang="ts">` (instance
+  // scope) — every instantiation reset к 0, два ChartWithDrillDown на same
+  // page получали same `cdd1` titleId → aria-labelledby collisions.
 
   let _instanceCounter = 0;
   function nextInstanceId(): string {
     _instanceCounter += 1;
     return `cdd${_instanceCounter}`;
   }
+</script>
+
+<script lang="ts">
+  import type { Snippet } from 'svelte';
+  import { _ } from 'svelte-i18n';
+  import { getFormula, firstSentence } from '$lib/utils/formulas';
+  import type { FormulaEntry } from '$lib/utils/formulas';
+  import DrillDownModal from './DrillDownModal.svelte';
 
   // ── Props ─────────────────────────────────────────────────────────────────
 
