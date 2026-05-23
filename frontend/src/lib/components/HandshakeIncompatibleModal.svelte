@@ -74,7 +74,12 @@
     {#if result?.advice}
       <p class="advice">{result.advice}</p>
     {/if}
-    <p class="warning-box">{$_('handshake_modal.warning')}</p>
+    <!--
+      Sprint 8 audit hotfix A#1: {@html} preserves <strong> emphasis lost during
+      Sprint 8 D1 i18n extraction. Source = project-controlled JSON (en.json /
+      ru.json в repo) — no external user input, XSS surface non-existent.
+    -->
+    <p class="warning-box">{@html $_('handshake_modal.warning')}</p>
   {/snippet}
 
   {#snippet actions()}

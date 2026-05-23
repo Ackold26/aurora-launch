@@ -297,7 +297,7 @@
         pushToast({
           level: 'danger',
           title: $_('wizard.toast.validation_failed.title'),
-          body: result.message ?? result.verdict ?? 'Проверьте данные и роли колонок.',
+          body: result.message ?? result.verdict ?? $_('wizard.toast.validation_failed.body_fallback'),
         });
         validationDone = false;
         return false;
@@ -576,7 +576,7 @@
     try {
       const { save } = await import('@tauri-apps/plugin-dialog');
       const targetPath = await save({
-        title: 'Сохранить файл проекта Aurora Launch',
+        title: $_('wizard.save_dialog.title'),
         filters: [{ name: 'Aurora bundle', extensions: ['aurora'] }],
         defaultPath: 'launch-forecast.aurora',
       });
@@ -625,7 +625,7 @@
       track('version_save', { revision: 0 });
       pushToast({
         level: 'success',
-        title: 'Файл проекта сохранён',
+        title: $_('wizard.toast.saved.title'),
         body: `${targetPath} (${composed.byte_size} байт)`,
       });
 
