@@ -1,5 +1,87 @@
 # Changelog
 
+## v0.2.2 — 2026-05-23 (Sprint 8 — Tech debt Tier B2)
+
+Tech debt cleanup release. Closes Sprint Buffer #21 (ReproduceModal refactor),
+#29 (native button), #39 final (i18n full closure for layout/handshake/welcome
+remainder), #47 (TrustScore expertMode semantic rename). Tier B3 architectural
+items (THREAT_MODEL.md, proptest, SB template) defer к Sprint 9 candidate.
+
+### A11y — Sprint 8 Batch 1 D3 (Sprint Buffer #29)
+
+- **NumberWithDrillDown value span → native `<button>`.** Replace `<span
+  role="button" tabindex="0">` с `<button type="button">` + CSS reset
+  preserving inline appearance. ARIA APG preference: better OS accessibility
+  integration (NVDA/JAWS/VoiceOver native button announcement). Defensive
+  `onkeydown` handler retained для jsdom test compatibility (real browser
+  native button handles Enter/Space natively).
+- Test updated: `role="button"` attribute assertion → `tagName === "BUTTON"`.
+
+### Localization — Sprint 8 Batch 1 D1 (Sprint Buffer #39 final closure)
+
+- **HandshakeIncompatibleModal i18n extraction** — 4 hardcoded RU strings →
+  `handshake_modal.*` keys (title, default_reason, warning, button_restart)
+  с EN parity. Note: `<strong>` tag в warning text flattened к plain string
+  (warning-box border + bg preserve visual prominence).
+- **`+layout.svelte` i18n extraction** — 9 hardcoded strings → `layout.*` keys
+  (save_dialog.title, toast.{saved,save_failed,feedback_failed}, nav.aria_label,
+  revision_badge.tooltip, save_button.{aria_label,saving,save}, loading_screen,
+  feedback_hint). **Mixed English в RU UI fixed:** "Feedback capture failed" /
+  "Primary navigation" / "Loading…" → proper i18n с RU defaults.
+- **`+page.svelte` welcome verified clean** — все user-facing strings уже в
+  child components (DashboardOverviewCard, EmptyDashboard, etc.) с i18n.
+- **#39 fully closed** (wizard + ProxyPickerCard + Sprint 8 layout/handshake/
+  welcome remainder). Sprint 6 D6 + Sprint 7 D4-B + Sprint 8 D1 combined.
+
+### Refactor — Sprint 8 Batch 2 D2 (Sprint Buffer #21)
+
+- **ReproduceModal wrapped в `<NotificationBanner level="prompt">`.** Same
+  pattern as DrillDownModal (Sprint 3 D1). Delegate focus-trap, ESC handler,
+  ARIA role="dialog", backdrop, auto-focus, focus restoration на opener к
+  base component (~50 LOC removed: backdrop wrapper, modal-content div,
+  header + close button, `$effect` для closeButtonEl, ESC keydown handler).
+- File 192 LOC → 117 LOC (-39%).
+- Trade-off: backdrop-click dismiss lost (NotificationBanner intentionally
+  omits для prompt level — must be intentional dismiss). Acceptable для
+  cert reproduce flow (low frequency, dedicated close button + ESC remain).
+- E2E test compatibility verified: `role="dialog"` + titleId still match.
+- Hardcoded RU microcopy preserved → new **Sprint Buffer #48** (i18n
+  extraction, separate scope from #21 refactor).
+
+### Refactor — Sprint 8 Batch 3 D4 (Sprint Buffer #47)
+
+- **TrustScore prop `expertMode` → `previewMode` rename.** Sprint 6 audit V1
+  decoupled explain link от `expertMode` (educational link visible always);
+  root semantic mismatch remained: ForecastTab passed
+  `expertMode={!trustIsRealCompute}` — anti-intuitive ("expert" usually = more
+  info, but here true = preview state with similarity-only fallback, no
+  Bayesian fit).
+- New name `previewMode` describes CAUSE (preview state), не EFFECT (extra
+  diagnostics). Matches what's passed: `!trustIsRealCompute` = "we're in
+  preview state". Future product policy change (preview gating right/wrong)
+  trivially flips `previewMode={X}` без semantic refactor.
+- Behavior unchanged. JSDoc explains inverted-by-design semantic.
+- Scope: TrustScore.svelte (Props + default + 2 conditionals + V1 comment) +
+  ForecastTab.svelte:296 (prop name only) + TrustScore.test.ts (18 tests).
+- **NOT touched:** CertChainViewer.expertMode, ForecastHistory.expertMode,
+  history route checkbox — standard semantic, intentionally preserved.
+
+### Verification
+
+- vitest **733/734** pass (1 skipped) — no regression
+- cargo unit tests **68/68** pass
+- svelte-check 0 errors (2 pre-existing warnings)
+- RU/EN parity **475=475**
+
+### Deferred from Sprint 8 (Sprint 9 candidates)
+
+- **#48 (NEW)** ReproduceModal i18n extraction (13 strings deferred from #21)
+- **D5-D7 Tier B3** — THREAT_MODEL.md draft (~2h Opus max), proptest для D9
+  invariants (~2h), SB template Impact/Effort (~30 min)
+- **D8 paths.rs:15 doctest fix** — pre-existing ASCII art tree в doc comment
+
+---
+
 ## v0.2.1 — 2026-05-23 (Sprint 7 — Pre-pilot finalization Tier B1)
 
 Incremental pre-pilot release. Closes Sprint Buffer #24 (Windows timer flakes)
