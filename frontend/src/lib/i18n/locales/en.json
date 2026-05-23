@@ -473,7 +473,7 @@
   "layout.save_button.saving": "Saving…",
   "layout.save_button.save": "Save",
   "layout.loading_screen": "Loading…",
-  "layout.feedback_hint": "Cmd+Shift+F · Esc to close",
+  "layout.feedback_hint": "{shortcut} · Esc to close",
   "wizard.toast.validation_failed.body_fallback": "Check data and column roles.",
   "wizard.save_dialog.title": "Save Aurora Launch project file",
   "wizard.toast.saved.title": "Project file saved",
