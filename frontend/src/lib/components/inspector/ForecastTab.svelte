@@ -293,7 +293,7 @@
               score={trustResult.score}
               verdict={trustResult.tier}
               diagnostics={trustResult.diagnostics}
-              previewMode={!trustIsRealCompute}
+              showAdvancedDiagnostics={!trustIsRealCompute}
             />
           </div>
         {/if}

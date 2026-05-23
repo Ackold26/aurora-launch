@@ -1,6 +1,6 @@
 [package]
 name = "aurora-launch"
-version = "0.2.3"
+version = "0.2.4"
 description = "Aurora Launch — premium Bayesian forecast workspace для new brands"
 authors = ["Aurora AI"]
 license = "Proprietary"

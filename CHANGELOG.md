@@ -1,5 +1,40 @@
 # Changelog
 
+## v0.2.4 — 2026-05-24 (Sprint 10 — B1 polish)
+
+Polish release — single behavior-preserving rename closing last Sprint 8 audit
+NICE finding. No new features.
+
+### Refactor — Sprint 10 B1 (Sprint 8 audit NICE polish)
+
+- **TrustScore prop `previewMode` → `showAdvancedDiagnostics` rename.** Sprint
+  8 D4 (#47) renamed original `expertMode` → `previewMode` to match callsite
+  CAUSE (preview state). Sprint 8 audit NICE finding noted name still inverted
+  relative к standard prop-naming convention (boolean `[verb]Mode` should mean
+  "in [verb] mode"; `previewMode` semantically meant "we're в preview state,
+  therefore show advanced diagnostics").
+- New name describes EFFECT (shows advanced diagnostics) — intuitive
+  prop-naming convention. Future readers не нужны JSDoc для понимания, name
+  self-documents.
+- Behavior unchanged. ForecastTab callsite logic same (boolean expression
+  `{!trustIsRealCompute}` preserved — preview-state users get advanced
+  diagnostics, real-compute users get clean Manager mode).
+- Scope: TrustScore.svelte (Props interface + default + 2 conditional renders
+  + Sprint 6 V1 audit comment + JSDoc text), ForecastTab.svelte:296 (prop
+  name only), TrustScore.test.ts (18 tests `replace_all`).
+- **NOT touched:** CertChainViewer/ForecastHistory/history checkbox
+  `expertMode` — standard semantic, intentionally preserved (Sprint 8 D4
+  scope discipline).
+
+### Verification
+
+- vitest **733/734** pass (1 skipped) — no regression
+- cargo unit tests **68/68** pass
+- svelte-check 0 errors (2 pre-existing warnings)
+- RU/EN i18n parity **493=493** (no i18n changes)
+
+---
+
 ## v0.2.3 — 2026-05-24 (Sprint 9 — Tier B1 quick wins)
 
 Pre-pilot cleanup release. Closes Sprint Buffer #48 (ReproduceModal i18n full

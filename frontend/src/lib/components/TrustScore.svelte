@@ -39,24 +39,33 @@
     verdict?: string;
     diagnostics?: DiagnosticDetail[];
     /**
-     * Sprint 8 D4 (#47): renamed from `expertMode` (inverted semantic confused
-     * readers — ForecastTab passed `!trustIsRealCompute` meaning "we're in
-     * preview state, show extra cautionary diagnostics").
+     * Sprint 10 B1: renamed from `previewMode` (Sprint 8 D4 #47) → semantic
+     * intuitive name describing WHAT prop does (shows advanced diagnostics)
+     * vs WHY callsite passes true (we're в preview state).
+     *
+     * Sprint 8 D4 history: original prop `expertMode` had inverted semantic
+     * (ForecastTab passed `expertMode={!trustIsRealCompute}` — "expert" usually
+     * means more info but callsite meant preview state). Sprint 8 renamed к
+     * `previewMode` matching CAUSE. Sprint 10 audit NICE finding: still
+     * inverted relative к standard prop-naming convention (boolean prop named
+     * `[verb]Mode` should mean "in [verb] mode"; here it meant "in preview
+     * state, therefore show advanced diagnostics").
      *
      * When true: shows expand/collapse toggle button + (when expanded) the
      * diagnostics section. Production integration: ForecastTab passes
-     * `previewMode={!trustIsRealCompute}` so preview-state users (similarity-
-     * only fallback, no Bayesian fit) see additional diagnostics to compensate
-     * для missing rigorous compute. Real-compute users get clean Manager mode.
+     * `showAdvancedDiagnostics={!trustIsRealCompute}` so preview-state users
+     * (similarity-only fallback, no Bayesian fit) see additional diagnostics
+     * to compensate для missing rigorous compute. Real-compute users get
+     * clean Manager mode.
      */
-    previewMode?: boolean;
+    showAdvancedDiagnostics?: boolean;
   }
 
   let {
     score,
     verdict,
     diagnostics = [],
-    previewMode = false,
+    showAdvancedDiagnostics = false,
   }: Props = $props();
 
   // Sprint 6 D5 #22 — drill-down link для 8-dim trust score formula.
@@ -91,10 +100,11 @@
     <div class="trust-label">{$_("trustScore.label")}</div>
     <div class="trust-header-actions">
       <!-- Sprint 6 audit pass V1: explain link is educational (about methodology),
-           not diagnostic clutter — visible regardless of previewMode. Pharma
-           pilot users с real trust score equally want methodology explanation,
-           не только preview/fallback users. Sprint 8 D4: prop renamed
-           expertMode → previewMode (#47 — clearer semantic). -->
+           not diagnostic clutter — visible regardless of showAdvancedDiagnostics.
+           Pharma pilot users с real trust score equally want methodology
+           explanation, не только preview/fallback users. Sprint 8 D4: renamed
+           expertMode → previewMode (#47); Sprint 10 B1: renamed previewMode →
+           showAdvancedDiagnostics для intuitive prop-naming convention. -->
       <button
         type="button"
         class="trust-explain-link"
@@ -102,7 +112,7 @@
       >
         {$_("trustScore.explain_8d_button", { default: "Что значат эти 8 измерений?" })}
       </button>
-      {#if previewMode}
+      {#if showAdvancedDiagnostics}
         <button
           type="button"
           class="trust-expand-toggle"
@@ -128,7 +138,7 @@
     </div>
   </div>
 
-  {#if previewMode && expanded && diagnostics.length > 0}
+  {#if showAdvancedDiagnostics && expanded && diagnostics.length > 0}
     <section id="trust-diagnostics" class="trust-diagnostics" aria-label={$_("trustScore.diagnostics_label")}>
       <h4 class="trust-diagnostics-title">{$_("trustScore.diagnostics_title")}</h4>
       <dl class="trust-diagnostics-list">
