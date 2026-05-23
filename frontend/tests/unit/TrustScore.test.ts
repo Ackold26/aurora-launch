@@ -71,7 +71,9 @@ describe('TrustScore', () => {
 
   it('expertMode=true → toggle button visible', () => {
     render(TrustScore, defaultProps({ expertMode: true }));
-    expect(screen.getByRole('button')).toBeTruthy();
+    // Sprint 6 D5 #22: ≥2 buttons in expert mode — explain link + expand toggle.
+    // Match expand toggle specifically by its label.
+    expect(screen.getByRole('button', { name: /Подробнее|Свернуть/ })).toBeTruthy();
   });
 
   it('expertMode=false → diagnostics section absent', () => {
@@ -87,10 +89,31 @@ describe('TrustScore', () => {
       expertMode: true,
       diagnostics: [{ label: 'R̂', value: '1.00', status: 'good' }]
     }));
-    const btn = screen.getByRole('button');
+    // Sprint 6 D5 #22: select expand toggle (not explain link).
+    const btn = screen.getByRole('button', { name: /Подробнее|Свернуть/ });
     await fireEvent.click(btn);
     expect(screen.getByLabelText('Подробная диагностика')).toBeTruthy();
     expect(screen.getByText('R̂')).toBeTruthy();
+  });
+
+  // ---------- Sprint 6 D5 #22 — explain link drill-down ----------
+
+  it('expertMode=true → explain link "Что значат эти 8 измерений?" visible', () => {
+    render(TrustScore, defaultProps({ expertMode: true }));
+    expect(screen.getByRole('button', { name: /8 измерений/ })).toBeTruthy();
+  });
+
+  it('expertMode=false → explain link hidden (manager mode hides drill-down)', () => {
+    render(TrustScore, defaultProps({ expertMode: false }));
+    expect(screen.queryByRole('button', { name: /8 измерений/ })).toBeNull();
+  });
+
+  it('click explain link → DrillDownModal opens с trust_score_8d formula', async () => {
+    render(TrustScore, defaultProps({ expertMode: true }));
+    const btn = screen.getByRole('button', { name: /8 измерений/ });
+    await fireEvent.click(btn);
+    // Modal title from formulas.ts: "Trust Score (8 измерений)"
+    expect(screen.getByText(/Trust Score \(8 измерений\)/)).toBeTruthy();
   });
 
   // ---------- aria ----------

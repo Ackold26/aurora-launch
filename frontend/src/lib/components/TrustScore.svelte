@@ -26,6 +26,7 @@
 
 <script lang="ts">
   import { _ } from 'svelte-i18n';
+  import DrillDownModal from './transparency/DrillDownModal.svelte';
 
   interface DiagnosticDetail {
     label: string;
@@ -46,6 +47,16 @@
     diagnostics = [],
     expertMode = false,
   }: Props = $props();
+
+  // Sprint 6 D5 #22 — drill-down link для 8-dim trust score formula. Только в
+  // expert mode (Manager mode user видит только score + verdict, не formula).
+  let explainOpen = $state(false);
+  function openExplain() {
+    explainOpen = true;
+  }
+  function closeExplain() {
+    explainOpen = false;
+  }
 
   // Score-to-tier mapping (INV-25 Manager mode)
   const tier = $derived.by(() => {
@@ -69,15 +80,24 @@
   <header class="trust-header">
     <div class="trust-label">{$_("trustScore.label")}</div>
     {#if expertMode}
-      <button
-        type="button"
-        class="trust-expand-toggle"
-        onclick={toggleExpanded}
-        aria-expanded={expanded}
-        aria-controls="trust-diagnostics"
-      >
-        {expanded ? $_("trustScore.collapse") : $_("trustScore.expand")}
-      </button>
+      <div class="trust-header-actions">
+        <button
+          type="button"
+          class="trust-explain-link"
+          onclick={openExplain}
+        >
+          {$_("trustScore.explain_8d_button", { default: "Что значат эти 8 измерений?" })}
+        </button>
+        <button
+          type="button"
+          class="trust-expand-toggle"
+          onclick={toggleExpanded}
+          aria-expanded={expanded}
+          aria-controls="trust-diagnostics"
+        >
+          {expanded ? $_("trustScore.collapse") : $_("trustScore.expand")}
+        </button>
+      </div>
     {/if}
   </header>
 
@@ -108,6 +128,12 @@
   {/if}
 </article>
 
+<DrillDownModal
+  open={explainOpen}
+  onClose={closeExplain}
+  formulaKey="trust_score_8d"
+/>
+
 <style>
   .trust-score {
     display: flex;
@@ -135,6 +161,36 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--spacing-3);
+  }
+
+  .trust-header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+  }
+
+  /* Sprint 6 D5 #22 — explain-link styled as subtle text button (linkish). */
+  .trust-explain-link {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: var(--color-primary, #2563eb);
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 3px;
+    font-size: 0.875rem;
+  }
+
+  .trust-explain-link:hover {
+    text-decoration-style: solid;
+  }
+
+  .trust-explain-link:focus-visible {
+    outline: 2px solid var(--color-primary, #2563eb);
+    outline-offset: 2px;
+    border-radius: 2px;
   }
 
   .trust-label {

@@ -231,7 +231,7 @@
     showRecoveryDialog = false;
     pushToast({
       level: 'info',
-      title: 'Продолжаем с того места',
+      title: $_('wizard.toast.session_restored.title'),
       body: `Шаг ${(step ?? 0) + 1} из ${STEPS.length}`,
     });
   }
@@ -296,7 +296,7 @@
       if (result.status === 'error') {
         pushToast({
           level: 'danger',
-          title: 'Не пройдена валидация',
+          title: $_('wizard.toast.validation_failed.title'),
           body: result.message ?? result.verdict ?? 'Проверьте данные и роли колонок.',
         });
         validationDone = false;
@@ -304,7 +304,7 @@
       }
       // Show warnings as info — не блокируем переход.
       for (const w of result.warnings ?? []) {
-        pushToast({ level: 'info', title: w.message ?? 'Внимание', body: '' });
+        pushToast({ level: 'info', title: w.message ?? $_('wizard.toast.attention.title'), body: '' });
       }
       validationDone = true;
       lastValidatedSignature = roleSignature;
@@ -312,7 +312,7 @@
     } catch (e) {
       pushToast({
         level: 'danger',
-        title: 'Ошибка валидации',
+        title: $_('wizard.toast.validation_error.title'),
         body: String(e),
       });
       validationDone = false;
@@ -360,7 +360,7 @@
         // File reader port 2026-05-18: analyze wide table via sidecar
         const result = await ipc.analyzeDataFile({ path: selected, n_rows: 20 });
         if (result.status === 'error') {
-          throw new Error(result.message ?? 'Ошибка анализа файла');
+          throw new Error(result.message ?? $_('wizard.toast.file_analyze_error.title'));
         }
 
         // Populate preview state
@@ -398,13 +398,13 @@
 
         pushToast({
           level: 'success',
-          title: 'Файл загружен',
+          title: $_('wizard.toast.file_loaded.title'),
           body: `${result.shape?.[0] ?? 0} строк · ${result.shape?.[1] ?? 0} колонок`,
         });
       } catch (e) {
         pushToast({
           level: 'danger',
-          title: 'Не удалось прочитать файл',
+          title: $_('wizard.toast.file_read_error.title'),
           body: String(e),
         });
         previewHeaders = [];
@@ -568,7 +568,7 @@
   // в памяти), поэтому Inspector M-09 reproduce работал в preview-режиме.
   async function saveBundle() {
     if (!forecastCompleted || forecastPoints.length === 0) {
-      pushToast({ level: 'danger', title: 'Дождитесь завершения прогноза' });
+      pushToast({ level: 'danger', title: $_('wizard.toast.wait_for_forecast.title') });
       return;
     }
     savingBundle = true;
@@ -638,7 +638,7 @@
       await wizardSession.flush();
     } catch (e) {
       saveError = e instanceof Error ? e.message : String(e);
-      pushToast({ level: 'danger', title: 'Не удалось сохранить файл', body: saveError });
+      pushToast({ level: 'danger', title: $_('wizard.toast.save_failed.title'), body: saveError });
     } finally {
       savingBundle = false;
     }
@@ -649,7 +649,7 @@
   <!-- WCAG 2.4.2 / axe page-has-heading-one: visually hidden h1 for screen
        readers. The stepper serves as the visual page landmark, but AT users
        benefit from a top-level heading identifying the page. -->
-  <h1 class="visually-hidden">Создание прогноза</h1>
+  <h1 class="visually-hidden">{$_('wizard.h1')}</h1>
   <header class="wizard-header">
     <!-- Block 3 HIGH-8 fix: aria-current="step" announces active step to
          screen readers per WCAG 4.1.2. The stepper is a progress indicator
