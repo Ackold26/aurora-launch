@@ -124,6 +124,53 @@ mod block_3_tests {
     }
 
     #[test]
+    fn pool_exhaustion_stress_test_16_concurrent_calls() {
+        // Sprint 6 D11 #O4 — Tokio spawn_blocking pool exhaustion holistic
+        // analysis. Aurora Launch теперь имеет 4 production spawn_blocking
+        // callsites (verify_reproducibility + open/list/read_bundle).
+        //
+        // Tokio default blocking pool: `min(512, num_cpus * 100)` threads.
+        // Aurora Launch — single-user desktop app. Worst-case concurrent
+        // workload: user opens 4 bundles simultaneously × 3-4 operations each
+        // = ~16 parallel spawn_blocking calls. Far below 512 limit.
+        //
+        // This stress test verifies 16 parallel `list_bundle_entries_blocking`
+        // tasks complete без deadlock на constrained 2-worker runtime. С
+        // default blocking pool (512 threads), no contention для 16 tasks.
+        // Если future scope expands pool consumption (e.g., bulk batch verify),
+        // re-evaluate threshold + consider `max_blocking_threads` config.
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = build_test_bundle(dir.path(), "stress.aurora");
+
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let bundle_path = bundle.clone();
+        let results: Vec<bool> = rt.block_on(async move {
+            let mut handles = Vec::with_capacity(16);
+            for _ in 0..16 {
+                let p = bundle_path.clone();
+                handles.push(tokio::task::spawn_blocking(move || {
+                    list_bundle_entries_blocking(p)
+                }));
+            }
+            let mut results = Vec::with_capacity(16);
+            for h in handles {
+                results.push(h.await.unwrap().is_ok());
+            }
+            results
+        });
+
+        assert_eq!(results.len(), 16);
+        for (i, ok) in results.into_iter().enumerate() {
+            assert!(ok, "concurrent task {i} of 16 should succeed");
+        }
+    }
+
+    #[test]
     fn concurrent_blocking_helpers_do_not_starve_runtime() {
         // INV-48 attack scenario для #41 (Tokio worker starvation): без
         // spawn_blocking wrap, 4 parallel async calls к open/list/read would
