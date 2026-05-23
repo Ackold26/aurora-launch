@@ -450,6 +450,22 @@ pub struct ReproducibilityResult {
 pub async fn verify_reproducibility(
     bundle_path: String,
 ) -> AuroraResult<ReproducibilityResult> {
+    // Sprint 5 D4 H2 — wrap blocking I/O в spawn_blocking. Body вызывает sync
+    // std::fs::File::open + zip operations + streaming SHA-256 над всеми bundle
+    // files. Для large bundle это занимает seconds — blocking Tokio worker
+    // thread starves other async tasks (Tauri IPC, frontend updates).
+    // spawn_blocking moves work к dedicated blocking pool, freeing runtime worker.
+    //
+    // Trade-off: extra task spawn overhead (~µs) и JoinError mapping. Acceptable
+    // для commands что block worker for >100ms.
+    tokio::task::spawn_blocking(move || verify_reproducibility_blocking(bundle_path))
+        .await
+        .map_err(|e| AuroraError::Other(format!("verify_reproducibility task panicked: {e}")))?
+}
+
+fn verify_reproducibility_blocking(
+    bundle_path: String,
+) -> AuroraResult<ReproducibilityResult> {
     use std::io::Read;
 
     // Input validation: .aurora extension + canonicalize to prevent traversal.
@@ -1256,6 +1272,74 @@ mod tests {
         let result = run_verify(&symlink_path).expect("symlink resolves к real bundle");
         assert_eq!(result.status, "verified");
         assert_eq!(result.files_checked, 1);
+    }
+
+    // ── Sprint 5 D4 H2 — concurrent verify не blocks Tokio runtime ──────
+
+    #[test]
+    fn concurrent_verify_does_not_starve_tokio_runtime() {
+        // INV-48 attack scenario для H2 (Tokio worker starvation): без
+        // spawn_blocking wrap, multiple parallel verify_reproducibility calls
+        // would each block a runtime worker thread for duration of file I/O +
+        // hashing. Под concurrent UI load this freezes IPC dispatch (frontend
+        // hangs). Sprint 5 D4 closes via spawn_blocking move к blocking pool.
+        //
+        // Test: 4 parallel verifies на multi-thread runtime с only 2 worker
+        // threads. Без spawn_blocking — потенциальный deadlock или severe
+        // latency. С spawn_blocking — все 4 progress concurrently.
+        let dir = tempfile::tempdir().unwrap();
+        let bundles: Vec<PathBuf> = (0..4)
+            .map(|i| {
+                build_valid_bundle(
+                    dir.path(),
+                    &format!("bundle_{i}.aurora"),
+                    &[
+                        ("data/file1.txt", b"hello".as_slice()),
+                        ("data/file2.txt", b"world".as_slice()),
+                    ],
+                )
+            })
+            .collect();
+
+        // Constrained worker thread count exposes the bug if spawn_blocking
+        // weren't used. 2 workers + 4 concurrent blocking calls would deadlock
+        // если bug present.
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let results: Vec<AuroraResult<ReproducibilityResult>> = rt.block_on(async {
+            // Spawn 4 tasks on multi-thread runtime, await all через tokio::join.
+            // join! waits для всех concurrently — не sequential.
+            let h0 = tokio::spawn(verify_reproducibility(
+                bundles[0].to_string_lossy().to_string(),
+            ));
+            let h1 = tokio::spawn(verify_reproducibility(
+                bundles[1].to_string_lossy().to_string(),
+            ));
+            let h2 = tokio::spawn(verify_reproducibility(
+                bundles[2].to_string_lossy().to_string(),
+            ));
+            let h3 = tokio::spawn(verify_reproducibility(
+                bundles[3].to_string_lossy().to_string(),
+            ));
+            let (r0, r1, r2, r3) = tokio::join!(h0, h1, h2, h3);
+            vec![
+                r0.expect("task 0 join"),
+                r1.expect("task 1 join"),
+                r2.expect("task 2 join"),
+                r3.expect("task 3 join"),
+            ]
+        });
+
+        assert_eq!(results.len(), 4);
+        for (i, res) in results.into_iter().enumerate() {
+            let r = res.unwrap_or_else(|e| panic!("verify {i} failed: {e:?}"));
+            assert_eq!(r.status, "verified", "bundle {i} must verify");
+            assert_eq!(r.files_checked, 2);
+        }
     }
 
     #[cfg(unix)]
