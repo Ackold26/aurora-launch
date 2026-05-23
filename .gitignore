@@ -28,6 +28,7 @@ build/
 .coverage
 htmlcov/
 .pytest_cache/
+.hypothesis/
 
 # Tauri build artefacts (CI-produced, never commit locally)
 src-tauri/binaries/

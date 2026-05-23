@@ -78,9 +78,9 @@ Opus max audit pass перед PR.
 
 | Suite | Result |
 |---|---|
-| cargo test --lib | 56 passed, 0 failed (+3 since v0.1.5) |
-| cargo test --lib commands::methodology_cert::tests | 19 passed (+4 для #25, #36, H2) |
-| npx vitest run tests/unit/ | 730 passed, 1 skipped (was 727/2; +2 newline/CR injection, -1 #35 un-skip) |
+| cargo test --lib | 56 passed, 0 failed (+4 since v0.1.5 — 1 cross-platform для #25, 1 для H2, 2 для #36; 2 `#[cfg(unix)]` symlink tests skip на Windows) |
+| cargo test --lib commands::methodology_cert::tests | 19 passed (+4 visible: #25 cross-platform regression + H2 concurrent + #36 attack/sanity) |
+| npx vitest run tests/unit/ | 730 passed, 1 skipped (Sprint 5 total: +17 new в CertExportModal.test.ts + 1 un-skipped #35 = +18 net pass, -1 net skip) |
 | npx svelte-check | 0 errors, 2 pre-existing warnings |
 
 ### Backward compatibility
