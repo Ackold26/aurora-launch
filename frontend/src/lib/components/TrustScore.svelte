@@ -79,15 +79,21 @@
 <article class="trust-score" data-tier={tier.color}>
   <header class="trust-header">
     <div class="trust-label">{$_("trustScore.label")}</div>
-    {#if expertMode}
-      <div class="trust-header-actions">
-        <button
-          type="button"
-          class="trust-explain-link"
-          onclick={openExplain}
-        >
-          {$_("trustScore.explain_8d_button", { default: "Что значат эти 8 измерений?" })}
-        </button>
+    <div class="trust-header-actions">
+      <!-- Sprint 6 audit pass V1: explain link is educational (about methodology),
+           not diagnostic clutter — visible regardless of expertMode. Pharma pilot
+           users с real trust score equally want methodology explanation, не
+           только preview/fallback users. Gated by expertMode would hide button
+           в production где `expertMode={!trustIsRealCompute}` integration pattern
+           used (ForecastTab.svelte:296). -->
+      <button
+        type="button"
+        class="trust-explain-link"
+        onclick={openExplain}
+      >
+        {$_("trustScore.explain_8d_button", { default: "Что значат эти 8 измерений?" })}
+      </button>
+      {#if expertMode}
         <button
           type="button"
           class="trust-expand-toggle"
@@ -97,8 +103,8 @@
         >
           {expanded ? $_("trustScore.collapse") : $_("trustScore.expand")}
         </button>
-      </div>
-    {/if}
+      {/if}
+    </div>
   </header>
 
   <div class="trust-body">

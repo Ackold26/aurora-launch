@@ -1,5 +1,125 @@
 # Changelog
 
+## v0.2.0 — 2026-05-23 (Sprint 6 — Pilot Finalization & full pre-pilot release)
+
+Full pre-pilot release. Closes 4 Sprint Buffer items (#22 TrustScore drill-down,
+#39 wizard i18n partial, #40 validate_weights FP-edge, #41 bundle.rs spawn_blocking)
++ 5 Sprint 5 audit secondary findings (O1-O5). Includes Opus max audit pass
+с inline fix (V1 expert mode gating).
+
+### Localization — Sprint 6 Batch 1 (D2 closes Sprint 5 O5)
+
+- **en.json cert.export backfill** — 16 keys backfilled (RU had 16, EN had 0
+  before). Mixed-language jarring UX в cert PDF eliminated. RU ↔ EN parity для
+  full Methodology Certificate flow.
+
+### Security — Sprint 6 Batch 2 (Sprint Buffer #40)
+
+- **#40 — validate_weights FP-edge fix.** Sprint 4 Batch 6 закрыл symptom (test
+  data fix 0.45→0.46), но underlying tolerance check FP-edge bug remained.
+  Production weights summing к 0.95 ± FP epsilon (e.g., 0.5 + 0.45 → sum 0.95
+  с residual 0.050000000000000044) hit raw `> 0.05` boundary → false-positive
+  reject в некоторых input orderings.
+
+  Fix: `TOLERANCE_EPSILON: f64 = 1e-9` margin. Epsilon ~10⁻⁹ safely absorbs FP
+  imprecision (~10⁻¹⁶ scale) без widening real tolerance к legitimate
+  over-budget cases. INV-48 attack-first: 2 new tests (FP-edge passes + clearly-off
+  still rejects).
+
+### Accuracy — Sprint 6 Batch 3 (INV-50 numbers verification)
+
+- **Mode badge sublabels corrected.** INV-50 audit (МН commit `766eb36`) обнаружил
+  3 violations: «1-2 / 3-6 / ≥7 месяцев recipient» (units wrong by 4× — code
+  thresholds в weeks, not months). 6 string changes ×2 locales = 12 edits.
+  Now matches `router.py:33-34` + `launch_orchestrator.py` thresholds:
+  - transfer_bias: «1–2 недели / weeks recipient»
+  - ols_priors: «3–6 недель / weeks recipient»
+  - bayesian_priors: «≥7 недель / weeks recipient»
+
+### UX — Sprint 6 Batch 4 (Sprint Buffer #22 + #39 partial)
+
+- **#22 — TrustScore drill-down link.** «Что значат эти 8 измерений?» button
+  opens `DrillDownModal` с formula `trust_score_8d` (formula уже в registry).
+  Sprint 6 audit pass V1 fix: button visible regardless of expertMode prop —
+  educational link ≠ diagnostic clutter. Production integration (ForecastTab)
+  uses `expertMode={!trustIsRealCompute}` semantic; gating would hide button
+  для real-compute pilot users.
+- **#39 partial — Wizard i18n hygiene.** 10 hardcoded RU strings extracted в
+  i18n keys (toast titles + h1). EN translations добавлены (parity). Scope —
+  pilot user flow (wizard primary path). ProxyPickerCard + inspector/+page.svelte
+  hardcoded strings → Sprint 7 continuation.
+
+### Concurrency — Sprint 6 Batch 5 (Sprint Buffer #41)
+
+- **#41 — bundle.rs sibling spawn_blocking refactor.** Sprint 5 D4 H2 discovery
+  applied к 3 sibling async fns: `open_bundle`, `list_bundle_entries`,
+  `read_bundle_entry`. Each split:
+  - Outer async Tauri command — preserves IPC contract (signature unchanged)
+  - Inner `_blocking` private fn — pure sync I/O moved к Tokio blocking pool
+
+  State<'_, AppState> handling: extract state references в scope-bound block
+  перед spawn_blocking (lock released перед blocking work). `save_bundle` uses
+  sidecar JSON-RPC (subprocess IPC) — not refactored (already non-blocking).
+
+### Defense-in-depth — Sprint 6 Batch 6 (Sprint 5 audit O1-O4)
+
+- **O1 — Windows symlink behavior tests.** 2 `#[cfg(windows)]` tests добавлены
+  для NTFS reparse point coverage. GitHub Actions Windows runners имеют
+  Developer Mode → tests pass в CI. Local Windows dev без Dev Mode → graceful
+  skip через PermissionDenied ErrorKind check.
+- **O2 — D9 ratio defense boundary cases.** 1× (legitimate) passes + 1001×
+  (just-above threshold) rejects. Verifies strict-greater-than threshold
+  semantics.
+- **O3 — Broken symlink test (`#[cfg(unix)]`).** Dangling symlink (target
+  deleted) returns ErrorKind::NotFound → mapped к BundleNotFound. Graceful
+  error, не panic / generic Other.
+- **O4 — spawn_blocking pool exhaustion analysis.** 4 production callsites
+  (verify_reproducibility + open/list/read_bundle). Tokio default blocking
+  pool: `min(512, num_cpus * 100)` threads. Aurora Launch single-user
+  worst-case ~16 concurrent — far below 512 limit. Stress test verifies
+  16 parallel `list_bundle_entries_blocking` calls на 2-worker runtime
+  complete в ~0.01s без deadlock.
+
+### Audit pass (Opus max, inline pre-PR)
+
+- **V1 — TrustScore explain link gating fix.** Initial implementation gated
+  button by `expertMode`. ForecastTab integration `expertMode={!trustIsRealCompute}`
+  would hide button для real-compute pilot users — undesirable UX. Decoupled
+  to always-visible (educational link semantic).
+- **V2 — i18n key parity gap documented (not fixed).** ru.json 448 keys vs
+  en.json 423 keys → 25 missing keys в EN (pre-existing tech debt, NOT
+  Sprint 6 introduced). Sprint 7 candidate для broader i18n hygiene.
+
+### Verification
+
+| Suite | Result |
+|---|---|
+| cargo test --lib | 68 passed, 0 failed (+12 since v0.1.6 — D3 +2, D7 +5, D8 +2, D9 +2, D10 +1; 4 `#[cfg(unix)]` + 2 `#[cfg(windows)]` cross-platform) |
+| npx vitest run tests/unit/ | 733 passed, 1 skipped (+3 since v0.1.6 — D5 TrustScore drill-down) |
+| npx svelte-check | 0 errors, 2 pre-existing warnings (не Sprint 6 scope) |
+
+### Backward compatibility
+
+- All IPC contracts unchanged (verify_reproducibility, open_bundle,
+  list_bundle_entries, read_bundle_entry — signatures + return shapes preserved)
+- Existing i18n keys unchanged; new keys backward-compatible (default fallback)
+- bundle.rs refactor splits sync I/O off Tokio worker but behavior identical
+  (same checks, same errors, same return values)
+
+### Deferred к Sprint 7 (Sprint Buffer)
+
+- **#21** — ReproduceModal refactor (tech debt, не блокер)
+- **#23** — CertExportModal forecast summary (feature)
+- **#24** — Windows timer flake (CI annoyance)
+- **#29** — `span[role=button]` → native `<button>` (a11y polish)
+- **#37** — reproducibility_token JCS canonical (no demand)
+- **#38** — Rx_pharma.Rx_cardiology schema (post-pilot demand)
+- **#39 continuation** — ProxyPickerCard + inspector/+page.svelte hardcoded strings
+- **#45 (new)** — Pre-existing i18n EN locale parity (25 keys missing)
+- **D1 manual smoke tests** — require UI session с Антоном
+
+---
+
 ## v0.1.6 — 2026-05-23 (Sprint 5 — Pilot Hardening & Security MEDIUM closure)
 
 Pre-pilot hardening release. Closes Sprint 3 audit MEDIUM security findings
