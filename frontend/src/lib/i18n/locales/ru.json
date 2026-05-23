@@ -473,7 +473,7 @@
   "layout.save_button.saving": "Сохранение…",
   "layout.save_button.save": "Сохранить",
   "layout.loading_screen": "Загрузка…",
-  "layout.feedback_hint": "Cmd+Shift+F · Esc для закрытия",
+  "layout.feedback_hint": "{shortcut} · Esc для закрытия",
   "wizard.toast.validation_failed.body_fallback": "Проверьте данные и роли колонок.",
   "wizard.save_dialog.title": "Сохранить файл проекта Aurora Launch",
   "wizard.toast.saved.title": "Файл проекта сохранён",

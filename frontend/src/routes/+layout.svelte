@@ -64,6 +64,15 @@
     return 'unsaved';
   });
 
+  // QW7: detect platform for shortcut hint label
+  const isMac = $derived(
+    typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac')
+  );
+  const shortcutLabel = $derived(isMac ? '⌘K' : 'Ctrl+K');
+  // Sprint 9 Batch 2 D3: platform-aware feedback shortcut (was hardcoded
+  // Mac-centric "Cmd+Shift+F" — confused Windows users).
+  const feedbackShortcut = $derived(isMac ? '⌘+Shift+F' : 'Ctrl+Shift+F');
+
   // PA-A04 + QW4 i18n: CommandPalette commands reactive к locale.
   // $_ subscription makes commands re-derive when language switches.
   const commands = $derived([
@@ -120,20 +129,13 @@
       id: 'feedback-open',
       label: $_('palette.feedback'),
       description: $_('palette.feedback.desc'),
-      shortcut: 'Cmd+Shift+F',
+      shortcut: feedbackShortcut,
       category: $_('palette.category.help'),
       action: () => {
         feedbackOpen = true;
       },
     },
   ]);
-
-  // QW7: detect platform for shortcut hint label
-  const shortcutLabel = $derived(
-    typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac')
-      ? '⌘K'
-      : 'Ctrl+K'
-  );
 
   initI18n();
 
@@ -347,7 +349,6 @@
           onclick={triggerSave}
           disabled={saving || !$isDirty}
           aria-label={$_('layout.save_button.aria_label')}
-          title="Ctrl+S"
         >
           {saving ? $_('layout.save_button.saving') : $_('layout.save_button.save')}
         </button>
@@ -425,7 +426,7 @@
             {$_('feedback.submit')}
           </button>
         </div>
-        <p class="feedback-hint">{$_('layout.feedback_hint')}</p>
+        <p class="feedback-hint">{$_('layout.feedback_hint', { values: { shortcut: feedbackShortcut } })}</p>
       </div>
     </div>
   {/if}
