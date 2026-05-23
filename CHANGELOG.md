@@ -1,5 +1,78 @@
 # Changelog
 
+## v0.2.3 — 2026-05-24 (Sprint 9 — Tier B1 quick wins)
+
+Pre-pilot cleanup release. Closes Sprint Buffer #48 (ReproduceModal i18n full
+extraction + cross-modal NotificationBanner `Закрыть` aria) + 3 Sprint 8 audit
+LOW findings (title="Ctrl+S" redundancy, Cmd+Shift+F Mac-centric, version
+drift). Tier B2 architecture (THREAT_MODEL.md + proptest + paths.rs doctest fix)
+defers к Sprint 10 candidate.
+
+### Localization — Sprint 9 Batch 1 (Sprint Buffer #48)
+
+- **ReproduceModal full i18n extraction** — 14 hardcoded RU strings → `inspector.
+  reproduce.*` namespace с EN parity. Strings: toast copy_success/copy_error
+  (title + body с `{count}` interpolation), title, intro split к
+  prefix/suffix pairs (`intro_save_*`, `intro_run_*`) для clean `<code>{filename}
+  </code>` markup в template без `{@html}` XSS surface, preview_badge +
+  preview_explanation + bit_equal, copy_button + download_button, code_aria
+  (pre tag aria-label).
+- **Cross-modal NotificationBanner `Закрыть` aria** — 1 shared key
+  (`notification_banner.close_aria`) replaces hardcoded RU aria-label в 2
+  callsites (`.nb-dismiss--modal` + `.nb-dismiss--banner`). Affects ВСЕ
+  level=prompt/error/info/warning consumers: HandshakeIncompatibleModal,
+  DrillDownModal, ReproduceModal, UpdateAvailableBanner, RefreshAvailableBanner.
+- **Pilot impact:** EN-speaking demo audiences больше не видят RU strings в
+  Reproduce flow OR close-button aria-labels через любые modals. Trust-eroding
+  mixed-language UX eliminated.
+
+### A11y / Polish — Sprint 9 Batch 2 (Sprint 8 audit LOW D2 + D3)
+
+- **`title="Ctrl+S"` redundancy removed** — `+layout.svelte:350` save button had
+  `aria-label="Сохранить файл проекта (Ctrl+S)"` + duplicate `title="Ctrl+S"`
+  tooltip. Browser tooltip duplicated info already в aria-label. Removed
+  `title` — aria-label теперь canonical accessible name + shortcut hint.
+- **Platform-aware feedback shortcut** — hardcoded "Cmd+Shift+F" в `layout.
+  feedback_hint` confused Windows users. Refactor:
+  - Script: split `shortcutLabel` derivation в `isMac` boolean + 2 derived
+    constants (`shortcutLabel` ⌘K/Ctrl+K палеты, `feedbackShortcut`
+    ⌘+Shift+F/Ctrl+Shift+F фидбека)
+  - i18n key uses `{shortcut}` placeholder
+  - Both `feedback_hint` rendering + CommandPalette commands array entry для
+    `feedback-open` обновлены consistently
+- Windows pilot users теперь see proper Ctrl+Shift+F hint.
+
+### Build infrastructure — Sprint 9 Batch 7 (Sprint 8 audit LOW D4)
+
+- **Version drift fixed** — pre-existing tech debt: pyproject.toml `0.2.0` +
+  frontend/package.json `0.1.0` vs src-tauri/Cargo.toml + tauri.conf.json
+  `0.2.2`. Sprint 9 v0.2.3 release bumps ALL FOUR sources к `0.2.3`
+  simultaneously. Convention: Tauri Cargo version = canonical (читается via
+  `CARGO_PKG_VERSION` для bundle manifests + cert provenance); other version
+  fields aligned для consistency в build outputs / package metadata / future
+  telemetry/feature gates.
+
+### Verification
+
+- vitest **733/734** pass (1 skipped) — no regression
+- cargo unit tests **68/68** pass
+- svelte-check 0 errors (2 pre-existing warnings)
+- RU/EN parity **493=493**
+
+### Deferred к Sprint 10+
+
+- **NICE:** `previewMode` positive-name polish (Sprint 8 audit hotfix CHANGELOG)
+  — rename `previewMode` → `showAdvancedDiagnostics` для intuitive convention
+- **Tier B3 architecture:** THREAT_MODEL.md (~3h Opus max), proptest (~3h),
+  paths.rs:15 doctest fix (~30 min), SB template Impact/Effort (~30 min)
+- **#23** CertExportModal forecast summary (demand-driven)
+- **#37** reproducibility_token JCS canonical
+- **#38** Rx_pharma.Rx_cardiology
+- **#49** TestWatchdogThread Windows flake (defer until materializes)
+- **A4** E2E Playwright против Tauri webview (1+ day)
+
+---
+
 ## v0.2.2-hotfix — 2026-05-23 (Sprint 8 audit follow-up)
 
 Post-ship audit (parallel Opus + Sonnet agents) обнаружил 5 MEDIUM findings.
