@@ -15,9 +15,13 @@ INV-02 runtime smoke target: `serve_once(line, ...)` callable from tests.
 
 from __future__ import annotations
 
+import os
 import sys
-import traceback
 from typing import IO
+
+from aurora_observability import get_logger
+
+_log = get_logger("aurora_launch.sidecar.server")
 
 from aurora_launch.sidecar import events as _events
 from aurora_launch.sidecar.auth import AuthError, check_auth, load_token_from_env
@@ -92,11 +96,7 @@ def serve_once(
     except Exception as exc:  # noqa: BLE001
         # Log unexpected errors к stderr (parent collects). Convert к structured
         # error response.
-        sys.stderr.write(
-            f"[aurora-sidecar] dispatch error in '{request.method}': {exc}\n"
-        )
-        sys.stderr.write(traceback.format_exc())
-        sys.stderr.flush()
+        _log.exception("dispatch_error", method=request.method, request_id=request.id)
         _events.write_line(Response(id=request.id, error=_error_for(exc)).to_line(), out=out)
         return True
 
@@ -113,17 +113,16 @@ def serve_forever(token: str | None = None) -> int:
         from aurora_launch.sidecar.methods import _get_autosave_manager
         _get_autosave_manager()
     except Exception as exc:  # noqa: BLE001
-        import logging as _logging
-        _logging.getLogger(__name__).warning(
-            "AutosaveManager init at sidecar startup failed: %s. "
-            "SIGTERM handler NOT registered. ProjectDB-dependent flows "
-            "still work but unclean exits won't clear session marker.",
-            exc,
-        )
+        _log.warning("autosave_init_failed", error=str(exc))
 
     # Boot beacon (event has no id, no auth — emitted under shared write lock
     # so no race with first response).
     _events.emit("sidecar_ready", {})
+    _log.info(
+        "sidecar_started",
+        pid=os.getpid(),
+        parent_pid=os.getppid(),
+    )
 
     for raw_line in sys.stdin:
         if not serve_once(raw_line, expected_token=expected):

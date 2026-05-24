@@ -1,5 +1,70 @@
 # Changelog
 
+## v0.2.5 — 2026-05-24 (#50 — wire aurora_observability в sidecar)
+
+Activate previously-declared-but-unused `aurora_observability` package в Aurora
+Launch sidecar. Closes SPRINT_BUFFER #50 (`aurora-meta` `880a3be`) — dependency
+declared в `pyproject.toml` + installed editable в 4+ CI jobs since Sprint 0
+(2026-05-19), но ZERO source imports anywhere (silent drift risk surfaced by
+shared-lib audit 2026-05-24 — `aurora-platform-core/CC-Sessions/2026-05-24-2200-
+launch-shared-lib-audit-c7-deferred-v0.1.0-tag.md`).
+
+### Wire — 3 emission points в `src/aurora_launch/sidecar/server.py`
+
+- **Sidecar startup info** — `_log.info("sidecar_started", pid=os.getpid(),
+  parent_pid=os.getppid())` после `_events.emit("sidecar_ready", {})` boot
+  beacon. Observable startup event для production debug (PID + parent для
+  correlating с Tauri Rust spawn logs).
+- **AutosaveManager init warning** — `_log.warning("autosave_init_failed",
+  error=str(exc))` заменяет stdlib `logging.getLogger(__name__).warning(...)`
+  fallback (Audit A-05 path). JSON structured вместо free-form text.
+- **Dispatch error exception** — `_log.exception("dispatch_error",
+  method=request.method, request_id=request.id)` заменяет `sys.stderr.write
+  (f"[aurora-sidecar] dispatch error in '{request.method}'...")` + `traceback.
+  format_exc()` block. `_log.exception()` auto-captures traceback via
+  `exc_info=True` internally (StructuredLogger feature) → cleaner code,
+  structured output, `error_type` + `error_message` fields preserved.
+
+### Tests — 3 new + 38 pre-existing pass
+
+- `tests/test_sidecar_observability.py` — 3 tests:
+  - `test_sidecar_startup_emits_structured_log` (capture stderr, parse JSON,
+    assert `sidecar_started` + `pid` field + `component` + ISO ts)
+  - `test_dispatch_error_emits_exception_log` (trigger dispatch exception,
+    assert `dispatch_error` + `error_type` + `method`)
+  - `test_autosave_init_warning_emits_structured_log` (monkeypatch
+    `_get_autosave_manager` к raise, assert `autosave_init_failed` + WARNING
+    level + `error` field)
+- Manual redirect pattern (`handler.stream = buf` via StringIO) вместо
+  `capsys` — identical к aurora_observability's own test suite (StreamHandler
+  bound к sys.stderr at module import time, capsys redirect installs позже).
+- Pre-existing `test_sidecar_auth.py` + `test_sidecar_protocol_server.py` —
+  все 38 tests pass без modifications (no regressions).
+
+### Removed
+
+- `traceback` import — unused после exception block replacement.
+- Inline `import logging as _logging` — заменено module-level `aurora_observability`.
+
+### Verification
+
+- `pytest tests/test_sidecar_observability.py tests/test_sidecar_auth.py
+  tests/test_sidecar_protocol_server.py -v` → **41/41 PASSED**.
+- Audit `feedback_verify_external_repo_state_before_acting` Reference 4 —
+  spot-check Sonnet sub-agent claims via direct file read (server.py modifications
+  confirmed visually + test file existence verified).
+
+### Cross-product
+
+- Sister Aurora Econometrica + future Brand Tracker / Trade & Pricing должны
+  применять тот же pattern — `get_logger("aurora_<product>.<component>")` +
+  emit на key events. Структурированный output позволит centralized log
+  aggregation в Phase B+ (когда / если deploy production logging stack).
+- SPRINT_BUFFER #51 (consolidate aurora_design tokens) — следующий aurora-*
+  package candidate для wire в Launch. Pending МН Option A/B/C verdict.
+
+---
+
 ## v0.2.4 — 2026-05-24 (Sprint 10 — B1 polish)
 
 Polish release — single behavior-preserving rename closing last Sprint 8 audit
