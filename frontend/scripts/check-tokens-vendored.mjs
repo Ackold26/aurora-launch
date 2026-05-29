@@ -41,6 +41,10 @@ export const VENDORED_ANNOTATION_KEY = 'vendored';
 
 // Deep-clone the vendored token tree with the vendored-only annotation removed,
 // so it can be compared 1:1 against the SSOT content.
+/**
+ * @param {any} vendoredObj
+ * @returns {any}
+ */
 export function normalizeVendored(vendoredObj) {
   const clone = structuredClone(vendoredObj);
   if (clone && typeof clone === 'object' && clone.$metadata) {
@@ -51,6 +55,10 @@ export function normalizeVendored(vendoredObj) {
 
 // Order-independent canonical JSON (recursively sorted keys) so incidental key
 // reordering doesn't trip the gate — only token values/structure matter.
+/**
+ * @param {any} value
+ * @returns {any}
+ */
 function sortKeys(value) {
   if (Array.isArray(value)) return value.map(sortKeys);
   if (value && typeof value === 'object') {
@@ -63,10 +71,19 @@ function sortKeys(value) {
   return value;
 }
 
+/**
+ * @param {any} obj
+ * @returns {string}
+ */
 export function canonical(obj) {
   return JSON.stringify(sortKeys(obj));
 }
 
+/**
+ * @param {any} ssotObj
+ * @param {any} vendoredObj
+ * @returns {boolean}
+ */
 export function tokensMatch(ssotObj, vendoredObj) {
   return canonical(ssotObj) === canonical(normalizeVendored(vendoredObj));
 }
@@ -76,7 +93,8 @@ async function main() {
   try {
     ssotRaw = await fs.readFile(SSOT_PATH, 'utf-8');
   } catch (e) {
-    if (e.code === 'ENOENT') {
+    const err = /** @type {any} */ (e);
+    if (err.code === 'ENOENT') {
       console.log(
         `[check:tokens] SSOT not present at ${SSOT_PATH} — skipping vendored equality check ` +
           `(CI runner without 06_Aurora_Design_system sibling).`
