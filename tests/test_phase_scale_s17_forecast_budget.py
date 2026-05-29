@@ -13,7 +13,6 @@ Coverage:
 
 from __future__ import annotations
 
-import sys
 import threading
 import time
 
@@ -137,15 +136,9 @@ class TestForecastUnderBudget:
 # ---------------------------------------------------------------------------
 
 
-_WINDOWS_TIMER_FLAKE_REASON = (
-    "Timer-driven test race-prone on Windows GitHub Actions runners — "
-    "Timer thread sometimes starts after pipeline first _check_cancel() call, "
-    "so cancel event not yet set. Sprint Buffer #24 (Sprint 7 D3-B): "
-    "rewrite with polling/mock-based assertion. Reference run 26153497516."
-)
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason=_WINDOWS_TIMER_FLAKE_REASON)
+# Budget=0 now sets the cancel flag synchronously in forecast_recipient (no
+# 0-delay Timer race), so these tests are deterministic on all platforms.
+# Previously skipped on Windows/macOS — Sprint Buffer #24 closed.
 class TestBudgetZeroImmediateCancel:
     def test_budget_zero_raises_immediately(self) -> None:
         """Budget=0 arms watchdog with 0-second delay.
@@ -250,15 +243,6 @@ class TestForecastBudgetExceededError:
 
 
 class TestCancelEventReset:
-    @pytest.mark.skipif(
-        sys.platform in ("darwin", "win32"),
-        reason=(
-            "Timing-sensitive watchdog test flaky on macOS + Windows GitHub Actions "
-            "runners — first call sometimes завершается до hitting budget (macOS) или "
-            "Timer thread starts after pipeline check (Windows). Sprint Buffer #24 "
-            "(Sprint 7 D3-B extension): rewrite с polling/mock-based assertion."
-        ),
-    )
     def test_second_call_succeeds_after_first_times_out(self) -> None:
         """Even if first call raised ForecastBudgetExceededError, second call
         with generous budget completes normally (cancel reset at entry)."""

@@ -187,7 +187,16 @@ class LaunchOrchestrator:
         _cancel_event.clear()
         t_start = time.monotonic()
         effective_budget = max(0.0, forecast_budget_seconds)
-        watchdog = _start_watchdog(effective_budget, _cancel_event)
+        # A zero (or negative) budget means "abort immediately". Set the cancel
+        # flag synchronously instead of arming a 0-delay Timer: the Timer fires
+        # on a separate thread that races against a fast forecast, which made
+        # the budget=0 path non-deterministic across OS runners (Sprint Buffer
+        # #24 flake). Positive budgets keep the watchdog Timer.
+        watchdog: Optional[threading.Timer] = None
+        if effective_budget == 0.0:
+            _cancel_event.set()
+        else:
+            watchdog = _start_watchdog(effective_budget, _cancel_event)
 
         try:
             return self._forecast_recipient_impl(
@@ -208,7 +217,8 @@ class LaunchOrchestrator:
                 budget_s=effective_budget,
             )
         finally:
-            watchdog.cancel()
+            if watchdog is not None:
+                watchdog.cancel()
 
     def _forecast_recipient_impl(
         self,
