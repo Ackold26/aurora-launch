@@ -20,6 +20,8 @@
     "histoire:build": "histoire build",
     "gen:types": "node scripts/generate-types.mjs",
     "gen:tokens": "node scripts/generate-tokens-css.mjs",
+    "check:tokens": "node scripts/check-tokens-vendored.mjs",
+    "sync:tokens": "node scripts/sync-tokens-vendored.mjs",
     "tauri:dev": "tauri dev",
     "tauri:build": "AURORA_BUILD_PROFILE=production tauri build",
     "tauri:build:dev": "AURORA_BUILD_PROFILE=dev tauri build --debug",
