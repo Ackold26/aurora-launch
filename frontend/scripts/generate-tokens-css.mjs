@@ -24,6 +24,10 @@ const TOKENS_PATH = path.resolve(
 // committed adjacent к этому script — sync на любое изменение upstream tokens.json.
 // Dev workflow preferentially читает SSOT (внешний sibling); если missing —
 // vendored fallback (с warning).
+//
+// #51: vendored — производный артефакт. После изменения SSOT запусти
+// `npm run sync:tokens` (regenerate vendored). `npm run check:tokens`
+// (pre-commit gate) падает, если vendored разошёлся с SSOT.
 const VENDORED_PATH = path.resolve(HERE, 'tokens.vendored.json');
 const OUT_PATH = path.resolve(FRONTEND_ROOT, 'src/lib/styles/tokens.css');
 

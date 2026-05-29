@@ -41,6 +41,18 @@ repos:
           - prettier@^3.3.0
           - prettier-plugin-svelte@^3.2.0
 
+  # #51 — tokens.vendored.json must stay in sync with the design-system SSOT
+  # (06_Aurora_Design_system/01_Tokens/tokens.json). Runs every commit; skips
+  # gracefully when the external SSOT sibling dir is absent (e.g. CI runners).
+  - repo: local
+    hooks:
+      - id: check-tokens-vendored
+        name: check tokens.vendored.json in sync with SSOT (#51)
+        entry: sh -c 'cd frontend && node scripts/check-tokens-vendored.mjs'
+        language: system
+        always_run: true
+        pass_filenames: false
+
   # ESLint: lint frontend Svelte + TS via local node_modules (eslint 9 flat config)
   - repo: local
     hooks:
