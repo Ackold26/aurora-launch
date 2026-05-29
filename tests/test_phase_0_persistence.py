@@ -104,6 +104,51 @@ class TestBlobStore:
         with pytest.raises(BlobSignatureError):
             blob_store.load(info.sha256)
 
+    def test_signed_blob_with_pickle_magic_signature_prefix_is_not_rejected(
+        self, blob_store: BlobStore
+    ) -> None:
+        """Regression (Sprint Buffer #71): a validly-signed blob whose Ed25519
+        signature happens to begin with pickle magic (0x80 + a 0x00–0x05 proto
+        byte) must NOT be misread as a legacy pickle.
+
+        On-disk layout is sig(64)||content, so the leading bytes are signature
+        bytes — verification must run before the pickle-magic heuristic. The old
+        code checked is_pickle_magic() on the raw blob first and spuriously
+        raised BlobLegacyFormatError for ~1-in-10k blobs (flaky reads).
+        """
+        from aurora_launch.persistence.safe_serializer import is_pickle_magic
+
+        # Ed25519 signing is deterministic, so search the content space in-memory
+        # (no file I/O) until the signed-blob layout trips is_pickle_magic().
+        target_content: bytes | None = None
+        for i in range(200_000):
+            content = f"blob-{i}".encode()
+            signed = blob_store._private_key.sign(content) + content
+            if is_pickle_magic(signed):
+                target_content = content
+                break
+        assert target_content is not None, "no pickle-magic signature collision in budget"
+
+        info = blob_store.store(target_content)
+        # Precondition: the on-disk bytes really do look like pickle magic.
+        assert is_pickle_magic(info.storage_path.read_bytes())
+        # Fix: load() verifies the signature first, so it returns content.
+        assert blob_store.load(info.sha256) == target_content
+
+    def test_genuine_legacy_pickle_blob_still_rejected(self, blob_store: BlobStore) -> None:
+        """A real legacy pickle (unsigned, ≥64 bytes) fails signature verification
+        and is then surfaced as BlobLegacyFormatError, not a bare signature error."""
+        import pickle
+
+        legacy = pickle.dumps(list(range(50)))  # >64 bytes, starts 0x80 + proto
+        assert len(legacy) >= 64
+        sha = blob_store.compute_hash(legacy)
+        path = blob_store._path_for(sha)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(legacy)
+        with pytest.raises(BlobLegacyFormatError, match="Legacy pickle"):
+            blob_store.load(sha)
+
     def test_load_missing_blob_raises(self, blob_store: BlobStore) -> None:
         with pytest.raises(BlobStoreError, match="Blob not found"):
             blob_store.load("a" * 64)

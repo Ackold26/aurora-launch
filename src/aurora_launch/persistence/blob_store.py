@@ -61,6 +61,10 @@ _LEGACY_SUFFIX = ".pickle"
 
 _SIG_LEN = 64  # Ed25519 signature is always 64 bytes
 
+_LEGACY_PICKLE_MSG = (
+    "Legacy pickle blobs unsupported в v0.1.0+. Re-import project from .aurora bundle."
+)
+
 
 class BlobStoreError(RuntimeError):
     """Raised for blob storage failures (corrupted, IO error, hash mismatch)."""
@@ -165,19 +169,32 @@ class BlobStore:
             BlobSignatureError: if Ed25519 verification fails.
             BlobStoreError: if on_disk is too short to contain a signature.
         """
-        # Detect legacy pickle before anything else — better error message.
-        if is_pickle_magic(on_disk):
-            raise BlobLegacyFormatError(
-                "Legacy pickle blobs unsupported в v0.1.0+. "
-                "Re-import project from .aurora bundle."
-            )
+        # Verify the signature FIRST. The on-disk layout is `sig(64) || content`,
+        # so the raw bytes begin with a 64-byte Ed25519 signature whose random
+        # leading bytes occasionally collide with pickle magic (0x80 followed by
+        # a 0x00–0x05 proto byte). Running is_pickle_magic() on the raw blob —
+        # as the previous version did — therefore spuriously rejected ~1-in-10k
+        # validly-signed blobs as "legacy pickle" (flaky reads, Sprint Buffer
+        # #71). A blob that verifies is, by definition, not a legacy pickle.
         if len(on_disk) < _SIG_LEN:
+            # Too short to be a signed blob. A genuine legacy pickle is unsigned
+            # raw pickle bytes — surface the actionable error if it looks like one.
+            if is_pickle_magic(on_disk):
+                raise BlobLegacyFormatError(_LEGACY_PICKLE_MSG)
             raise BlobStoreError(
                 f"Blob file too short ({len(on_disk)} bytes) — expected "
                 f"≥{_SIG_LEN} bytes for signature header"
             )
-        # verify_blob raises BlobSignatureError on failure (explicit, narrow)
-        return verify_blob(on_disk, self._public_key)
+        try:
+            # verify_blob raises BlobSignatureError on failure (explicit, narrow)
+            return verify_blob(on_disk, self._public_key)
+        except BlobSignatureError:
+            # Verification failed: this is not a blob we signed. Only now is the
+            # pickle-magic check meaningful — a legacy pickle is unsigned, so it
+            # never verifies. Give the actionable migration error if it matches.
+            if is_pickle_magic(on_disk):
+                raise BlobLegacyFormatError(_LEGACY_PICKLE_MSG) from None
+            raise
 
     def store(self, content: bytes) -> BlobInfo:
         """Store content; returns BlobInfo (idempotent).
