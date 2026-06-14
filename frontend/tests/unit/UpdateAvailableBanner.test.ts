@@ -7,28 +7,38 @@
 //  4. Не показывает release notes если body отсутствует
 //  5. Кнопка «Позже» скрывает banner (dismiss)
 //  6. ARIA: role=status + aria-live=polite
-//  7. Кнопка «Перезапустить» присутствует в ready-state (forceUpdate симулирует ready)
+//  7. Кнопка «Скачать и установить» присутствует в available-state
+//  8. invoke('check_update') НЕ вызывается когда forceUpdate prop передан
 //
-// @tauri-apps/plugin-updater мокается через vi.mock (module mock).
-// @tauri-apps/plugin-process мокается через vi.mock.
-// IPC не задействован в этом компоненте — setup.ts default mock не мешает.
+// Fleet-unify migration (2026-06-14): компонент перешёл с
+// @tauri-apps/plugin-updater (minisign) на IPC-команды checksum-updater'а.
+// Мокаем @tauri-apps/api/core (invoke) + @tauri-apps/api/event (listen).
+// Тесты с update используют forceUpdate prop → обходят invoke('check_update').
 
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/svelte';
 
-beforeEach(() => cleanup());
-
-// Mock @tauri-apps/plugin-updater — check() возвращает null по умолчанию.
-// Тесты с реальным check() используют forceUpdate prop — обходят import.
-vi.mock('@tauri-apps/plugin-updater', () => ({
-  check: vi.fn(async () => null),
+// vi.hoisted: factory ниже исполняется до объявлений → переменные-моки нужно
+// поднять, иначе TDZ ("Cannot access before initialization").
+const { invokeMock, listenMock } = vi.hoisted(() => ({
+  invokeMock: vi.fn(),
+  listenMock: vi.fn(),
 }));
 
-// Mock @tauri-apps/plugin-process — relaunch() stub.
-const relaunchMock = vi.fn(async () => {});
-vi.mock('@tauri-apps/plugin-process', () => ({
-  relaunch: () => relaunchMock(),
-}));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
+vi.mock('@tauri-apps/api/event', () => ({ listen: listenMock }));
+
+beforeEach(() => {
+  cleanup();
+  invokeMock.mockReset();
+  invokeMock.mockImplementation(async (cmd: string) => {
+    if (cmd === 'check_update') return null; // по умолчанию апдейта нет
+    if (cmd === 'download_update') return 'C:/tmp/aurora-update.exe';
+    return undefined;
+  });
+  listenMock.mockReset();
+  listenMock.mockImplementation(async () => () => {}); // listen → unlisten fn
+});
 
 import UpdateAvailableBanner from '../../src/lib/components/UpdateAvailableBanner.svelte';
 
@@ -121,17 +131,14 @@ describe('UpdateAvailableBanner', () => {
     expect(installBtn).toBeTruthy();
   });
 
-  it('does NOT call check() when forceUpdate prop is provided', async () => {
-    const { check } = await import('@tauri-apps/plugin-updater');
-    const checkMock = vi.mocked(check);
-    checkMock.mockClear();
-
+  it('does NOT call invoke(check_update) when forceUpdate prop is provided', async () => {
     render(UpdateAvailableBanner, {
       props: { forceUpdate: { version: '0.1.5', body: null } },
     });
     await flushAsync();
 
-    // forceUpdate bypasses real check()
-    expect(checkMock).not.toHaveBeenCalled();
+    // forceUpdate bypasses the real check — invoke('check_update') must not fire.
+    const calledCommands = invokeMock.mock.calls.map((call) => call[0]);
+    expect(calledCommands).not.toContain('check_update');
   });
 });

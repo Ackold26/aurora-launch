@@ -15,9 +15,15 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.0", features = [] }
 
 [dev-dependencies]
-tempfile = "3.10"
+# tempfile promoted to [dependencies] (updater download path uses it in prod).
 
 [dependencies]
+# Fleet licensing/crypto SSOT (Core). Offline Ed25519 licence + online_auth +
+# machine fingerprint + updater are consumed from here instead of app-local
+# copies (cutover 2026-06-14). Git-pinned to a tagged Core release (2026-06-14)
+# so clean CI / prod builds don't need a sibling checkout and Launch is decoupled
+# from Core's moving `main`. Bump the tag to adopt newer Core fleet releases.
+aurora_fleet = { git = "https://github.com/Ackold26/aurora-platform-core.git", tag = "aurora_fleet-v0.1.0", package = "aurora_fleet" }
 tauri = { version = "2.0", features = ["macos-private-api"] }
 tauri-plugin-fs = "2.0"
 tauri-plugin-dialog = "2.0"
@@ -25,7 +31,6 @@ tauri-plugin-shell = "2.0"
 tauri-plugin-notification = "2.0"
 tauri-plugin-process = "2.0"
 tauri-plugin-os = "2.0"
-tauri-plugin-updater = "2.0"
 
 # Dev-only: MCP Bridge plugin для автоматизированных webview/IPC smoke tests.
 # Подключён под #[cfg(debug_assertions)] — в release сборку не уйдёт.
@@ -66,6 +71,19 @@ uuid = { version = "1.10", features = ["v4", "v7", "serde"] }
 
 # Hex encoding для signatures
 hex = "0.4"
+
+# Update integrity — fleet checksum updater (replaces tauri-plugin-updater/minisign).
+# Mirrors Econometrica src-tauri/src/commands/updater.rs: SHA256 checksum from
+# Supabase app_versions / GH-Pages latest.json, no signature plugin.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+futures-util = "0.3"
+obfstr = "0.4"
+tempfile = "3"
+
+# Machine fingerprint (licence binding) — WMI is Windows-only; fingerprint.rs
+# uses it under #[cfg(windows)] (macOS uses ioreg/system_profiler via Command).
+[target.'cfg(windows)'.dependencies]
+wmi = "0.14"
 
 [features]
 # This feature is used for production builds and dev/test where the bundle

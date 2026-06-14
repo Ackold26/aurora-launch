@@ -1,5 +1,6 @@
 // License store — central source for has_feature gates во всём UI.
-// Phase 2.A: подключён к real sidecar get_license_status (раньше Rust stub).
+// Resolves via the Rust `current_license_status` command (online_auth +
+// offline Ed25519). The earlier Python-sidecar path was retired 2026-06-14.
 import { writable, derived, get } from 'svelte/store';
 
 import { ipc } from '$ipc/client';
@@ -76,7 +77,7 @@ export const needsAttention = derived(licenseStatus, ($s) =>
   ['expired', 'invalid', 'no_license', 'degraded'].includes($s.state)
 );
 
-/** Constants mirroring `aurora_launch.engines.license_validator` */
+/** Launch feature-flag ids (cabinet / report / telemetry gates). */
 export const FEATURE_LAUNCH_PROXY_SINGLE = 'launch_proxy_single';
 export const FEATURE_LAUNCH_PROXY_MULTI = 'launch_proxy_multi';
 export const FEATURE_METHODOLOGY_CERT = 'report_pdf_methodology_certificate';

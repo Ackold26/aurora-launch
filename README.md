@@ -162,7 +162,7 @@ echo "{\"id\":1,\"method\":\"ping\",\"params\":{},\"auth\":\"$TOKEN\"}" | \
 - **D002 restored:** ad-hoc proxy intake (no donor library) per `03_Architecture/PROXY_INTAKE_PROTOCOL.md`
 - **Trust Stack (CP-1):** every artifact signed Ed25519, every result reproducible, every metric с uncertainty
 - **Privacy by Architecture (CP-4):** local-first, data never leaves customer machine
-- **Reproducibility Ceremony (CP-7):** Methodology Certificate as artifact, public WASM verifier on `verify.auroraai.pro`
+- **Reproducibility Ceremony (CP-7):** Methodology Certificate as artifact; local Ed25519 verification today, public WASM verifier on `verify.auroraai.pro` *planned* (M-WV / `SPRINT_BUFFER #54`, deploys at first-sales stage — not yet live)
 
 См. `03_Architecture/PHASE_B_REQUIREMENTS.md` §1 для full Cross-cutting Principles.
 

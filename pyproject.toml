@@ -77,7 +77,6 @@ aurora-corpus = "aurora_launch.tools.corpus_cli:main"
 aurora-launch-export-ts = "aurora_launch.tools.export_typescript:main"
 aurora-launch-schema-diff = "aurora_launch.tools.schema_diff:main"
 aurora-launch-migrate-bundle = "aurora_launch.tools.migrate_bundle:main"
-aurora-launch-validate-license = "aurora_launch.tools.validate_license_cli:main"
 
 [build-system]
 requires = ["hatchling"]

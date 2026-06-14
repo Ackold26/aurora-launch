@@ -17,9 +17,18 @@ NOT included в signed payload. Signature deterministic for same content.
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Optional
 from uuid import UUID, uuid4
+
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+    Ed25519PublicKey,
+)
 
 from aurora_launch.schemas.forecast import (
     AcademicReference,
@@ -168,6 +177,190 @@ def cert_payload_sha256(cert_data: MethodologyCertificateData) -> str:
     return hashlib.sha256(signing_payload_bytes(cert_data)).hexdigest()
 
 
+# ─── Local Ed25519 certificate signer (Phase D, variant B) ───────────
+#
+# Fills the certificate's `signature_local_ed25519` slot with a STABLE,
+# vendor-held key — NOT the per-install ephemeral key (`safe_serializer`
+# blob key) and NOT cloud KMS. The honest framing: a real LOCAL signature,
+# surfaced as a local-trust badge, never as production / cloud-KMS (that
+# stays the deferred `signature_aurora_*` slot).
+#
+# Custody (variant B): a dedicated `~/.secrets/rosst_launch_cert_private.key`,
+# SEPARATE from the fleet licence key (`rosst_agency`). Minted in a key
+# ceremony; this module only READS it. Absent key → honest `local_signed`
+# = False (an unsigned certificate is emitted, never a fabricated signature).
+
+_CERT_KEY_ENV = "AURORA_LAUNCH_CERT_SIGNING_KEY_PATH"
+
+
+def _resolve_cert_signing_key_path() -> Path:
+    """Cert signing key location: `$AURORA_LAUNCH_CERT_SIGNING_KEY_PATH` else the
+    custody default `~/.secrets/rosst_launch_cert_private.key`."""
+    override = os.environ.get(_CERT_KEY_ENV)
+    return Path(override) if override else Path.home() / ".secrets" / "rosst_launch_cert_private.key"
+
+
+def _private_key_from_keyfile_bytes(raw: bytes) -> Optional[Ed25519PrivateKey]:
+    """Decode an Ed25519 private key from key-file bytes, tolerating BOTH the
+    raw-32-byte and 64-hex-char conventions the fleet's ~/.secrets keys use
+    (rosst_content is raw-32, rosst_agency/creative/legal/media are hex). None
+    on any malformed input — the caller falls back to an unsigned certificate."""
+    stripped = raw.strip()
+    candidate: Optional[bytes] = None
+    if len(stripped) == 64 and all(c in b"0123456789abcdefABCDEF" for c in stripped):
+        try:
+            candidate = bytes.fromhex(stripped.decode("ascii"))
+        except ValueError:
+            return None
+    elif len(raw) == 32:
+        candidate = raw
+    elif len(stripped) == 32:
+        candidate = stripped
+    if candidate is None or len(candidate) != 32:
+        return None
+    try:
+        return Ed25519PrivateKey.from_private_bytes(candidate)
+    except ValueError:
+        return None
+
+
+def load_cert_signing_key(path: Optional[Path] = None) -> Optional[Ed25519PrivateKey]:
+    """Load the local cert signing key, or None if absent/unreadable/malformed.
+    None is the safe default: the caller then emits an honestly-UNSIGNED cert."""
+    p = path or _resolve_cert_signing_key_path()
+    try:
+        raw = p.read_bytes()
+    except OSError:
+        return None
+    return _private_key_from_keyfile_bytes(raw)
+
+
+def cert_signing_input(cert_data: MethodologyCertificateData) -> bytes:
+    """The 32 bytes the Ed25519 signature covers: SHA-256 digest of the
+    timestamp-free signing payload (== `cert_payload_sha256` as raw bytes).
+    Mirrors the bundle path's "sign the hash" convention so a future verifier
+    checks `verify(signature, cert_signing_input(cert))`."""
+    return hashlib.sha256(signing_payload_bytes(cert_data)).digest()
+
+
+def cert_pubkey_id(public_key: Ed25519PublicKey) -> str:
+    """Short, honest signing-key identifier (`local:<16hex>` = first 16 hex of
+    SHA-256(raw pubkey)). Ties a signature to a specific key for the UI / a
+    verifier without embedding the key itself."""
+    raw = public_key.public_bytes_raw()
+    return "local:" + hashlib.sha256(raw).hexdigest()[:16]
+
+
+def sign_certificate_local(
+    cert_data: MethodologyCertificateData,
+    private_key: Optional[Ed25519PrivateKey] = None,
+) -> tuple[MethodologyCertificateData, bool]:
+    """Return `(cert, signed)`. When a key is available (the `private_key` arg, or
+    the custody key on disk), returns a copy with `signature_local_ed25519` +
+    `signature_local_pubkey_id` populated and `signed=True`. With no key, returns
+    the cert UNCHANGED with `signed=False` — honestly unsigned, never faked."""
+    key = private_key or load_cert_signing_key()
+    if key is None:
+        return cert_data, False
+    signature = key.sign(cert_signing_input(cert_data))  # Ed25519 → 64 bytes
+    signed = cert_data.model_copy(
+        update={
+            "signature_local_ed25519": signature,
+            "signature_local_pubkey_id": cert_pubkey_id(key.public_key()),
+        }
+    )
+    return signed, True
+
+
+# ─── Local Ed25519 verifier (pair to the signer) ─────────────────────
+#
+# The crypto pair to `sign_certificate_local`. Completes the round-trip so a
+# consumer can CRYPTOGRAPHICALLY verify a cert's local signature rather than
+# trust the mere PRESENCE of a `signature_local_ed25519` field (which a forged
+# bundle could fabricate). The vendor public key is embedded at the key
+# ceremony; until then verification cannot succeed and a cert is reported
+# unverified — never trusted on presence alone.
+#
+# NOT yet wired into trust scoring (`trust_score_project.py` still scores on
+# presence): that rewire changes product trust behaviour and needs the real
+# embedded pubkey + a design sign-off. This is the ready-to-call primitive.
+
+# Vendor cert public key (64-hex Ed25519), embedded at the variant-B key ceremony
+# (2026-06-14) for the custody key `~/.secrets/rosst_launch_cert_private.key`. This
+# is a PUBLIC key — safe to commit; the private half never leaves ~/.secrets. An
+# env override (`AURORA_LAUNCH_CERT_PUBLIC_KEY_HEX`) supports rotation / tests.
+AURORA_LAUNCH_CERT_PUBLIC_KEY_HEX: Optional[str] = (
+    "ef0dce4560d7af310e7713ccc8db0259a54f7b3b692e172af8eb24bd3d7d6eb4"
+)
+
+_CERT_PUBKEY_ENV = "AURORA_LAUNCH_CERT_PUBLIC_KEY_HEX"
+
+
+def _resolve_cert_public_key() -> Optional[Ed25519PublicKey]:
+    """The embedded/overridden vendor cert pubkey, or None if not configured."""
+    src = os.environ.get(_CERT_PUBKEY_ENV) or AURORA_LAUNCH_CERT_PUBLIC_KEY_HEX
+    if not src:
+        return None
+    try:
+        return Ed25519PublicKey.from_public_bytes(bytes.fromhex(src.strip()))
+    except ValueError:
+        return None
+
+
+def verify_certificate_local(
+    cert_data: MethodologyCertificateData,
+    public_key: Optional[Ed25519PublicKey] = None,
+) -> bool:
+    """True iff `signature_local_ed25519` is a valid vendor signature over this
+    cert's signing input. Returns False when the signature is absent, when no
+    pubkey is provided/embedded, or when verification fails — a cert is never
+    trusted on the mere PRESENCE of a signature field."""
+    sig = cert_data.signature_local_ed25519
+    if not sig:
+        return False
+    key = public_key or _resolve_cert_public_key()
+    if key is None:
+        return False
+    try:
+        key.verify(bytes(sig), cert_signing_input(cert_data))
+        return True
+    except InvalidSignature:
+        return False
+
+
+def verify_certificate_json(
+    cert_json: bytes | str | dict,
+    public_key: Optional[Ed25519PublicKey] = None,
+) -> bool:
+    """Verify the local signature of a SERIALIZED methodology certificate (the
+    `methodology_cert.json` a consumer reads). Reconstructs the signing input from
+    the cert fields and checks `signature_local_ed25519` (hex, per the schema's
+    `ser_json_bytes="hex"`) against the vendor pubkey. The signature is decoded
+    manually so this does not depend on pydantic's `val_json_bytes`; the signing
+    input excludes the signature fields, so their model-side decoding is irrelevant.
+    Fail-closed: any parse / decode / verify failure returns False — a serialized
+    cert is never trusted on the mere PRESENCE of a signature string."""
+    try:
+        data = (
+            cert_json
+            if isinstance(cert_json, dict)
+            else json.loads(cert_json)
+        )
+        sig_hex = data.get("signature_local_ed25519")
+        if not sig_hex:
+            return False
+        signature = bytes.fromhex(sig_hex)
+        key = public_key or _resolve_cert_public_key()
+        if key is None:
+            return False
+        model = MethodologyCertificateData.model_validate(data)
+        key.verify(signature, cert_signing_input(model))
+        return True
+    except Exception:
+        # Fail-closed on malformed JSON, bad hex, schema mismatch, or bad signature.
+        return False
+
+
 # ─── Workflow handler entry point ────────────────────────────────────
 
 
@@ -215,6 +408,11 @@ async def build_certificate(ctx: Any, **kwargs: Any) -> dict[str, Any]:
         forecast_summary=forecast_summary,
     )
 
+    # Local Ed25519 signature (Phase D variant B): real when the custody key
+    # `~/.secrets/rosst_launch_cert_private.key` is present, honestly unsigned
+    # otherwise. The Aurora cloud-KMS signature stays deferred (aurora_pending).
+    cert_data, local_signed = sign_certificate_local(cert_data)
+
     payload_hash = cert_payload_sha256(cert_data)
 
     return {
@@ -225,10 +423,11 @@ async def build_certificate(ctx: Any, **kwargs: Any) -> dict[str, Any]:
         "template_id": kwargs.get("template_id", "methodology_certificate_v1"),
         "pdf_renderer_used": kwargs.get("pdf_renderer", "tauri_webview"),
         "dual_signature_status": {
-            "local_signed": False,  # actual signing requires C7 service deployment
+            "local_signed": local_signed,  # True iff the vendor custody key signed it
             "aurora_signed": False,
             "aurora_pending": True,
         },
+        "signature_local_pubkey_id": cert_data.signature_local_pubkey_id,
         "reproducibility_recipe_included": True,
         "reproducibility_cli": cert_data.reproducibility_recipe.cli_command,
         "previous_cert_referenced": kwargs.get("include_previous_cert_reference", False),

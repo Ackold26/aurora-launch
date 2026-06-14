@@ -126,7 +126,12 @@ class TransferSummary(BaseModel):
 class MethodologyCertificateData(BaseModel):
     """Per BLOCKER B2 — single canonical format universal across tiers."""
 
-    model_config = _FROZEN
+    # ser_json_bytes="hex": the dual-signature bytes (signature_local/aurora_ed25519)
+    # serialize to hex in methodology_cert.json, so the cert round-trips through JSON
+    # and a verifier can re-check the local Ed25519 signature (verify_certificate_json).
+    model_config = ConfigDict(
+        frozen=True, extra="forbid", validate_assignment=True, ser_json_bytes="hex"
+    )
 
     cert_id: UUID = Field(default_factory=uuid4)
     cert_version: str = "1.0"

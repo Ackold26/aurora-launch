@@ -250,6 +250,7 @@
   "updater.banner.later": "Позже",
   "updater.banner.dismiss_aria": "Скрыть уведомление об обновлении",
   "updater.banner.downloading": "Скачивание обновления…",
+  "updater.banner.installing": "Установка обновления… приложение закроется.",
   "updater.banner.ready": "Обновление установлено. Перезапустите приложение.",
   "updater.banner.relaunch": "Перезапустить",
   "updater.banner.error": "Не удалось проверить обновление. Попробуйте позже.",

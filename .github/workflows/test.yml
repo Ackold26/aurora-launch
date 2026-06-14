@@ -70,15 +70,25 @@ jobs:
         run: |
           mkdir -p frontend/build
           echo '<!doctype html><html><body>placeholder for tauri::generate_context!</body></html>' > frontend/build/index.html
+      - name: Authenticate cargo git fetch (private aurora_fleet dep)
+        # aurora_fleet is git-pinned to a tag on the PRIVATE aurora-platform-core
+        # repo (2026-06-14). Rewrite GitHub https URLs to carry the cross-repo PAT
+        # so cargo (via the git CLI) can fetch it — the same secret already clones
+        # the sibling for the Python uv.sources deps in ci.yml.
+        env:
+          PAT: ${{ secrets.AURORA_CROSS_REPO_PAT }}
+        run: git config --global url."https://x-access-token:${PAT}@github.com/".insteadOf "https://github.com/"
       - name: Cargo build (no run)
         working-directory: src-tauri
         env:
           AURORA_BUILD_PROFILE: dev
+          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
         run: cargo check --all-targets
       - name: Cargo test (lib)
         working-directory: src-tauri
         env:
           AURORA_BUILD_PROFILE: dev
+          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
         # Sprint Buffer carry-forward: 1 pre-existing test fail
         # (commands::similarity::block_3_tests::validate_weights_within_tolerance_passes
         # — assertion failed validate_weights(&w).is_ok()). Не Sprint 0 wiring issue.

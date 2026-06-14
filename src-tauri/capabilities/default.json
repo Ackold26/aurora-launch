@@ -50,10 +50,6 @@
     "os:allow-platform",
     "os:allow-version",
     "os:allow-arch",
-    "os:allow-locale",
-    "updater:default",
-    "updater:allow-check",
-    "updater:allow-download",
-    "updater:allow-install"
+    "os:allow-locale"
   ]
 }

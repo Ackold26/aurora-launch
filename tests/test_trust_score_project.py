@@ -5,7 +5,12 @@ from __future__ import annotations
 import json
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from aurora_launch.engines.methodology_cert import (
+    build_certificate_data,
+    sign_certificate_local,
+)
 from aurora_launch.engines.trust_score_project import (
     ProjectTrustScoreResult,
     compute_trust_score_for_project,
@@ -15,12 +20,56 @@ from aurora_launch.engines.trust_score_project import (
     extract_similarity_score,
     extract_uncertainty_inverse,
 )
+from aurora_launch.schemas.forecast import (
+    ForecastSummary,
+    ProxyMetadataSummary,
+    TransferSummary,
+)
+
+# A throwaway signing key for cert fixtures; its pubkey is injected via the
+# AURORA_LAUNCH_CERT_PUBLIC_KEY_HEX env (autouse fixture below) so the trust
+# scorer's crypto verification uses it instead of the embedded production key.
+_TEST_CERT_KEY = Ed25519PrivateKey.generate()
+_TEST_CERT_PUBKEY_HEX = _TEST_CERT_KEY.public_key().public_bytes_raw().hex()
+
+
+@pytest.fixture(autouse=True)
+def _use_test_cert_pubkey(monkeypatch):
+    monkeypatch.setenv("AURORA_LAUNCH_CERT_PUBLIC_KEY_HEX", _TEST_CERT_PUBKEY_HEX)
+
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 
 def _empty_files() -> dict[str, bytes]:
     return {}
+
+
+def _base_cert():
+    return build_certificate_data(
+        aurora_launch_version="1.0.0",
+        bundle_hash_sha256="a" * 64,
+        bundle_hash_jcs_canonical="b" * 64,
+        proxy_metadata=ProxyMetadataSummary(
+            proxy_code="TEST",
+            similarity_score=0.7,
+            verdict="Medium",
+            inflation_factor_applied=1.5,
+        ),
+        transfer_summary=TransferSummary(
+            transferred_params=["adstock_decay"],
+            not_transferred=["baseline"],
+            cross_category_distance=0,
+        ),
+        forecast_summary=ForecastSummary(
+            total_forecast_12w=1.0,
+            total_forecast_26w=2.0,
+            total_forecast_52w=3.0,
+            ci_pct_12w=15.0,
+            ci_pct_26w=22.0,
+            ci_pct_52w=32.0,
+        ),
+    )
 
 
 def _diagnostics_blob(r_hat_max: float) -> bytes:
@@ -31,14 +80,24 @@ def _forecast_blob(points: list[dict[str, float]]) -> bytes:
     return json.dumps({"weekly_points": points}).encode("utf-8")
 
 
-def _cert_blob(*, local: bool = True, aurora: bool = True, pending: bool = False) -> bytes:
-    return json.dumps(
-        {
-            "signature_local_ed25519": "0xAA..." if local else None,
-            "signature_aurora_ed25519": "0xBB..." if aurora else None,
-            "signature_aurora_pending": pending,
-        }
-    ).encode("utf-8")
+def _cert_blob(
+    *,
+    local: bool = True,
+    aurora: bool = True,
+    pending: bool = False,
+    sign_key: Ed25519PrivateKey | None = None,
+) -> bytes:
+    """A REAL methodology_cert.json: when local=True the cert carries a genuine
+    Ed25519 signature (default the test key; pass sign_key to forge with another
+    key). aurora is presence-only — the cloud half this offline path cannot verify."""
+    cert = _base_cert()
+    if local:
+        cert, _ = sign_certificate_local(cert, private_key=sign_key or _TEST_CERT_KEY)
+    update: dict = {"signature_aurora_pending": pending}
+    if aurora:
+        update["signature_aurora_ed25519"] = b"\xbb" * 64
+    cert = cert.model_copy(update=update)
+    return cert.model_dump_json().encode("utf-8")
 
 
 # ─── extract_similarity_score ─────────────────────────────────────────────────
@@ -107,6 +166,25 @@ class TestExtractMethodologyCertified:
         value, note = extract_methodology_certified({})
         assert value == 0.0
         assert "не сгенерирован" in note
+
+    def test_zero_when_local_signature_forged(self) -> None:
+        # A present-but-INVALID local signature (signed by a non-vendor key) must
+        # score 0.0 — presence is not proof. Closes the forgery gap that the old
+        # presence check left open (any non-null signature earned 0.5).
+        forger = Ed25519PrivateKey.generate()
+        files = {
+            "methodology_cert.json": _cert_blob(local=True, aurora=False, sign_key=forger)
+        }
+        value, note = extract_methodology_certified(files)
+        assert value == 0.0
+        assert "недействительна" in note
+
+    def test_partial_credit_when_local_verified_no_aurora(self) -> None:
+        # Genuine local signature, no aurora half → honest pilot half-credit.
+        files = {"methodology_cert.json": _cert_blob(local=True, aurora=False)}
+        value, note = extract_methodology_certified(files)
+        assert value == 0.5
+        assert "pilot release" in note
 
 
 # ─── extract_model_convergence ────────────────────────────────────────────────

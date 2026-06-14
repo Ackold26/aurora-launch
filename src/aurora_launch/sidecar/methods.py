@@ -676,7 +676,6 @@ import aurora_launch.sidecar.methods_project  # noqa: E402, F401
 import aurora_launch.sidecar.methods_integrity  # noqa: E402, F401
 import aurora_launch.sidecar.methods_consent  # noqa: E402, F401
 import aurora_launch.sidecar.methods_cross_product  # noqa: E402, F401
-import aurora_launch.sidecar.methods_license  # noqa: E402, F401  Phase 2.A
 import aurora_launch.sidecar.methods_validation  # noqa: E402, F401
 
 # Audit H-4 (этап 2.10): регистрация reset callback должна произойти после

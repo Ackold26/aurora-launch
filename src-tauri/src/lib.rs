@@ -15,9 +15,7 @@
 //! - `feedback` — capture screenshot + log для in-app feedback channel
 //! - `audit_log` — emit audit events visible в History panel
 
-use std::sync::Mutex;
-
-use tauri::Manager;  // Phase 2 fix: required для AppHandle::manage() call
+use tauri::{Emitter, Manager};  // Manager: manage()/try_state(); Emitter: app.emit()
 
 mod commands;
 mod errors;
@@ -33,6 +31,83 @@ use state::AppState;
 /// `"production"` (default for releases) или `"dev"`. License bypass code
 /// path is ELIMINATED at compile time when this == "production".
 pub const BUILD_PROFILE: &str = env!("AURORA_BUILD_PROFILE");
+
+// ============== Auto-updater commands (fleet checksum updater) ==============
+// Thin Tauri wrappers over `aurora_fleet::updater` (Core SSOT — cutover
+// 2026-06-14, was the app-local `commands/updater.rs`). Host couplings are
+// supplied as closures: download progress → `emit('update-progress')`; pre-exit
+// → sidecar shutdown. The updater queries with product = CARGO_PKG_NAME
+// (`aurora-launch`, fleet convention — matches the `app_versions` row + GH-Pages
+// folder, NOT the short licensing product `launch`). The fixed prerelease-aware
+// `is_newer` comes from the crate. Frontend contract unchanged:
+//   invoke('check_update')                       -> VersionInfo | null
+//   invoke('download_update', {url, checksum})   -> installer path (verifies checksum)
+//   listen('update-progress', e => e.payload.percent)
+//   invoke('apply_update', {installerPath})      -> launches installer, exits
+
+/// Map a fleet updater error (`[UP-xxx] …`) to Launch's structured `UpdateFailed`
+/// so the frontend banner keeps its `{ code, message }` contract.
+fn map_update_err(e: aurora_fleet::FleetError) -> AuroraError {
+    // Q3.1: the Core crate now parses the `[UP-xxx]` prefix once — use its
+    // `code()` / `message()` instead of re-implementing the split here. Non-coded
+    // variants (network/io surfaced via `?`) carry no code → fall back to UP-000.
+    AuroraError::UpdateFailed {
+        code: e.code().unwrap_or("UP-000").to_string(),
+        message: e.message().to_string(),
+    }
+}
+
+#[tauri::command]
+async fn check_update() -> Result<Option<aurora_fleet::updater::VersionInfo>, AuroraError> {
+    aurora_fleet::updater::check_for_updates(env!("CARGO_PKG_VERSION"), env!("CARGO_PKG_NAME"))
+        .await
+        .map_err(map_update_err)
+}
+
+#[tauri::command]
+async fn download_update(
+    url: String,
+    checksum: String,
+    app: tauri::AppHandle,
+) -> Result<String, AuroraError> {
+    let path = aurora_fleet::updater::download_update(&url, move |downloaded, total, percent| {
+        let _ = app.emit(
+            "update-progress",
+            serde_json::json!({ "downloaded": downloaded, "total": total, "percent": percent }),
+        );
+    })
+    .await
+    .map_err(map_update_err)?;
+    aurora_fleet::updater::verify_checksum(&path, &checksum).map_err(map_update_err)?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn apply_update(installer_path: String, app: tauri::AppHandle) -> Result<(), AuroraError> {
+    // The crate's apply_update is sync and exits the process on success; run the
+    // async sidecar shutdown inside the on_pre_exit hook (we are about to exit).
+    let manager = app
+        .try_state::<std::sync::Arc<sidecar::SidecarManager>>()
+        .map(|s| std::sync::Arc::clone(s.inner()));
+    aurora_fleet::updater::apply_update(std::path::Path::new(&installer_path), move || {
+        if let Some(manager) = manager {
+            tauri::async_runtime::block_on(manager.shutdown());
+        }
+    })
+    .map_err(map_update_err)
+}
+
+/// Machine licensing id — hex SHA256 of the machine fingerprint. This is the
+/// value an admin needs to issue a licence for this device; it matches the fleet
+/// `licenses.fingerprint_hash` and the offline `license.json`
+/// `machine_fingerprint_hash` binding (Phase B). Surfaced so the customer can
+/// copy it from Settings when requesting a licence.
+#[tauri::command]
+fn get_machine_id() -> Result<String, AuroraError> {
+    let fp = aurora_fleet::fingerprint::get_machine_fingerprint()
+        .map_err(|e| AuroraError::Other(format!("fingerprint failed: {e}")))?;
+    Ok(aurora_fleet::fingerprint::hash_fingerprint(&fp))
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -61,13 +136,21 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_updater::Builder::new().build());
+        .plugin(tauri_plugin_os::init());
 
     // Dev-only: MCP Bridge plugin для автоматизированных webview/IPC smoke
-    // tests. Включается только в debug сборке, в production не попадает.
+    // tests (visual-audit skill, driver_session @ 127.0.0.1:9229). Включается
+    // только в debug сборке, в production не попадает. bind 127.0.0.1 (НЕ
+    // дефолтный 0.0.0.0) — порт не открывается в сеть. base_port 9229 —
+    // per-product (карта в visual-audit references; дефолт 9223 = Econometrica,
+    // collision если оба dev сразу).
     #[cfg(debug_assertions)]
-    let builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+    let builder = builder.plugin(
+        tauri_plugin_mcp_bridge::Builder::new()
+            .bind_address("127.0.0.1")
+            .base_port(9229)
+            .build(),
+    );
 
     builder
         .manage(AppState::default())
@@ -107,6 +190,7 @@ pub fn run() {
             commands::license::has_feature,
             commands::license::require_feature,
             commands::license::is_dev_build,
+            commands::license::import_license,
             // telemetry commands (Block 2F — local-only buffer)
             commands::telemetry::log_event,
             commands::telemetry::list_events,
@@ -122,6 +206,12 @@ pub fn run() {
             commands::audit_log::list_audit_entries,
             // build info
             commands::build_info::get_build_info,
+            // auto-updater (fleet checksum updater — replaces tauri-plugin-updater)
+            check_update,
+            download_update,
+            apply_update,
+            // machine licensing id (Phase B — fingerprint for licence issuance)
+            get_machine_id,
             // adapters (Block 4 Phase 3)
             commands::adapters::analyze_data_file,
             commands::adapters::validate_wide_table,
@@ -173,4 +263,39 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running aurora-launch");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Pins Launch's `[UP-xxx]` → `UpdateFailed { code, message }` glue after the
+    /// Q3.1 switch to the crate's `code()` / `message()`. The crate tests the prefix
+    /// parse itself; this guards Launch's OWN decisions — the frontend banner's
+    /// `{ code, message }` contract and the `UP-000` fallback for non-coded errors.
+    #[test]
+    fn map_update_err_uses_crate_code_and_message() {
+        // Coded updater error → code + prefix-stripped message.
+        let mapped = map_update_err(aurora_fleet::FleetError::Update(
+            "[UP-003] integrity check failed".into(),
+        ));
+        match mapped {
+            AuroraError::UpdateFailed { code, message } => {
+                assert_eq!(code, "UP-003");
+                assert_eq!(message, "integrity check failed");
+            }
+            other => panic!("expected UpdateFailed, got {other:?}"),
+        }
+
+        // Non-coded error (e.g. a network failure surfaced via `?`) → UP-000 fallback,
+        // message carried through.
+        let mapped = map_update_err(aurora_fleet::FleetError::Network("timeout".into()));
+        match mapped {
+            AuroraError::UpdateFailed { code, message } => {
+                assert_eq!(code, "UP-000");
+                assert_eq!(message, "timeout");
+            }
+            other => panic!("expected UpdateFailed, got {other:?}"),
+        }
+    }
 }

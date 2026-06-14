@@ -1,5 +1,142 @@
 # Changelog
 
+## Unreleased — Fleet signing & licensing unification (migration 2026-06-14)
+
+Reverses **ADR-007** (licence half — Phase B, pending). **Phase A (auto-updater)
+— DONE on `feat/fleet-unify-signing-licensing`:** migrated Launch off
+`tauri-plugin-updater`/minisign onto the fleet SHA256-checksum updater. This
+**unblocks the production installer** — the `build.rs` minisign-pubkey gate that
+panicked without a keypair (which exists nowhere in the fleet) is removed. See
+**ADR-008** + `04_Sprints/MIGRATION_PLAN_fleet_signing_licensing_2026_06_14.md`.
+
+### Changed
+- **Auto-updater: `tauri-plugin-updater` → fleet checksum model.** New
+  `src-tauri/src/commands/updater.rs` (ported from Econometrica): dual endpoint
+  (Supabase `app-update` Edge Function + GH-Pages `latest.json`), SHA256
+  `verify_checksum`, prerelease-aware `is_newer` (+3 unit tests), download
+  progress via `update-progress` events, `apply_update` stops the
+  `SidecarManager` before launching the installer (release `.pyd` file locks).
+  Product id = `aurora-launch` (raw `CARGO_PKG_NAME`, fleet convention).
+- **Frontend `UpdateAvailableBanner.svelte`** now calls IPC commands
+  (`check_update` / `download_update` / `apply_update`) + `listen('update-progress')`
+  instead of the plugin. New `idle→available→downloading→installing→error`
+  lifecycle (the plugin's staged `ready`+relaunch is replaced by direct install).
+  New i18n key `updater.banner.installing` (ru/en); unit test rewired to
+  `@tauri-apps/api` invoke/listen mocks.
+
+### Removed
+- `tauri-plugin-updater` (Cargo + npm dependency), `lib.rs` plugin builder,
+  `tauri.conf.json` `plugins.updater` (placeholder `EMBED_AT_RELEASE_TIME`),
+  `capabilities/default.json` `updater:*`, the now-dead `updates.auroraai.pro`
+  CSP entry, and the **`build.rs` `AURORA_UPDATER_PUBKEY` production gate**.
+
+### Added
+- `src-tauri/installer_hooks.nsh` — NSIS PREINSTALL/PREUNINSTALL `taskkill
+  aurora-sidecar.exe /T /F` (releases bundled `.pyd` locks before overwrite;
+  safety net for the Rust `apply_update` path). No firewall rules — Launch uses a
+  stdin/stdout sidecar, not an HTTP one (Econometrica's hook adds loopback rules).
+- **ADR-008** — update integrity: fleet SHA256-checksum updater, drop
+  `tauri-plugin-updater`/minisign.
+- Backend (Supabase prod `quzhkfvglqmppxcrindh`, additive): `licenses_product_check`
+  constraint += `'launch'`; `app_versions` placeholder row `product='aurora-launch'`
+  (v0.2.5, empty URL). No Edge Function deploy needed (`auth` / `app-update` are
+  product-agnostic).
+
+### Gates (Phase A)
+- `cargo test` 71 passed (68 baseline + 3 `is_newer`), doctests ok.
+- `svelte-check` 0 errors; `vitest` 736 passed (only pre-existing #51
+  `tokens-vendored` cross-repo-drift fail — untouched, deferred MN).
+- `AURORA_BUILD_PROFILE=production cargo build --release` succeeds (4m10s, exit 0)
+  with **no** `AURORA_UPDATER_PUBKEY` set — confirms the build.rs gate removal
+  unblocks the production build (previously panicked). Full production NSIS
+  installer builds end-to-end (`AURORA_BUILD_PROFILE=production tauri build`,
+  makensis OK, 115 MB) — `installer_hooks.nsh` valid; production installer
+  unblocked. (Not code-signed; cert pubkey placeholder = Phase D.)
+
+### Phase B — licence (platform-core JWT → fleet online_auth + offline Ed25519)
+
+Reverses **ADR-007** (see the REVERSAL note in that file). Launch's licence client
+now uses the fleet model instead of the Python `aurora_common.license` JWT path.
+
+#### Added
+- `crypto/fingerprint.rs` (machine fingerprint, WMI on Windows / ioreg on macOS)
+  + `crypto/ed25519.rs` (fleet licence pubkey verify) + `crypto/mod.rs`.
+- `commands/online_auth.rs` — Supabase `/auth` (cabinets + expires_at, 24h cache,
+  offline fallback), `detect_product()="launch"`.
+- `get_machine_id` command (machine id for licence issuance) + `import_license`
+  command (offline `license.json`, signature + binding verified before save).
+
+#### Changed
+- `commands/license.rs` rewritten: was a Python-sidecar IPC shell, now Rust-native
+  (online_auth + offline Ed25519). Command surface preserved
+  (current_license_status / has_feature / require_feature / is_dev_build);
+  `has_feature` = cabinets membership (fail-closed — denied states expose no
+  cabinets); dev-bypass double gate kept; short in-memory resolution cache so
+  feature checks don't each hit the network.
+
+#### Verified / pending
+- **LIVE:** online_auth smoke vs prod `/auth` → `status=ok`,
+  cabinets `[launch_core, launch_proxy_single]` (Starter test licence), and the
+  deny path (no `launch_proxy_multi`). Whole online wiring proven end-to-end.
+  `cargo test` 79.
+- **LIVE:** offline Ed25519 integration smoke vs a real fleet-signed
+  `license.json` (machine-bound) → `validate()` ok, Starter cabinets.
+- **DONE:** the Python licence path is **retired** (2026-06-14) — removed
+  `engines/license_validator.py`, the sidecar `get_license_status` /
+  `has_license_feature` handlers + their registration, the
+  `aurora-launch-validate-license` CLI, and their tests. The dev-bypass gate's
+  attack-scenario coverage was ported to a Rust unit test in
+  `commands/license.rs`. Licence resolution is now Rust-only
+  (`current_license_status` → online_auth + offline Ed25519); the frontend calls
+  the Rust command unchanged. `persistence/encryption.py` keyring (DB-encryption
+  key, a different concern) is untouched.
+
+## Unreleased — Sprint 11 (commercial-readiness review + audit)
+
+Reframed after ground-truth review: the three presumed commercial blockers
+(auto-updater, license enforcement, Π.2.5/Π.2.6 modeling) are **already
+implemented in code** — Launch is more mature than the stale planning docs
+(POST_PILOT_BACKLOG 2026-05-14) implied. Remaining gaps are **external**
+(signing keys, JWT issuer backend, manifest hosting, pilot data), not
+application code. Donor-reuse from Econometrica/Optimizer was therefore NOT
+applied (would regress more-modern Launch implementations). See **ADR-007** +
+`06_References/COMMERCIAL_READINESS_EXTERNAL_STEPS.md`.
+
+### Fixed
+- **`paths.rs:15` doctest** — wrapped the ASCII layout tree in a ` ```text `
+  fence; `cargo test` (full, incl. `--doc`) now passes (was: doctest compile
+  failure on Unicode `└──` + `{LOCALAPPDATA}`). Pre-existing tech debt
+  (original Sprint 11 D3-B).
+- **`dispatch_table.py` OLS `proxy_baseline<=0` fallback** — replaced the
+  convoluted recursive call with a direct `_run_pure_transfer` (mirrors the
+  Bayesian handler). Clearer + consistent; fallback-path equivalent.
+
+### Documented (audit findings — no behaviour change)
+- `ols_with_priors.py` — **CALIBRATION CAVEAT**: ridge posterior `Σ̂` uses
+  `λ=shrinkage`, not `σ²` → CI systematically **tighter** than the master-plan
+  additive formula; MUST be pilot-validated (Track C).
+- `dispatch_table.py` — Mode 3/4 fold combined σ into `proxy_beta_std` →
+  `transfer_assumption_pct` reports 0% (total CI preserved; attribution only).
+- `build.rs` — corrected misleading comment: the updater-pubkey gate validates
+  the env var but does NOT patch `tauri.conf.json` (CI must patch + assert).
+- `THREAT_MODEL.md §3.6` — updater integrity = minisign (`tauri-plugin-updater`),
+  KMS not required; placeholder pubkey is fail-safe (refuses updates).
+- `README.md` — softened the public web-verifier claim (planned, not yet live).
+
+### Added
+- **ADR-007** — license backend: stay on platform-core JWT SDK, NOT Econometrica
+  `online_auth` (avoids destructive rewrite of the already-wired C-3 path).
+- `06_References/COMMERCIAL_READINESS_EXTERNAL_STEPS.md` — external steps (Anton)
+  for updater finalization (Track A), license activation #52 (Track B), modeling
+  calibration (Track C).
+
+### Verification
+- `cargo test` 68 passed + doctests ok (previously failing).
+- vitest `UpdateAvailableBanner` 8 passed.
+- pytest modeling (M-01/M-02/dispatch) 49 + engines 83 passed.
+- pytest license 42 passed (3 skipped — `aurora_common` absent, empirically
+  confirms the #52 external dependency gap).
+
 ## v0.2.5 — 2026-05-24 (#50 — wire aurora_observability в sidecar)
 
 Activate previously-declared-but-unused `aurora_observability` package в Aurora
