@@ -20,6 +20,7 @@ use std::sync::Mutex;
 use tauri::Manager;  // Phase 2 fix: required для AppHandle::manage() call
 
 mod commands;
+mod crypto;
 mod errors;
 mod panic_handler;
 mod paths;
@@ -62,6 +63,18 @@ async fn download_update(
 #[tauri::command]
 async fn apply_update(installer_path: String, app: tauri::AppHandle) -> Result<(), AuroraError> {
     commands::updater::apply_update(std::path::Path::new(&installer_path), &app).await
+}
+
+/// Machine licensing id — hex SHA256 of the machine fingerprint. This is the
+/// value an admin needs to issue a licence for this device; it matches the fleet
+/// `licenses.fingerprint_hash` and the offline `license.json`
+/// `machine_fingerprint_hash` binding (Phase B). Surfaced so the customer can
+/// copy it from Settings when requesting a licence.
+#[tauri::command]
+fn get_machine_id() -> Result<String, AuroraError> {
+    let fp = crypto::fingerprint::get_machine_fingerprint()
+        .map_err(|e| AuroraError::Other(format!("fingerprint failed: {e}")))?;
+    Ok(crypto::fingerprint::hash_fingerprint(&fp))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -164,6 +177,8 @@ pub fn run() {
             check_update,
             download_update,
             apply_update,
+            // machine licensing id (Phase B — fingerprint for licence issuance)
+            get_machine_id,
             // adapters (Block 4 Phase 3)
             commands::adapters::analyze_data_file,
             commands::adapters::validate_wide_table,

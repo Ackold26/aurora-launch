@@ -74,6 +74,11 @@ futures-util = "0.3"
 obfstr = "0.4"
 tempfile = "3"
 
+# Machine fingerprint (licence binding) — WMI is Windows-only; fingerprint.rs
+# uses it under #[cfg(windows)] (macOS uses ioreg/system_profiler via Command).
+[target.'cfg(windows)'.dependencies]
+wmi = "0.14"
+
 [features]
 # This feature is used for production builds and dev/test where the bundle
 # embed marker is set via build.rs via env var AURORA_BUILD_PROFILE.
