@@ -1,32 +1,52 @@
 <!--
   UpdateAvailableBanner — Этап 2.9 ROADMAP_POST_V0_1_0.
 
-  Показывается не-блокирующим баннером вверху layout'а когда tauri-plugin-updater
-  обнаруживает новую версию. Монтируется в +layout.svelte.
+  Показывается не-блокирующим баннером вверху layout'а когда найдена новая
+  версия. Монтируется в +layout.svelte.
+
+  Fleet-unify migration (2026-06-14): переведён с `tauri-plugin-updater`
+  (minisign) на флотовый checksum-updater — данные идут через Rust IPC-команды
+  (`check_update` / `download_update` / `apply_update`) + событие
+  `update-progress`. Целостность = SHA256-checksum (verify в Rust). Подписи
+  плагина больше нет.
 
   Жизненный цикл:
     'idle'        → начальное состояние (не показывается)
     'available'   → update найден, показываем banner с кнопками
-    'downloading' → downloadAndInstall запущен, прогресс-бар
-    'ready'       → установка завершена, нужен рестарт
-    'error'       → сетевой / подпись-верификация error (показывается мелко)
+    'downloading' → download_update запущен, прогресс-бар (update-progress)
+    'installing'  → checksum verified, apply_update запускает инсталлятор;
+                    приложение закроется (NSIS перезапишет файлы)
+    'error'       → сетевой / checksum / install error (показывается мелко)
 
-  INV-14: prefers-reduced-motion уважается через fadeIn transition (duration=0 при reduced).
+  INV-14: prefers-reduced-motion уважается через NotificationBanner + CSS ниже.
   Refactored on NotificationBanner (BTA-3 Phase 1.A): backdrop/positioning/ARIA delegated.
 
-  Mock в Vitest: vi.mock('@tauri-apps/plugin-updater') — см. UpdateAvailableBanner.test.ts.
+  Mock в Vitest: vi.mock('@tauri-apps/api/core') invoke + '@tauri-apps/api/event' listen.
 -->
 
 <script lang="ts">
   import { onMount } from 'svelte';
   import { _ } from 'svelte-i18n';
-  import { relaunch } from '@tauri-apps/plugin-process';
+  import { invoke } from '@tauri-apps/api/core';
+  import { listen } from '@tauri-apps/api/event';
   import NotificationBanner from './NotificationBanner.svelte';
 
-  /** Информация об обнаруженном update (подмножество plugin Update type). */
+  /** Серверный VersionInfo (commands/updater.rs::VersionInfo). */
+  interface VersionInfo {
+    version: string;
+    download_url: string;
+    release_notes?: string;
+    mandatory?: boolean;
+    checksum?: string;
+    min_version?: string;
+  }
+
+  /** Информация об обнаруженном update для отображения + установки. */
   interface UpdateInfo {
     version: string;
     body: string | null;
+    url?: string;
+    checksum?: string;
   }
 
   interface Props {
@@ -36,20 +56,17 @@
 
   let { forceUpdate = undefined }: Props = $props();
 
-  let bannerState = $state<'idle' | 'available' | 'downloading' | 'ready' | 'error'>('idle');
+  let bannerState = $state<'idle' | 'available' | 'downloading' | 'installing' | 'error'>('idle');
   let updateInfo = $state<UpdateInfo | null>(null);
   let downloadProgress = $state<number>(0);
   let errorMessage = $state<string | null>(null);
   let dismissedThisSession = $state<boolean>(false);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let _updateHandle: any = null;
-
   const visible: boolean = $derived(
     !dismissedThisSession &&
       (bannerState === 'available' ||
         bannerState === 'downloading' ||
-        bannerState === 'ready' ||
+        bannerState === 'installing' ||
         bannerState === 'error'),
   );
 
@@ -80,14 +97,13 @@
 
   async function checkForUpdate() {
     try {
-      const { check } = await import('@tauri-apps/plugin-updater');
-      const update = await check();
-
-      if (update?.available) {
-        _updateHandle = update;
+      const info = await invoke<VersionInfo | null>('check_update');
+      if (info) {
         updateInfo = {
-          version: update.version,
-          body: update.body ?? null,
+          version: info.version,
+          body: info.release_notes ?? null,
+          url: info.download_url,
+          checksum: info.checksum ?? '',
         };
         bannerState = 'available';
       }
@@ -99,42 +115,40 @@
   }
 
   async function installUpdate() {
-    if (!_updateHandle || bannerState === 'downloading') return;
+    if (!updateInfo || bannerState === 'downloading' || bannerState === 'installing') return;
+    if (!updateInfo.url) {
+      errorMessage = 'No download URL';
+      bannerState = 'error';
+      return;
+    }
+
     bannerState = 'downloading';
     downloadProgress = 0;
-    let downloadedBytes = 0;
-    let totalBytes = 0;
+    errorMessage = null;
+
+    const unlisten = await listen<{ percent: number; downloaded?: number; total?: number }>(
+      'update-progress',
+      (event) => {
+        const pct = event.payload?.percent;
+        if (typeof pct === 'number') downloadProgress = Math.min(100, Math.max(0, pct));
+      },
+    );
 
     try {
-      await _updateHandle.downloadAndInstall(
-        (progress: {
-          event: string;
-          data?: { chunkLength?: number; contentLength?: number | null };
-        }) => {
-          if (progress.event === 'Started') {
-            totalBytes = progress.data?.contentLength ?? 0;
-            downloadedBytes = 0;
-          } else if (progress.event === 'Progress') {
-            downloadedBytes += progress.data?.chunkLength ?? 0;
-            if (totalBytes === 0) {
-              totalBytes = progress.data?.contentLength ?? 0;
-            }
-            if (totalBytes > 0) {
-              downloadProgress = Math.min(
-                100,
-                Math.round((downloadedBytes / totalBytes) * 100),
-              );
-            } else {
-              downloadProgress = -1;
-            }
-          } else if (progress.event === 'Finished') {
-            downloadProgress = 100;
-          }
-        },
-      );
-      bannerState = 'ready';
+      // download_update downloads then verifies the SHA256 checksum (throws on mismatch).
+      const installerPath = await invoke<string>('download_update', {
+        url: updateInfo.url,
+        checksum: updateInfo.checksum ?? '',
+      });
+      unlisten();
+      downloadProgress = 100;
+      bannerState = 'installing';
+      // apply_update launches the installer (elevated) and exits the process on
+      // success. If it returns, it errored (e.g. UAC denied) — surfaced below.
+      await invoke('apply_update', { installerPath });
     } catch (e) {
-      console.error('[updater] downloadAndInstall failed:', e);
+      unlisten();
+      console.error('[updater] install failed:', e);
       errorMessage = e instanceof Error ? e.message : String(e);
       bannerState = 'error';
     }
@@ -142,14 +156,6 @@
 
   function dismiss() {
     dismissedThisSession = true;
-  }
-
-  async function doRelaunch() {
-    try {
-      await relaunch();
-    } catch (e) {
-      console.error('[updater] relaunch failed:', e);
-    }
   }
 </script>
 
@@ -185,9 +191,9 @@
           style:width="{downloadProgress >= 0 ? downloadProgress : 100}%"
         ></div>
       </div>
-    {:else if bannerState === 'ready'}
-      <span class="icon" aria-hidden="true">✓</span>
-      <span class="message">{$_('updater.banner.ready')}</span>
+    {:else if bannerState === 'installing'}
+      <span class="icon" aria-hidden="true">⬇</span>
+      <span class="message">{$_('updater.banner.installing')}</span>
     {:else if bannerState === 'error'}
       <span class="icon icon--error" aria-hidden="true">!</span>
       <span class="message message--error">{$_('updater.banner.error')}</span>
@@ -211,21 +217,13 @@
       >
         {$_('updater.banner.later')}
       </button>
-    {:else if bannerState === 'ready'}
-      <button
-        type="button"
-        class="nb-btn nb-btn--primary"
-        onclick={doRelaunch}
-      >
-        {$_('updater.banner.relaunch')}
-      </button>
+    {:else if bannerState === 'error'}
       <button
         type="button"
         class="nb-btn nb-btn--ghost"
-        onclick={dismiss}
-        aria-label={$_('updater.banner.dismiss_aria')}
+        onclick={installUpdate}
       >
-        {$_('updater.banner.later')}
+        {$_('updater.banner.install_now')}
       </button>
     {/if}
   {/snippet}

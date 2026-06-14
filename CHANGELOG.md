@@ -1,5 +1,58 @@
 # Changelog
 
+## Unreleased — Fleet signing & licensing unification (migration 2026-06-14)
+
+Reverses **ADR-007** (licence half — Phase B, pending). **Phase A (auto-updater)
+— DONE on `feat/fleet-unify-signing-licensing`:** migrated Launch off
+`tauri-plugin-updater`/minisign onto the fleet SHA256-checksum updater. This
+**unblocks the production installer** — the `build.rs` minisign-pubkey gate that
+panicked without a keypair (which exists nowhere in the fleet) is removed. See
+**ADR-008** + `04_Sprints/MIGRATION_PLAN_fleet_signing_licensing_2026_06_14.md`.
+
+### Changed
+- **Auto-updater: `tauri-plugin-updater` → fleet checksum model.** New
+  `src-tauri/src/commands/updater.rs` (ported from Econometrica): dual endpoint
+  (Supabase `app-update` Edge Function + GH-Pages `latest.json`), SHA256
+  `verify_checksum`, prerelease-aware `is_newer` (+3 unit tests), download
+  progress via `update-progress` events, `apply_update` stops the
+  `SidecarManager` before launching the installer (release `.pyd` file locks).
+  Product id = `aurora-launch` (raw `CARGO_PKG_NAME`, fleet convention).
+- **Frontend `UpdateAvailableBanner.svelte`** now calls IPC commands
+  (`check_update` / `download_update` / `apply_update`) + `listen('update-progress')`
+  instead of the plugin. New `idle→available→downloading→installing→error`
+  lifecycle (the plugin's staged `ready`+relaunch is replaced by direct install).
+  New i18n key `updater.banner.installing` (ru/en); unit test rewired to
+  `@tauri-apps/api` invoke/listen mocks.
+
+### Removed
+- `tauri-plugin-updater` (Cargo + npm dependency), `lib.rs` plugin builder,
+  `tauri.conf.json` `plugins.updater` (placeholder `EMBED_AT_RELEASE_TIME`),
+  `capabilities/default.json` `updater:*`, the now-dead `updates.auroraai.pro`
+  CSP entry, and the **`build.rs` `AURORA_UPDATER_PUBKEY` production gate**.
+
+### Added
+- `src-tauri/installer_hooks.nsh` — NSIS PREINSTALL/PREUNINSTALL `taskkill
+  aurora-sidecar.exe /T /F` (releases bundled `.pyd` locks before overwrite;
+  safety net for the Rust `apply_update` path). No firewall rules — Launch uses a
+  stdin/stdout sidecar, not an HTTP one (Econometrica's hook adds loopback rules).
+- **ADR-008** — update integrity: fleet SHA256-checksum updater, drop
+  `tauri-plugin-updater`/minisign.
+- Backend (Supabase prod `quzhkfvglqmppxcrindh`, additive): `licenses_product_check`
+  constraint += `'launch'`; `app_versions` placeholder row `product='aurora-launch'`
+  (v0.2.5, empty URL). No Edge Function deploy needed (`auth` / `app-update` are
+  product-agnostic).
+
+### Gates (Phase A)
+- `cargo test` 71 passed (68 baseline + 3 `is_newer`), doctests ok.
+- `svelte-check` 0 errors; `vitest` 736 passed (only pre-existing #51
+  `tokens-vendored` cross-repo-drift fail — untouched, deferred MN).
+- `AURORA_BUILD_PROFILE=production cargo build --release` succeeds (4m10s, exit 0)
+  with **no** `AURORA_UPDATER_PUBKEY` set — confirms the build.rs gate removal
+  unblocks the production build (previously panicked). Full production NSIS
+  installer builds end-to-end (`AURORA_BUILD_PROFILE=production tauri build`,
+  makensis OK, 115 MB) — `installer_hooks.nsh` valid; production installer
+  unblocked. (Not code-signed; cert pubkey placeholder = Phase D.)
+
 ## Unreleased — Sprint 11 (commercial-readiness review + audit)
 
 Reframed after ground-truth review: the three presumed commercial blockers

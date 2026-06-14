@@ -11,48 +11,45 @@ hosting, pilot data), not application code. This runbook lists those steps.
 
 ---
 
-## Track A — Auto-updater finalization (M-AU)
+## Track A — Auto-updater — MIGRATED to fleet checksum updater (ADR-008)
 
-**In code (✅):** Launch uses the official `tauri-plugin-updater`. Wired:
-`lib.rs` plugin, `UpdateAvailableBanner.svelte` (`check()` + `downloadAndInstall()`),
-`+layout.svelte` mount, `tauri.conf.json` `plugins.updater` active with endpoint
-`https://updates.auroraai.pro/launch/{{target}}/{{arch}}/{{current_version}}`,
-capabilities `updater:default/check/download/install`, vitest coverage.
+**Reframed 2026-06-14 (fleet-unify migration):** the minisign /
+`tauri-plugin-updater` plan is **obsolete**. Launch now uses the fleet
+SHA256-checksum updater (same as Econometrica + 6 other products). There is **no
+keypair to generate, no pubkey to embed, no signing step** — integrity = SHA256
+checksum from the server JSON, verified in Rust. The `build.rs` pubkey gate that
+**blocked the production installer is removed.** Onboarding is now backend-only.
 
-**Key fact:** the updater verifies integrity with a **minisign signature**
-(Tauri-native), NOT Yandex KMS. The previously-planned "M-AU depends on M-CS
-(KMS)" dependency is **dissolved** — KMS is not required for auto-update.
+**In code (✅, Phase A DONE):** `src-tauri/src/commands/updater.rs` (checksum
+model, dual endpoint Supabase `app-update` Edge Function + GH-Pages
+`latest.json`), `UpdateAvailableBanner.svelte` on IPC commands
+(`check_update`/`download_update`/`apply_update`), no plugin, no minisign. See
+**ADR-008**.
 
-**External steps (⏳):**
+**Backend done (✅, this session):** `app_versions` placeholder row
+`product='aurora-launch'`; `licenses_product_check` += `'launch'`. No Edge
+Function deploy needed (`app-update` / `auth` are product-agnostic).
 
-1. **Generate the minisign keypair** (once, kept secret):
-   `tauri signer generate -w aurora-launch-updater.key`
-   → produces a private key (store in password manager / CI secret) + a public key.
-2. **Embed the public key** in `src-tauri/tauri.conf.json`:
-   replace `"pubkey": "EMBED_AT_RELEASE_TIME"` with the generated public key string.
-   (Until this is a real key, the updater cannot verify and will refuse updates —
-   correct fail-safe behaviour.)
-3. **Confirm** `bundle.createUpdaterArtifacts` is enabled so the build emits the
-   `.sig` files (Tauri v2 may require `"createUpdaterArtifacts": true`).
-4. **Sign at release time:** set `TAURI_SIGNING_PRIVATE_KEY` (+ password) env in
-   the release build; `tauri build` then produces signed artifacts + `.sig`.
-5. **Host the manifest** at the endpoint: publish `latest.json` (version,
-   per-target download URLs, signatures, notes) at
-   `updates.auroraai.pro/launch/{target}/{arch}/{current_version}`. Static host
-   or edge function — same infra family as other Aurora products.
-6. **CI assertion (audit 2026-06-14):** `build.rs` validates the
-   `AURORA_UPDATER_PUBKEY` env var and panics on the placeholder, BUT it does NOT
-   patch `tauri.conf.json` — the updater plugin reads `plugins.updater.pubkey`
-   from `tauri.conf.json` at runtime. CI MUST patch `tauri.conf.json` with the
-   real key AND assert it no longer contains `"EMBED_AT_RELEASE_TIME"` before
-   signing. Otherwise the placeholder ships → verification always fails →
-   updates never install (fail-safe, but the auto-update feature is silently dead).
-7. **Smoke:** install version N-1, publish N, confirm in-app banner appears,
-   downloads, verifies signature, installs.
+**External steps (⏳ — Anton, per the `aurora-release-update` skill):**
 
-**Verification of correctness (already confirmed in review):** `is_newer`-style
-version comparison is handled by the plugin; the banner handles `check()` /
-`downloadAndInstall()` errors without crashing the webview.
+1. Add `launch` (product id **`aurora-launch`**) to the `aurora-release-update`
+   skill mapping table.
+2. On each release: build the production installer from the repo root —
+   `AURORA_BUILD_PROFILE=production tauri build` (**no signing env needed**) —
+   then upload `Aurora.Launch_X.Y.Z_x64-setup.exe` to GitHub Releases
+   `Ackold26/aurora-releases` (~110 MB → GH Releases, not Supabase Storage <50 MB).
+3. Compute the installer SHA256 and
+   `UPDATE app_versions SET version, download_url (GH Release asset URL),
+   checksum, release_notes WHERE product='aurora-launch'`.
+4. Publish `rosst-updates/aurora-launch/latest.json` (GH-Pages fallback — mirror
+   of the same version / url / checksum).
+5. **Smoke:** install N-1, publish N, confirm banner → download → checksum verify
+   → install → relaunch end-to-end (VM).
+
+**Obsolete (removed by ADR-008 — do NOT do these):** minisign
+`tauri signer generate`, embedding a pubkey in `tauri.conf.json`,
+`createUpdaterArtifacts` / `.sig` signing, `TAURI_SIGNING_PRIVATE_KEY`, the
+`updates.auroraai.pro` endpoint, and the `AURORA_UPDATER_PUBKEY` CI patch/assert.
 
 ---
 

@@ -15,7 +15,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.0", features = [] }
 
 [dev-dependencies]
-tempfile = "3.10"
+# tempfile promoted to [dependencies] (updater download path uses it in prod).
 
 [dependencies]
 tauri = { version = "2.0", features = ["macos-private-api"] }
@@ -25,7 +25,6 @@ tauri-plugin-shell = "2.0"
 tauri-plugin-notification = "2.0"
 tauri-plugin-process = "2.0"
 tauri-plugin-os = "2.0"
-tauri-plugin-updater = "2.0"
 
 # Dev-only: MCP Bridge plugin для автоматизированных webview/IPC smoke tests.
 # Подключён под #[cfg(debug_assertions)] — в release сборку не уйдёт.
@@ -66,6 +65,14 @@ uuid = { version = "1.10", features = ["v4", "v7", "serde"] }
 
 # Hex encoding для signatures
 hex = "0.4"
+
+# Update integrity — fleet checksum updater (replaces tauri-plugin-updater/minisign).
+# Mirrors Econometrica src-tauri/src/commands/updater.rs: SHA256 checksum from
+# Supabase app_versions / GH-Pages latest.json, no signature plugin.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+futures-util = "0.3"
+obfstr = "0.4"
+tempfile = "3"
 
 [features]
 # This feature is used for production builds and dev/test where the bundle

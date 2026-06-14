@@ -42,6 +42,12 @@ pub enum AuroraError {
     #[error("Forecast handle not found: {handle_id}")]
     ForecastHandleNotFound { handle_id: String },
 
+    /// Auto-update failure (fleet checksum updater). `code` carries the
+    /// UP0xx diagnostic the donor used (UP001 server, UP002 download,
+    /// UP003 checksum, UP004 install launch).
+    #[error("Update failed [{code}]: {message}")]
+    UpdateFailed { code: String, message: String },
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
@@ -72,6 +78,7 @@ impl AuroraError {
             Self::LicenseBypassRefused { .. } => "license_bypass_refused",
             Self::ForecastCancelled => "forecast_cancelled",
             Self::ForecastHandleNotFound { .. } => "forecast_handle_not_found",
+            Self::UpdateFailed { .. } => "update_failed",
             Self::Io(_) => "io",
             Self::Zip(_) => "zip",
             Self::Json(_) => "json",

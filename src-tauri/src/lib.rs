@@ -34,6 +34,36 @@ use state::AppState;
 /// path is ELIMINATED at compile time when this == "production".
 pub const BUILD_PROFILE: &str = env!("AURORA_BUILD_PROFILE");
 
+// ============== Auto-updater commands (fleet checksum updater) ==============
+// Migrated from tauri-plugin-updater (minisign) to the fleet SHA256-checksum
+// model (2026-06-14). Thin wrappers over `commands::updater`; mirror the
+// Econometrica lib.rs split. Frontend contract:
+//   invoke('check_update')                       -> VersionInfo | null
+//   invoke('download_update', {url, checksum})   -> installer path (verifies checksum)
+//   listen('update-progress', e => e.payload.percent)
+//   invoke('apply_update', {installerPath})      -> launches installer, exits
+
+#[tauri::command]
+async fn check_update() -> Result<Option<commands::updater::VersionInfo>, AuroraError> {
+    commands::updater::check_for_updates(env!("CARGO_PKG_VERSION")).await
+}
+
+#[tauri::command]
+async fn download_update(
+    url: String,
+    checksum: String,
+    app: tauri::AppHandle,
+) -> Result<String, AuroraError> {
+    let path = commands::updater::download_update(&url, &app).await?;
+    commands::updater::verify_checksum(&path, &checksum)?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn apply_update(installer_path: String, app: tauri::AppHandle) -> Result<(), AuroraError> {
+    commands::updater::apply_update(std::path::Path::new(&installer_path), &app).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::init();
@@ -61,8 +91,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_updater::Builder::new().build());
+        .plugin(tauri_plugin_os::init());
 
     // Dev-only: MCP Bridge plugin для автоматизированных webview/IPC smoke
     // tests (visual-audit skill, driver_session @ 127.0.0.1:9229). Включается
@@ -131,6 +160,10 @@ pub fn run() {
             commands::audit_log::list_audit_entries,
             // build info
             commands::build_info::get_build_info,
+            // auto-updater (fleet checksum updater — replaces tauri-plugin-updater)
+            check_update,
+            download_update,
+            apply_update,
             // adapters (Block 4 Phase 3)
             commands::adapters::analyze_data_file,
             commands::adapters::validate_wide_table,

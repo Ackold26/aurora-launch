@@ -14,3 +14,4 @@ pub mod methodology_cert;
 pub mod projects;
 pub mod similarity;
 pub mod telemetry;
+pub mod updater;

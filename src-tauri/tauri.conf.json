@@ -31,7 +31,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' tauri: ipc: http://ipc.localhost; img-src 'self' data: asset:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://updates.auroraai.pro https://feedback.auroraai.pro"
+      "csp": "default-src 'self' tauri: ipc: http://ipc.localhost; img-src 'self' data: asset:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://feedback.auroraai.pro"
     }
   },
   "bundle": {
@@ -54,7 +54,8 @@
       "nsis": {
         "installerIcon": "icons/icon.ico",
         "installMode": "perMachine",
-        "languages": ["Russian", "English"]
+        "languages": ["Russian", "English"],
+        "installerHooks": "./installer_hooks.nsh"
       }
     },
     "macOS": {
@@ -67,14 +68,5 @@
       }
     }
   },
-  "plugins": {
-    "updater": {
-      "active": true,
-      "endpoints": [
-        "https://updates.auroraai.pro/launch/{{target}}/{{arch}}/{{current_version}}"
-      ],
-      "dialog": false,
-      "pubkey": "EMBED_AT_RELEASE_TIME"
-    }
-  }
+  "plugins": {}
 }

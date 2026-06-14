@@ -33,42 +33,14 @@ fn main() {
         );
     }
 
-    // Block 3 BLOCKER-3 fix: refuse to compile production release с placeholder
-    // updater pubkey. Without this gate, production installer accepts any
-    // signature (or none) on auto-updates — an attacker controlling the
-    // updates.auroraai.pro endpoint could push arbitrary binaries.
-    //
-    // Release CI MUST set AURORA_UPDATER_PUBKEY env var с real Ed25519 hex
-    // pubkey before `cargo build --release`.
-    //
-    // AUDIT 2026-06-14: this gate validates the ENV var only and emits
-    // cargo:rustc-env — it does NOT patch tauri.conf.json, and the emitted env
-    // is read nowhere in Rust. The Tauri updater plugin reads
-    // plugins.updater.pubkey from tauri.conf.json at RUNTIME. Therefore CI MUST
-    // separately patch tauri.conf.json with the same key AND assert it no longer
-    // contains "EMBED_AT_RELEASE_TIME" before signing the installer — otherwise
-    // the placeholder ships and signature verification always fails (updates
-    // never install: fail-safe, not fail-open). See
-    // COMMERCIAL_READINESS_EXTERNAL_STEPS.md Track A.
-    if build_profile == "production" {
-        let updater_pubkey = std::env::var("AURORA_UPDATER_PUBKEY").unwrap_or_default();
-        if updater_pubkey.is_empty() || updater_pubkey.contains("EMBED_AT_RELEASE_TIME") {
-            panic!(
-                "BLOCKER-3 GATE: production build requires AURORA_UPDATER_PUBKEY env var \
-                 (Ed25519 hex). Got empty or placeholder. Aborting — would ship \
-                 unsigned-update vulnerability."
-            );
-        }
-        if updater_pubkey.len() != 64 || !updater_pubkey.chars().all(|c| c.is_ascii_hexdigit()) {
-            panic!(
-                "BLOCKER-3 GATE: AURORA_UPDATER_PUBKEY must be 64-char hex string (Ed25519 \
-                 32-byte raw pubkey). Got {} chars. Aborting.",
-                updater_pubkey.len()
-            );
-        }
-        println!("cargo:rerun-if-env-changed=AURORA_UPDATER_PUBKEY");
-        println!("cargo:rustc-env=AURORA_UPDATER_PUBKEY={}", updater_pubkey);
-    }
+    // Updater pubkey gate REMOVED (fleet-unify migration 2026-06-14): Launch no
+    // longer uses tauri-plugin-updater / minisign. Update integrity is now a
+    // SHA256 checksum delivered in the server JSON (see commands/updater.rs), so
+    // there is no compile-time pubkey to embed and production builds no longer
+    // require AURORA_UPDATER_PUBKEY. This unblocks the production installer
+    // (previously build.rs panicked here without a minisign keypair that exists
+    // nowhere in the fleet). The AURORA_BUILD_PROFILE license-bypass gate above
+    // is unaffected.
 
     tauri_build::build()
 }
