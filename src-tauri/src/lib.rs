@@ -65,9 +65,18 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build());
 
     // Dev-only: MCP Bridge plugin для автоматизированных webview/IPC smoke
-    // tests. Включается только в debug сборке, в production не попадает.
+    // tests (visual-audit skill, driver_session @ 127.0.0.1:9229). Включается
+    // только в debug сборке, в production не попадает. bind 127.0.0.1 (НЕ
+    // дефолтный 0.0.0.0) — порт не открывается в сеть. base_port 9229 —
+    // per-product (карта в visual-audit references; дефолт 9223 = Econometrica,
+    // collision если оба dev сразу).
     #[cfg(debug_assertions)]
-    let builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+    let builder = builder.plugin(
+        tauri_plugin_mcp_bridge::Builder::new()
+            .bind_address("127.0.0.1")
+            .base_port(9229)
+            .build(),
+    );
 
     builder
         .manage(AppState::default())

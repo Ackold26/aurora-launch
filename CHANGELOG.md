@@ -1,5 +1,51 @@
 # Changelog
 
+## Unreleased — Sprint 11 (commercial-readiness review + audit)
+
+Reframed after ground-truth review: the three presumed commercial blockers
+(auto-updater, license enforcement, Π.2.5/Π.2.6 modeling) are **already
+implemented in code** — Launch is more mature than the stale planning docs
+(POST_PILOT_BACKLOG 2026-05-14) implied. Remaining gaps are **external**
+(signing keys, JWT issuer backend, manifest hosting, pilot data), not
+application code. Donor-reuse from Econometrica/Optimizer was therefore NOT
+applied (would regress more-modern Launch implementations). See **ADR-007** +
+`06_References/COMMERCIAL_READINESS_EXTERNAL_STEPS.md`.
+
+### Fixed
+- **`paths.rs:15` doctest** — wrapped the ASCII layout tree in a ` ```text `
+  fence; `cargo test` (full, incl. `--doc`) now passes (was: doctest compile
+  failure on Unicode `└──` + `{LOCALAPPDATA}`). Pre-existing tech debt
+  (original Sprint 11 D3-B).
+- **`dispatch_table.py` OLS `proxy_baseline<=0` fallback** — replaced the
+  convoluted recursive call with a direct `_run_pure_transfer` (mirrors the
+  Bayesian handler). Clearer + consistent; fallback-path equivalent.
+
+### Documented (audit findings — no behaviour change)
+- `ols_with_priors.py` — **CALIBRATION CAVEAT**: ridge posterior `Σ̂` uses
+  `λ=shrinkage`, not `σ²` → CI systematically **tighter** than the master-plan
+  additive formula; MUST be pilot-validated (Track C).
+- `dispatch_table.py` — Mode 3/4 fold combined σ into `proxy_beta_std` →
+  `transfer_assumption_pct` reports 0% (total CI preserved; attribution only).
+- `build.rs` — corrected misleading comment: the updater-pubkey gate validates
+  the env var but does NOT patch `tauri.conf.json` (CI must patch + assert).
+- `THREAT_MODEL.md §3.6` — updater integrity = minisign (`tauri-plugin-updater`),
+  KMS not required; placeholder pubkey is fail-safe (refuses updates).
+- `README.md` — softened the public web-verifier claim (planned, not yet live).
+
+### Added
+- **ADR-007** — license backend: stay on platform-core JWT SDK, NOT Econometrica
+  `online_auth` (avoids destructive rewrite of the already-wired C-3 path).
+- `06_References/COMMERCIAL_READINESS_EXTERNAL_STEPS.md` — external steps (Anton)
+  for updater finalization (Track A), license activation #52 (Track B), modeling
+  calibration (Track C).
+
+### Verification
+- `cargo test` 68 passed + doctests ok (previously failing).
+- vitest `UpdateAvailableBanner` 8 passed.
+- pytest modeling (M-01/M-02/dispatch) 49 + engines 83 passed.
+- pytest license 42 passed (3 skipped — `aurora_common` absent, empirically
+  confirms the #52 external dependency gap).
+
 ## v0.2.5 — 2026-05-24 (#50 — wire aurora_observability в sidecar)
 
 Activate previously-declared-but-unused `aurora_observability` package в Aurora

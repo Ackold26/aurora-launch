@@ -39,8 +39,17 @@ fn main() {
     // updates.auroraai.pro endpoint could push arbitrary binaries.
     //
     // Release CI MUST set AURORA_UPDATER_PUBKEY env var с real Ed25519 hex
-    // pubkey before `cargo build --release`. The build replaces the
-    // placeholder в tauri.conf.json (or fails the build).
+    // pubkey before `cargo build --release`.
+    //
+    // AUDIT 2026-06-14: this gate validates the ENV var only and emits
+    // cargo:rustc-env — it does NOT patch tauri.conf.json, and the emitted env
+    // is read nowhere in Rust. The Tauri updater plugin reads
+    // plugins.updater.pubkey from tauri.conf.json at RUNTIME. Therefore CI MUST
+    // separately patch tauri.conf.json with the same key AND assert it no longer
+    // contains "EMBED_AT_RELEASE_TIME" before signing the installer — otherwise
+    // the placeholder ships and signature verification always fails (updates
+    // never install: fail-safe, not fail-open). See
+    // COMMERCIAL_READINESS_EXTERNAL_STEPS.md Track A.
     if build_profile == "production" {
         let updater_pubkey = std::env::var("AURORA_UPDATER_PUBKEY").unwrap_or_default();
         if updater_pubkey.is_empty() || updater_pubkey.contains("EMBED_AT_RELEASE_TIME") {

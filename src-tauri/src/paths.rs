@@ -10,15 +10,17 @@
 //! correct isolation. For RDP multi-user scenarios, each session sees their
 //! own profile directory.
 //!
-//! Standard layout::
+//! Standard layout:
 //!
-//!     {LOCALAPPDATA}/Aurora Launch/
-//!     ├── projects.db          (ProjectDB)
-//!     ├── blobs/               (content-addressed)
-//!     ├── autosave/            (Phase 0.2)
-//!     ├── crashes/             (Phase 0.3)
-//!     ├── logs/                (rotating app/sidecar logs)
-//!     └── exports/             (cached .aurora ZIPs)
+//! ```text
+//! {LOCALAPPDATA}/Aurora Launch/
+//! ├── projects.db          (ProjectDB)
+//! ├── blobs/               (content-addressed)
+//! ├── autosave/            (Phase 0.2)
+//! ├── crashes/             (Phase 0.3)
+//! ├── logs/                (rotating app/sidecar logs)
+//! └── exports/             (cached .aurora ZIPs)
+//! ```
 //!
 //! On macOS:   `~/Library/Application Support/Aurora Launch/...`
 //! On Linux:   `~/.local/share/aurora-launch/...` (XDG_DATA_HOME)

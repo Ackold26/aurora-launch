@@ -19,10 +19,18 @@ This is equivalent к Bayesian linear regression с Gaussian priors and known σ
 fast (no MCMC) and accurate enough для launch update scenario.
 
 Per master-plan §④ M-01:
-    σ_β_recipient = √(σ_β_OLS² + σ_β_proxy² · shrinkage²)
+    σ_β_recipient = √(σ_β_OLS² + σ_β_proxy² · shrinkage²)   (additive — wider)
 
-Implementation chooses the ridge formulation above which is internally
-consistent and produces the same σ scaling when both terms balance.
+CALIBRATION CAVEAT (audit 2026-06-14): the implementation uses the ridge
+posterior Σ̂ = σ²·(XᵀX + λΩ⁻¹)⁻¹ with λ = shrinkage, NOT σ². Because
+(A + B)⁻¹ ≼ A⁻¹ for PSD B, this posterior is systematically TIGHTER than the
+additive master-plan formula above — i.e. the reported CI is narrower (more
+confident), and its width depends on the `shrinkage` knob rather than being the
+strict conjugate posterior. This is statistically defensible but NOT equivalent
+to the master-plan formula. It MUST be calibration-validated on real pilot data
+(does the 95% CI capture actuals at ~90%+?) before GA — see
+COMMERCIAL_READINESS_EXTERNAL_STEPS.md Track C. If mis-calibrated, set λ = σ²
+for true conjugacy OR implement the additive formula explicitly.
 
 Fallback policy:
     - len(recipient_y) < MIN_OBSERVATIONS → cannot fit OLS, fall back к pure

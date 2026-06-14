@@ -159,11 +159,18 @@ User отказывается от своих действий (нет audit tra
 
 **Mitigations:**
 - Updates fetched через HTTPS (TLS 1.3)
-- SHA-256 verification of downloaded installer
-- Signature verification (Aurora signing cert)
-- Version monotonicity check (no downgrade без explicit user action)
-- Update channel rosst-updates (existing infrastructure)
-- Staged rollout (10% → 50% → 100%) для major versions
+- **Integrity = minisign signature** via `tauri-plugin-updater` (Tauri-native;
+  the embedded `pubkey` verifies each artifact's `.sig` before install).
+  Yandex KMS / M-CS is NOT required for update integrity — see ADR-007 context
+  and `06_References/COMMERCIAL_READINESS_EXTERNAL_STEPS.md` Track A.
+- Version monotonicity check (plugin rejects non-newer versions)
+- Update channel `updates.auroraai.pro/launch/{target}/{arch}/{version}`
+
+**Residual risk (2026-06-14):** until the real minisign public key replaces the
+`"pubkey": "EMBED_AT_RELEASE_TIME"` placeholder in `tauri.conf.json`, signature
+verification cannot succeed — the updater therefore refuses updates (fail-safe,
+not fail-open). Embedding the key + release-time signing is an external step
+(Track A). No unsigned/tampered update can install while the placeholder stands.
 
 **Residual risk:** low.
 

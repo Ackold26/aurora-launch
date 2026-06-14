@@ -311,15 +311,19 @@ def _handle_ols_with_proxy_priors(
         np.mean(_compute_baseline_for_ols(anchors, horizon_periods))
     )
     if proxy_baseline <= 0:
+        # Degenerate proxy normalisation — mirror the Bayesian handler: call
+        # pure_transfer directly with a sentinel baseline (1.0) rather than
+        # recursing. Audit 2026-06-14: previous recursive call into the
+        # insufficient-input branch was a convoluted, inconsistent path.
         warnings.append(
             "OLS+priors: proxy_baseline <= 0 — falling back к pure_transfer."
         )
-        return _handle_ols_with_proxy_priors(
+        forecast = _run_pure_transfer(
             channels=channels, anchors=anchors, spend_plan=spend_plan,
             horizon_periods=horizon_periods, granularity=granularity,
             proxy_baseline=1.0, coverage_target=coverage_target,
-            recipient_y=None, warnings=warnings,  # forces fallback path
         )
+        return forecast, "ols_with_proxy_priors_fallback_v1"
     scale_ratio = recipient_baseline_mean / proxy_baseline
 
     proxy_beta_means_scaled = {
@@ -368,6 +372,11 @@ def _handle_ols_with_proxy_priors(
         )
         # Inflation captures the OLS+priors combined σ minus the scale-back proxy σ.
         # Conservative: zero inflation (rely on combined σ for variance).
+        # AUDIT NOTE (2026-06-14): the combined σ is folded into proxy_beta_std, so
+        # the downstream variance DECOMPOSITION reports transfer_assumption_pct=0%
+        # for Mode 3/4. The total CI is preserved (combined σ lives in proxy_std);
+        # only the attribution breakdown is affected. Calibration of the CI itself
+        # is pilot-gated — see COMMERCIAL_READINESS_EXTERNAL_STEPS.md Track C.
         new_proxy_std = float(result.sigma_beta_combined[i]) / (
             scale_ratio if scale_ratio != 0 else 1.0
         )
