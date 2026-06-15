@@ -17,6 +17,7 @@ NOT included в signed payload. Signature deterministic for same content.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -324,6 +325,39 @@ def verify_certificate_local(
         key.verify(bytes(sig), cert_signing_input(cert_data))
         return True
     except InvalidSignature:
+        return False
+
+
+def verify_certificate_json(
+    cert_json: bytes | str | dict,
+    public_key: Optional[Ed25519PublicKey] = None,
+) -> bool:
+    """Verify the local signature of a SERIALIZED methodology certificate (the
+    `methodology_cert.json` a consumer reads). Reconstructs the signing input from
+    the cert fields and checks `signature_local_ed25519` (hex, per the schema's
+    `ser_json_bytes="hex"`) against the vendor pubkey. The signature is decoded
+    manually so this does not depend on pydantic's `val_json_bytes`; the signing
+    input excludes the signature fields, so their model-side decoding is irrelevant.
+    Fail-closed: any parse / decode / verify failure returns False — a serialized
+    cert is never trusted on the mere PRESENCE of a signature string."""
+    try:
+        data = (
+            cert_json
+            if isinstance(cert_json, dict)
+            else json.loads(cert_json)
+        )
+        sig_hex = data.get("signature_local_ed25519")
+        if not sig_hex:
+            return False
+        signature = bytes.fromhex(sig_hex)
+        key = public_key or _resolve_cert_public_key()
+        if key is None:
+            return False
+        model = MethodologyCertificateData.model_validate(data)
+        key.verify(signature, cert_signing_input(model))
+        return True
+    except Exception:
+        # Fail-closed on malformed JSON, bad hex, schema mismatch, or bad signature.
         return False
 
 

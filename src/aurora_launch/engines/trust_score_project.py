@@ -35,6 +35,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from aurora_launch.engines.methodology_cert import verify_certificate_json
 from aurora_launch.engines.trust_score import (
     Diagnostic,
     TrustScoreInputs,
@@ -135,12 +136,20 @@ def extract_similarity_score(
 def extract_methodology_certified(
     files: dict[str, bytes],
 ) -> tuple[float, str]:
-    """Check methodology_cert presence + parsed validity.
+    """Check methodology_cert presence + CRYPTOGRAPHIC validity.
 
     Looks for `methodology_cert.json` (preferred for parsing) or `.pdf`
-    (presence signals certificate was generated). Returns 1.0 if both signed
-    + cert_version matches, 0.5 if cert artifact present but signature absent
-    (cert pending sign-off), 0.0 if no cert artifact.
+    (presence signals certificate was generated). The local Ed25519 signature is
+    now cryptographically verified (`verify_certificate_json`) against the embedded
+    vendor pubkey — not merely checked for presence — so a forged or tampered
+    signature scores 0.0, not partial credit. Returns 1.0 if the local signature
+    verifies AND the (cloud) aurora signature is present + not pending; 0.5 if the
+    local signature verifies but aurora is pending/absent (pilot release) or the
+    cert is generated but unsigned; 0.0 if a present signature fails verification
+    or no cert artifact exists.
+
+    (The aurora half is a cloud signature this offline path cannot verify locally —
+    that is the web verifier's job — so it stays a presence + not-pending check.)
 
     Default: 0.0 — no cert means not certified.
     """
@@ -153,10 +162,17 @@ def extract_methodology_certified(
         sig_local = cert_data.get("signature_local_ed25519")
         sig_aurora = cert_data.get("signature_aurora_ed25519")
         pending = cert_data.get("signature_aurora_pending", False)
-        if sig_local and sig_aurora and not pending:
-            return 1.0, "сертификат подписан (local + aurora ed25519)"
-        if sig_local:
-            return 0.5, "сертификат подписан локально, ожидает aurora подпись"
+
+        # Cryptographically verify the local signature — not its mere presence.
+        local_valid = bool(sig_local) and verify_certificate_json(cert_data)
+        if sig_local and not local_valid:
+            return 0.0, "подпись сертификата недействительна — не прошла криптопроверку"
+        if local_valid and sig_aurora and not pending:
+            return 1.0, "сертификат подписан (local verified + aurora ed25519)"
+        if local_valid and sig_aurora and pending:
+            return 0.5, "локально подтверждена, ожидает aurora подпись (pilot release)"
+        if local_valid:
+            return 0.5, "Подпись разработчика (pilot release) — локально подтверждена"
         return 0.5, "сертификат сгенерирован, подписи отсутствуют"
 
     cert_pdf = files.get("methodology_cert.pdf")
