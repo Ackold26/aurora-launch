@@ -193,14 +193,6 @@ fn collect_hw_ids() -> Result<Vec<String>> {
     Err(anyhow!("Machine fingerprinting is only supported on Windows and macOS"))
 }
 
-/// Return the raw fingerprint string (before hashing) for admin tooling.
-/// This is the concatenation of hardware IDs that gets hashed into the machine fingerprint.
-pub fn get_raw_fingerprint_hex() -> Result<String> {
-    let components = collect_hw_ids()?;
-    let raw = components.join("|");
-    Ok(hex::encode(raw.as_bytes()))
-}
-
 /// Produce a hex-encoded SHA-256 hash of a fingerprint string (for license matching).
 pub fn hash_fingerprint(fingerprint: &str) -> String {
     let mut hasher = Sha256::new();

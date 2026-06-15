@@ -15,8 +15,6 @@
 //! - `feedback` — capture screenshot + log для in-app feedback channel
 //! - `audit_log` — emit audit events visible в History panel
 
-use std::sync::Mutex;
-
 use tauri::Manager;  // Phase 2 fix: required для AppHandle::manage() call
 
 mod commands;
@@ -158,6 +156,7 @@ pub fn run() {
             commands::license::has_feature,
             commands::license::require_feature,
             commands::license::is_dev_build,
+            commands::license::import_license,
             // telemetry commands (Block 2F — local-only buffer)
             commands::telemetry::log_event,
             commands::telemetry::list_events,
