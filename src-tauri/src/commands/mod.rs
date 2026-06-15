@@ -11,7 +11,6 @@ pub mod forecast;
 pub mod handshake;
 pub mod license;
 pub mod methodology_cert;
-pub mod online_auth;
 pub mod projects;
 pub mod similarity;
 pub mod telemetry;

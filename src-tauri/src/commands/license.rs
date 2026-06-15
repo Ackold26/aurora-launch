@@ -1,39 +1,46 @@
-//! Licence resolution — fleet model (Phase B of the signing & licensing
-//! unification migration).
+//! Licence resolution — fleet model, consuming the Core `aurora_fleet` crate.
 //!
 //! Resolution order (fail-closed):
 //!   0. dev-bypass gate (BUILD_PROFILE=="dev" AND AURORA_LAUNCH_LICENSE_BYPASS) → all features
-//!   1. online: Supabase `/auth` (cabinets + expires_at), 24h disk cache
-//!   2. offline fallback: local Ed25519 `license.json` (fleet pubkey)
+//!   1. online: Supabase `/auth` via `aurora_fleet::online_auth` (cabinets + expires_at), 24h disk cache
+//!   2. offline fallback: local Ed25519 `license.json` via `aurora_fleet::license` (fleet pubkey)
+//!
+//! Cutover 2026-06-14: the offline `License` / canonical-JSON / Ed25519 verify,
+//! the online `/auth` flow, and the machine fingerprint are no longer app-local
+//! copies — they come from the Core SSOT crate `aurora_fleet`. This module is now
+//! the thin app-side glue: product identity (`"launch"`), the dev-bypass gate, the
+//! `LicenseStatusPayload` the frontend consumes, tier mapping, the in-memory
+//! resolution cache, and the Tauri command surface.
 //!
 //! `has_feature(f)` = membership of `f` in the resolved `cabinets`. In every
-//! denied state (`blocked` / `expired` / `invalid` / `no_license`) the resolved
-//! cabinets are empty, so the membership test denies — fail-closed by construction.
+//! denied state the resolved cabinets are empty, so the membership test denies —
+//! fail-closed by construction.
 //!
-//! Replaces the previous Python-sidecar delegation. The Python
-//! `engines/license_validator.py` + the sidecar `get_license_status` /
-//! `has_license_feature` handlers it superseded were retired 2026-06-14 once
-//! this Rust path was verified live (online + offline Ed25519 smoke).
-//!
-//! The frontend contract (`LicenseStatusPayload`) is unchanged — the commands
-//! now take `AppHandle` (Tauri-injected) instead of the sidecar `State`, which
-//! is transparent to the JS callers.
+//! NOTE: the crate's offline `validate(build_date)` also runs an anti-rollback
+//! clock check (LI-009). Launch does not yet embed a build date, so we call
+//! `validate_without_rollback_check()` to preserve Phase B behaviour exactly;
+//! wiring `BUILD_TIMESTAMP` to re-gain LI-009 is a separate hardening follow-up.
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use base64::Engine;
-use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
-use crate::commands::online_auth;
-use crate::crypto::{ed25519, fingerprint};
+use aurora_fleet::license::License as FleetLicense;
+use aurora_fleet::online_auth;
+
 use crate::errors::{AuroraError, AuroraResult};
 
 /// Launch feature set (cabinet ids). Dev-bypass grants all of these.
 const ALL_FEATURES: &[&str] = &["launch_core", "launch_proxy_single", "launch_proxy_multi"];
+
+/// Launch's server-side product id — the `product` arg the shared `online_auth`
+/// crate now takes explicitly (the donor derived it from `CARGO_PKG_NAME`).
+fn product() -> &'static str {
+    "launch"
+}
 
 /// In-memory cache of the resolved status so feature checks within a session do
 /// not each trigger a network round-trip. Bounded by a short TTL; cleared on
@@ -51,108 +58,7 @@ pub struct LicenseStatusPayload {
     pub valid_until: Option<String>,
 }
 
-// ── Offline Ed25519 licence (ported from Econometrica license.rs) ──────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct License {
-    pub license_id: String,
-    pub issued_to: String,
-    pub expires_at: String, // YYYY-MM-DD
-    pub machine_fingerprint_hash: String,
-    pub cabinets: Vec<String>,
-    pub salt: String,      // base64
-    pub signature: String, // base64 Ed25519 over canonical JSON
-}
-
-/// Result of validating an offline licence. Never errors — fail-closed with
-/// `valid=false` so callers can map to a denied state.
-struct OfflineValidation {
-    valid: bool,
-    state: String, // active | expired | invalid
-    cabinets: Vec<String>,
-    expires_at: String,
-    detail: String,
-}
-
-impl License {
-    fn license_path(app_config_dir: &Path) -> PathBuf {
-        app_config_dir.join("license.json")
-    }
-
-    fn load(app_config_dir: &Path) -> Option<Self> {
-        let data = std::fs::read_to_string(Self::license_path(app_config_dir)).ok()?;
-        serde_json::from_str(&data).ok()
-    }
-
-    /// Canonical JSON for signing/verification: sorted keys, no signature field.
-    /// Must stay byte-identical to the fleet issuer (gen_license).
-    fn canonical_json(&self) -> String {
-        format!(
-            r#"{{"cabinets":{cabinets},"expires_at":"{expires}","issued_to":"{issued}","license_id":"{id}","machine_fingerprint_hash":"{fp}","salt":"{salt}"}}"#,
-            cabinets = serde_json::to_string(&self.cabinets).unwrap_or_else(|_| "[]".to_string()),
-            expires = self.expires_at,
-            issued = self.issued_to,
-            id = self.license_id,
-            fp = self.machine_fingerprint_hash,
-            salt = self.salt,
-        )
-    }
-
-    /// Validate machine binding, expiry, then Ed25519 signature. Fail-closed.
-    ///
-    /// NOTE: the donor also gates on a `BUILD_TIMESTAMP` clock-sanity check
-    /// (rejects a system clock set earlier than the build). Launch's build.rs
-    /// does not embed that env, so it is omitted here — a possible future
-    /// hardening (the online path is clock-authoritative server-side anyway).
-    fn validate(&self) -> OfflineValidation {
-        let fail = |state: &str, detail: &str| OfflineValidation {
-            valid: false,
-            state: state.to_string(),
-            cabinets: vec![],
-            expires_at: self.expires_at.clone(),
-            detail: detail.to_string(),
-        };
-
-        // 1. machine binding
-        let machine_fp_hash = match fingerprint::get_machine_fingerprint() {
-            Ok(fp) => fingerprint::hash_fingerprint(&fp),
-            Err(_) => return fail("invalid", "Не удалось определить отпечаток устройства"),
-        };
-        if self.machine_fingerprint_hash != machine_fp_hash {
-            return fail("invalid", "Лицензия привязана к другому устройству");
-        }
-
-        // 2. expiry
-        let expires = match NaiveDate::parse_from_str(&self.expires_at, "%Y-%m-%d") {
-            Ok(d) => d,
-            Err(_) => return fail("invalid", "Некорректный формат даты окончания лицензии"),
-        };
-        if chrono::Local::now().date_naive() > expires {
-            return fail("expired", "Срок действия лицензии истёк");
-        }
-
-        // 3. Ed25519 signature over canonical JSON
-        let sig_bytes = match base64::engine::general_purpose::STANDARD.decode(&self.signature) {
-            Ok(b) => b,
-            Err(_) => return fail("invalid", "Некорректная подпись лицензии (base64)"),
-        };
-        let sig_ok = ed25519::verify_signature(self.canonical_json().as_bytes(), &sig_bytes)
-            .unwrap_or(false);
-        if !sig_ok {
-            return fail("invalid", "Подпись лицензии недействительна");
-        }
-
-        OfflineValidation {
-            valid: true,
-            state: "active".to_string(),
-            cabinets: self.cabinets.clone(),
-            expires_at: self.expires_at.clone(),
-            detail: "Лицензия подтверждена локально".to_string(),
-        }
-    }
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────
+// ── Dev-bypass gate ──────────────────────────────────────────────────────────
 
 /// Dev-bypass predicate, factored pure so the gate is testable without mutating
 /// the process env or the compile-time profile: bypass is allowed ONLY when the
@@ -170,6 +76,8 @@ fn dev_bypass_active() -> bool {
         std::env::var("AURORA_LAUNCH_LICENSE_BYPASS").is_ok(),
     )
 }
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 fn tier_from_cabinets(cabinets: &[String]) -> Option<String> {
     if cabinets.iter().any(|c| c == "launch_proxy_multi") {
@@ -205,7 +113,23 @@ fn denied(state: &str, detail: &str, valid_until: Option<String>, grace: bool) -
     }
 }
 
-/// Resolve the licence status: dev-bypass → online → offline Ed25519.
+/// Map a fleet offline-validation `[LI-xxx]` error string to Launch's
+/// (state, RU detail). Unknown / signature failures fail-closed to `invalid`.
+fn map_offline_error(err: &str) -> (&'static str, String) {
+    if err.contains("LI-005") {
+        ("expired", "Срок действия лицензии истёк".to_string())
+    } else if err.contains("LI-006") {
+        ("invalid", "Лицензия привязана к другому устройству".to_string())
+    } else if err.contains("LI-008") {
+        ("invalid", "Некорректный формат даты окончания лицензии".to_string())
+    } else if err.contains("LI-009") {
+        ("invalid", "Системные часы выставлены некорректно. Проверьте дату и время.".to_string())
+    } else {
+        ("invalid", "Подпись лицензии недействительна".to_string())
+    }
+}
+
+/// Resolve the licence status: dev-bypass → online (crate) → offline Ed25519 (crate).
 async fn resolve_status(app_config_dir: &Path) -> LicenseStatusPayload {
     if dev_bypass_active() {
         return LicenseStatusPayload {
@@ -218,7 +142,7 @@ async fn resolve_status(app_config_dir: &Path) -> LicenseStatusPayload {
         };
     }
 
-    let online = online_auth::authorize(app_config_dir, env!("CARGO_PKG_VERSION"), "").await;
+    let online = online_auth::authorize(app_config_dir, env!("CARGO_PKG_VERSION"), "", product()).await;
     match online.status.as_str() {
         "ok" => granted(online.cabinets, online.expires_at, false, "Лицензия активна"),
         "cached" => granted(online.cabinets, online.expires_at, false, "Лицензия активна (кэш)"),
@@ -232,18 +156,23 @@ async fn resolve_status(app_config_dir: &Path) -> LicenseStatusPayload {
             };
             denied(state, &detail, None, false)
         }
-        // "offline" — server unreachable AND no fresh cache → offline Ed25519
-        _ => match License::load(app_config_dir) {
-            Some(lic) => {
-                let v = lic.validate();
-                if v.valid {
-                    granted(v.cabinets, Some(v.expires_at), true, "Офлайн-режим: лицензия подтверждена локально")
-                } else {
-                    let valid_until = if v.expires_at.is_empty() { None } else { Some(v.expires_at) };
-                    denied(&v.state, &v.detail, valid_until, true)
+        // "offline" — server unreachable AND no fresh cache → offline Ed25519 (crate).
+        _ => match FleetLicense::load(app_config_dir) {
+            Ok(lic) => match lic.validate_without_rollback_check() {
+                Ok(st) if st.valid => granted(
+                    st.cabinets,
+                    Some(st.expires_at),
+                    true,
+                    "Офлайн-режим: лицензия подтверждена локально",
+                ),
+                Ok(st) => {
+                    let (state, detail) = map_offline_error(st.error.as_deref().unwrap_or(""));
+                    let valid_until = if st.expires_at.is_empty() { None } else { Some(st.expires_at) };
+                    denied(state, &detail, valid_until, true)
                 }
-            }
-            None => denied(
+                Err(e) => denied("invalid", &format!("Лицензия недействительна: {e}"), None, true),
+            },
+            Err(_) => denied(
                 "no_license",
                 "Лицензия не найдена. Импортируйте лицензию в настройках.",
                 None,
@@ -315,21 +244,26 @@ pub async fn is_dev_build() -> AuroraResult<bool> {
 }
 
 /// Import an offline Ed25519 `license.json`: verify signature + machine binding
-/// before saving to the per-app config dir. Invalidates the resolution cache.
+/// (via the fleet crate) before saving to the per-app config dir. Invalidates the
+/// resolution cache. Uses `validate_without_rollback_check` to match resolution
+/// (anti-rollback LI-009 is a deferred hardening — see module note).
 #[tauri::command]
 pub fn import_license(path: String, app: tauri::AppHandle) -> AuroraResult<()> {
     let dir = config_dir(&app)?;
     let data = std::fs::read_to_string(&path)
         .map_err(|e| AuroraError::Other(format!("Не удалось прочитать файл лицензии: {e}")))?;
-    let lic: License = serde_json::from_str(&data)
+    let lic: FleetLicense = serde_json::from_str(&data)
         .map_err(|e| AuroraError::Other(format!("Некорректный файл лицензии: {e}")))?;
 
-    let v = lic.validate();
-    if !v.valid {
-        return Err(AuroraError::Other(format!("Лицензия недействительна: {}", v.detail)));
+    let st = lic
+        .validate_without_rollback_check()
+        .map_err(|e| AuroraError::Other(format!("Лицензия недействительна: {e}")))?;
+    if !st.valid {
+        let reason = st.error.unwrap_or_else(|| "Неизвестная ошибка".to_string());
+        return Err(AuroraError::Other(format!("Лицензия недействительна: {reason}")));
     }
 
-    let dest = License::license_path(&dir);
+    let dest = FleetLicense::license_path(&dir);
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| AuroraError::Other(format!("Не удалось создать каталог лицензии: {e}")))?;
@@ -368,47 +302,37 @@ mod tests {
     }
 
     #[test]
-    fn invalid_signature_fails_closed() {
-        // Wrong machine binding → invalid, no cabinets (fail-closed). Uses the
-        // real machine fingerprint so the binding check trips on the bogus hash.
-        let lic = License {
-            license_id: "test".into(),
-            issued_to: "test".into(),
-            expires_at: "2099-01-01".into(),
-            machine_fingerprint_hash: "0".repeat(64),
-            cabinets: vec!["launch_core".into(), "launch_proxy_multi".into()],
-            salt: "AAAA".into(),
-            signature: base64::engine::general_purpose::STANDARD.encode([0u8; 64]),
-        };
-        let v = lic.validate();
-        assert!(!v.valid);
-        assert!(v.cabinets.is_empty(), "denied validation must expose no cabinets");
-        assert_eq!(v.state, "invalid");
+    fn offline_error_mapping() {
+        // Pin the LI-code → (state, RU detail) glue mapping; unknown fails closed.
+        assert_eq!(map_offline_error("[LI-005] License has expired").0, "expired");
+        assert_eq!(map_offline_error("[LI-006] bound to a different machine").0, "invalid");
+        assert_eq!(map_offline_error("[LI-007] signature invalid").0, "invalid");
+        assert_eq!(map_offline_error("").0, "invalid");
     }
 
-    #[test]
-    fn expired_offline_licence_is_expired_state() {
-        // Past expiry → expired (binding check first; use the real hash so we
-        // reach the expiry branch).
-        let fp = fingerprint::get_machine_fingerprint().unwrap();
-        let fp_hash = fingerprint::hash_fingerprint(&fp);
-        let lic = License {
-            license_id: "t".into(),
-            issued_to: "t".into(),
-            expires_at: "2000-01-01".into(),
-            machine_fingerprint_hash: fp_hash,
-            cabinets: vec!["launch_core".into()],
-            salt: "AAAA".into(),
-            signature: base64::engine::general_purpose::STANDARD.encode([0u8; 64]),
-        };
-        let v = lic.validate();
-        assert!(!v.valid);
-        assert_eq!(v.state, "expired");
-        assert!(v.cabinets.is_empty());
+    /// Live integration smoke against the prod Supabase `/auth` Edge Function via
+    /// the fleet crate, using THIS dev box's fingerprint + the Starter test
+    /// licence. Ignored (network + machine-specific). Validates the Core SSOT
+    /// under a live consumer. Run:
+    ///   cargo test live_online_auth_smoke -- --ignored --nocapture
+    #[tokio::test]
+    #[ignore = "live: hits prod Supabase /auth with this dev box's fingerprint via the crate"]
+    async fn live_online_auth_smoke() {
+        let dir = std::env::temp_dir().join("aurora-launch-auth-smoke");
+        std::fs::create_dir_all(&dir).unwrap();
+        let status = online_auth::authorize(&dir, env!("CARGO_PKG_VERSION"), "", product()).await;
+        println!(
+            "online_auth (fleet crate): status={} available={} cabinets={:?} expires={:?} msg={:?}",
+            status.status, status.available, status.cabinets, status.expires_at, status.message
+        );
+        assert_eq!(status.status, "ok", "prod backend must authorize the test licence via the crate");
+        assert!(status.cabinets.iter().any(|c| c == "launch_proxy_single"), "Starter grants proxy_single");
+        assert!(!status.cabinets.iter().any(|c| c == "launch_proxy_multi"), "Starter must NOT grant proxy_multi");
     }
 
     /// Offline Ed25519 smoke against a REAL fleet-signed `license.json`
-    /// (machine-bound to this dev box). Ignored — needs the signed file. Run:
+    /// (machine-bound to this dev box) via the fleet crate. Ignored — needs the
+    /// signed file. Run:
     ///   AURORA_LAUNCH_TEST_LICENSE_DIR=<dir-with-license.json> \
     ///   cargo test live_offline_license_smoke -- --ignored --nocapture
     #[test]
@@ -421,14 +345,14 @@ mod tests {
                 return;
             }
         };
-        let lic = License::load(&dir).expect("license.json present and parseable");
-        let v = lic.validate();
+        let lic = FleetLicense::load(&dir).expect("license.json present and parseable");
+        let st = lic.validate_without_rollback_check().expect("validate returns Ok");
         println!(
-            "offline validate: valid={} state={} cabinets={:?} detail={}",
-            v.valid, v.state, v.cabinets, v.detail
+            "offline validate (fleet crate): valid={} cabinets={:?} err={:?}",
+            st.valid, st.cabinets, st.error
         );
-        assert!(v.valid, "fleet-signed licence for this machine must validate (got: {})", v.detail);
-        assert!(v.cabinets.iter().any(|c| c == "launch_proxy_single"), "Starter grants proxy_single");
-        assert!(!v.cabinets.iter().any(|c| c == "launch_proxy_multi"), "Starter must NOT grant proxy_multi");
+        assert!(st.valid, "fleet-signed licence for this machine must validate (got: {:?})", st.error);
+        assert!(st.cabinets.iter().any(|c| c == "launch_proxy_single"), "Starter grants proxy_single");
+        assert!(!st.cabinets.iter().any(|c| c == "launch_proxy_multi"), "Starter must NOT grant proxy_multi");
     }
 }

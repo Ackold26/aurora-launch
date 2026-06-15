@@ -18,7 +18,6 @@
 use tauri::Manager;  // Phase 2 fix: required для AppHandle::manage() call
 
 mod commands;
-mod crypto;
 mod errors;
 mod panic_handler;
 mod paths;
@@ -70,9 +69,9 @@ async fn apply_update(installer_path: String, app: tauri::AppHandle) -> Result<(
 /// copy it from Settings when requesting a licence.
 #[tauri::command]
 fn get_machine_id() -> Result<String, AuroraError> {
-    let fp = crypto::fingerprint::get_machine_fingerprint()
+    let fp = aurora_fleet::fingerprint::get_machine_fingerprint()
         .map_err(|e| AuroraError::Other(format!("fingerprint failed: {e}")))?;
-    Ok(crypto::fingerprint::hash_fingerprint(&fp))
+    Ok(aurora_fleet::fingerprint::hash_fingerprint(&fp))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

@@ -295,6 +295,7 @@ name = "aurora-launch"
 version = "0.2.5"
 dependencies = [
  "anyhow",
+ "aurora_fleet",
  "base64 0.22.1",
  "blake3",
  "chrono",
@@ -326,6 +327,27 @@ dependencies = [
  "uuid",
  "wmi",
  "zip",
+]
+
+[[package]]
+name = "aurora_fleet"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "ed25519-dalek",
+ "futures-util",
+ "hex",
+ "log",
+ "obfstr",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "uuid",
+ "wmi",
 ]
 
 [[package]]

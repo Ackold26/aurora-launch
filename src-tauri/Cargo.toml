@@ -18,6 +18,10 @@ tauri-build = { version = "2.0", features = [] }
 # tempfile promoted to [dependencies] (updater download path uses it in prod).
 
 [dependencies]
+# Fleet licensing/crypto SSOT (Core). Offline Ed25519 licence + online_auth +
+# machine fingerprint are consumed from here instead of app-local copies
+# (cutover 2026-06-14). Path-dep to the sibling platform-core checkout.
+aurora_fleet = { path = "../../aurora-platform-core/aurora_fleet" }
 tauri = { version = "2.0", features = ["macos-private-api"] }
 tauri-plugin-fs = "2.0"
 tauri-plugin-dialog = "2.0"
