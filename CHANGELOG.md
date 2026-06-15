@@ -79,9 +79,17 @@ now uses the fleet model instead of the Python `aurora_common.license` JWT path.
   cabinets `[launch_core, launch_proxy_single]` (Starter test licence), and the
   deny path (no `launch_proxy_multi`). Whole online wiring proven end-to-end.
   `cargo test` 79.
-- **PENDING:** offline Ed25519 integration smoke (needs Anton's signed
-  `license.json`), then retire the Python licence path (additive-then-switch —
-  `engines/license_validator.py` + sidecar handlers remain, unused, until then).
+- **LIVE:** offline Ed25519 integration smoke vs a real fleet-signed
+  `license.json` (machine-bound) → `validate()` ok, Starter cabinets.
+- **DONE:** the Python licence path is **retired** (2026-06-14) — removed
+  `engines/license_validator.py`, the sidecar `get_license_status` /
+  `has_license_feature` handlers + their registration, the
+  `aurora-launch-validate-license` CLI, and their tests. The dev-bypass gate's
+  attack-scenario coverage was ported to a Rust unit test in
+  `commands/license.rs`. Licence resolution is now Rust-only
+  (`current_license_status` → online_auth + offline Ed25519); the frontend calls
+  the Rust command unchanged. `persistence/encryption.py` keyring (DB-encryption
+  key, a different concern) is untouched.
 
 ## Unreleased — Sprint 11 (commercial-readiness review + audit)
 

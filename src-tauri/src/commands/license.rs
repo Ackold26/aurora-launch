@@ -10,9 +10,10 @@
 //! denied state (`blocked` / `expired` / `invalid` / `no_license`) the resolved
 //! cabinets are empty, so the membership test denies — fail-closed by construction.
 //!
-//! Replaces the previous Python-sidecar delegation. Additive-then-switch: the
-//! Python `engines/license_validator.py` + sidecar handlers stay in place
-//! (unused by this layer) until the Rust path is verified live, then retired.
+//! Replaces the previous Python-sidecar delegation. The Python
+//! `engines/license_validator.py` + the sidecar `get_license_status` /
+//! `has_license_feature` handlers it superseded were retired 2026-06-14 once
+//! this Rust path was verified live (online + offline Ed25519 smoke).
 //!
 //! The frontend contract (`LicenseStatusPayload`) is unchanged — the commands
 //! now take `AppHandle` (Tauri-injected) instead of the sidecar `State`, which
@@ -153,11 +154,21 @@ impl License {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+/// Dev-bypass predicate, factored pure so the gate is testable without mutating
+/// the process env or the compile-time profile: bypass is allowed ONLY when the
+/// build profile is `dev` AND the runtime env var is present.
+fn bypass_allowed(build_profile: &str, env_present: bool) -> bool {
+    build_profile == "dev" && env_present
+}
+
 /// Dev-bypass double gate: compile-time profile must be `dev` AND the runtime
 /// env var must be set. On a production install the profile is `production`
 /// (embedded by build.rs) so the env var is ignored entirely.
 fn dev_bypass_active() -> bool {
-    crate::BUILD_PROFILE == "dev" && std::env::var("AURORA_LAUNCH_LICENSE_BYPASS").is_ok()
+    bypass_allowed(
+        crate::BUILD_PROFILE,
+        std::env::var("AURORA_LAUNCH_LICENSE_BYPASS").is_ok(),
+    )
 }
 
 fn tier_from_cabinets(cabinets: &[String]) -> Option<String> {
@@ -339,6 +350,21 @@ mod tests {
         assert_eq!(tier_from_cabinets(&["launch_core".into(), "launch_proxy_single".into()]), Some("starter".to_string()));
         assert_eq!(tier_from_cabinets(&["launch_core".into()]), Some("custom".to_string()));
         assert_eq!(tier_from_cabinets(&[]), None);
+    }
+
+    #[test]
+    fn dev_bypass_gate_requires_both_dev_profile_and_env() {
+        // Ported from the retired Python `TestAuditB1LicenseBypassGate`
+        // (engines/license_validator.py) on its 2026-06-14 removal: the
+        // dev-bypass must require BOTH the `dev` build profile AND the env var,
+        // and a `production` build can never bypass even with the env set.
+        assert!(bypass_allowed("dev", true), "dev profile + env set → bypass on");
+        assert!(!bypass_allowed("dev", false), "dev profile, no env → no bypass");
+        assert!(
+            !bypass_allowed("production", true),
+            "production refuses bypass even with env (audit B1 gate)"
+        );
+        assert!(!bypass_allowed("production", false), "production, no env → no bypass");
     }
 
     #[test]
