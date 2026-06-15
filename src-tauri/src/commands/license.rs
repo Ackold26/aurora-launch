@@ -380,4 +380,29 @@ mod tests {
         assert_eq!(v.state, "expired");
         assert!(v.cabinets.is_empty());
     }
+
+    /// Offline Ed25519 smoke against a REAL fleet-signed `license.json`
+    /// (machine-bound to this dev box). Ignored — needs the signed file. Run:
+    ///   AURORA_LAUNCH_TEST_LICENSE_DIR=<dir-with-license.json> \
+    ///   cargo test live_offline_license_smoke -- --ignored --nocapture
+    #[test]
+    #[ignore = "offline: needs a fleet-signed license.json via AURORA_LAUNCH_TEST_LICENSE_DIR"]
+    fn live_offline_license_smoke() {
+        let dir = match std::env::var("AURORA_LAUNCH_TEST_LICENSE_DIR") {
+            Ok(d) => std::path::PathBuf::from(d),
+            Err(_) => {
+                eprintln!("skip: set AURORA_LAUNCH_TEST_LICENSE_DIR to a dir containing license.json");
+                return;
+            }
+        };
+        let lic = License::load(&dir).expect("license.json present and parseable");
+        let v = lic.validate();
+        println!(
+            "offline validate: valid={} state={} cabinets={:?} detail={}",
+            v.valid, v.state, v.cabinets, v.detail
+        );
+        assert!(v.valid, "fleet-signed licence for this machine must validate (got: {})", v.detail);
+        assert!(v.cabinets.iter().any(|c| c == "launch_proxy_single"), "Starter grants proxy_single");
+        assert!(!v.cabinets.iter().any(|c| c == "launch_proxy_multi"), "Starter must NOT grant proxy_multi");
+    }
 }
