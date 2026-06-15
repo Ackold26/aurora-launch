@@ -15,7 +15,7 @@
 //! - `feedback` — capture screenshot + log для in-app feedback channel
 //! - `audit_log` — emit audit events visible в History panel
 
-use tauri::Manager;  // Phase 2 fix: required для AppHandle::manage() call
+use tauri::{Emitter, Manager};  // Manager: manage()/try_state(); Emitter: app.emit()
 
 mod commands;
 mod errors;
@@ -33,17 +33,39 @@ use state::AppState;
 pub const BUILD_PROFILE: &str = env!("AURORA_BUILD_PROFILE");
 
 // ============== Auto-updater commands (fleet checksum updater) ==============
-// Migrated from tauri-plugin-updater (minisign) to the fleet SHA256-checksum
-// model (2026-06-14). Thin wrappers over `commands::updater`; mirror the
-// Econometrica lib.rs split. Frontend contract:
+// Thin Tauri wrappers over `aurora_fleet::updater` (Core SSOT — cutover
+// 2026-06-14, was the app-local `commands/updater.rs`). Host couplings are
+// supplied as closures: download progress → `emit('update-progress')`; pre-exit
+// → sidecar shutdown. The updater queries with product = CARGO_PKG_NAME
+// (`aurora-launch`, fleet convention — matches the `app_versions` row + GH-Pages
+// folder, NOT the short licensing product `launch`). The fixed prerelease-aware
+// `is_newer` comes from the crate. Frontend contract unchanged:
 //   invoke('check_update')                       -> VersionInfo | null
 //   invoke('download_update', {url, checksum})   -> installer path (verifies checksum)
 //   listen('update-progress', e => e.payload.percent)
 //   invoke('apply_update', {installerPath})      -> launches installer, exits
 
+/// Map a fleet updater error (`[UP-xxx] …`) to Launch's structured `UpdateFailed`
+/// so the frontend banner keeps its `{ code, message }` contract.
+fn map_update_err(e: aurora_fleet::FleetError) -> AuroraError {
+    let s = e.to_string(); // "[UP-xxx] detail" for the Update variant
+    match s.strip_prefix('[').and_then(|r| r.split_once("] ")) {
+        Some((code, message)) => AuroraError::UpdateFailed {
+            code: code.to_string(),
+            message: message.to_string(),
+        },
+        None => AuroraError::UpdateFailed {
+            code: "UP-000".to_string(),
+            message: s,
+        },
+    }
+}
+
 #[tauri::command]
-async fn check_update() -> Result<Option<commands::updater::VersionInfo>, AuroraError> {
-    commands::updater::check_for_updates(env!("CARGO_PKG_VERSION")).await
+async fn check_update() -> Result<Option<aurora_fleet::updater::VersionInfo>, AuroraError> {
+    aurora_fleet::updater::check_for_updates(env!("CARGO_PKG_VERSION"), env!("CARGO_PKG_NAME"))
+        .await
+        .map_err(map_update_err)
 }
 
 #[tauri::command]
@@ -52,14 +74,31 @@ async fn download_update(
     checksum: String,
     app: tauri::AppHandle,
 ) -> Result<String, AuroraError> {
-    let path = commands::updater::download_update(&url, &app).await?;
-    commands::updater::verify_checksum(&path, &checksum)?;
+    let path = aurora_fleet::updater::download_update(&url, move |downloaded, total, percent| {
+        let _ = app.emit(
+            "update-progress",
+            serde_json::json!({ "downloaded": downloaded, "total": total, "percent": percent }),
+        );
+    })
+    .await
+    .map_err(map_update_err)?;
+    aurora_fleet::updater::verify_checksum(&path, &checksum).map_err(map_update_err)?;
     Ok(path.to_string_lossy().to_string())
 }
 
 #[tauri::command]
 async fn apply_update(installer_path: String, app: tauri::AppHandle) -> Result<(), AuroraError> {
-    commands::updater::apply_update(std::path::Path::new(&installer_path), &app).await
+    // The crate's apply_update is sync and exits the process on success; run the
+    // async sidecar shutdown inside the on_pre_exit hook (we are about to exit).
+    let manager = app
+        .try_state::<std::sync::Arc<sidecar::SidecarManager>>()
+        .map(|s| std::sync::Arc::clone(s.inner()));
+    aurora_fleet::updater::apply_update(std::path::Path::new(&installer_path), move || {
+        if let Some(manager) = manager {
+            tauri::async_runtime::block_on(manager.shutdown());
+        }
+    })
+    .map_err(map_update_err)
 }
 
 /// Machine licensing id — hex SHA256 of the machine fingerprint. This is the
