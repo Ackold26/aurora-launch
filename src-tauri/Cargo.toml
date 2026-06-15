@@ -19,9 +19,11 @@ tauri-build = { version = "2.0", features = [] }
 
 [dependencies]
 # Fleet licensing/crypto SSOT (Core). Offline Ed25519 licence + online_auth +
-# machine fingerprint are consumed from here instead of app-local copies
-# (cutover 2026-06-14). Path-dep to the sibling platform-core checkout.
-aurora_fleet = { path = "../../aurora-platform-core/aurora_fleet" }
+# machine fingerprint + updater are consumed from here instead of app-local
+# copies (cutover 2026-06-14). Git-pinned to a tagged Core release (2026-06-14)
+# so clean CI / prod builds don't need a sibling checkout and Launch is decoupled
+# from Core's moving `main`. Bump the tag to adopt newer Core fleet releases.
+aurora_fleet = { git = "https://github.com/Ackold26/aurora-platform-core.git", tag = "aurora_fleet-v0.1.0", package = "aurora_fleet" }
 tauri = { version = "2.0", features = ["macos-private-api"] }
 tauri-plugin-fs = "2.0"
 tauri-plugin-dialog = "2.0"

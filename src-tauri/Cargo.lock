@@ -332,6 +332,7 @@ dependencies = [
 [[package]]
 name = "aurora_fleet"
 version = "0.1.0"
+source = "git+https://github.com/Ackold26/aurora-platform-core.git?tag=aurora_fleet-v0.1.0#8a74926c2730f939e245e53a144fd8366e94220e"
 dependencies = [
  "base64 0.22.1",
  "chrono",
