@@ -191,6 +191,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
+    env:
+      # cargo fetches the git-pinned aurora_fleet from the PRIVATE platform-core
+      # via the git CLI (honours the url.insteadOf credential rewrite below).
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
     strategy:
       fail-fast: false
       matrix:
@@ -217,6 +221,13 @@ jobs:
         with:
           toolchain: stable
           targets: ${{ matrix.target }}
+      - name: Authenticate cargo git fetch (private aurora_fleet dep)
+        # aurora_fleet is git-pinned to a tag on the PRIVATE aurora-platform-core.
+        # Same cross-repo PAT used elsewhere for the Python uv.sources sibling clone.
+        env:
+          PAT: ${{ secrets.AURORA_CROSS_REPO_PAT }}
+        shell: bash
+        run: git config --global url."https://x-access-token:${PAT}@github.com/".insteadOf "https://github.com/"
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
