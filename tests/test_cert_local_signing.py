@@ -18,6 +18,7 @@ from aurora_launch.engines.methodology_cert import (
     cert_signing_input,
     load_cert_signing_key,
     sign_certificate_local,
+    verify_certificate_local,
 )
 from aurora_launch.schemas.forecast import (
     ForecastSummary,
@@ -112,3 +113,51 @@ def test_malformed_key_file_returns_none(tmp_path):
     bad = tmp_path / "bad.key"
     bad.write_bytes(b"not-a-valid-ed25519-key")
     assert load_cert_signing_key(bad) is None
+
+
+def test_verify_round_trips_with_matching_pubkey():
+    key = Ed25519PrivateKey.generate()
+    signed, _ = sign_certificate_local(_cert(), private_key=key)
+    assert verify_certificate_local(signed, public_key=key.public_key()) is True
+
+
+def test_verify_rejects_wrong_key():
+    signer = Ed25519PrivateKey.generate()
+    other = Ed25519PrivateKey.generate()
+    signed, _ = sign_certificate_local(_cert(), private_key=signer)
+    assert verify_certificate_local(signed, public_key=other.public_key()) is False
+
+
+def test_verify_rejects_tampered_cert():
+    # A valid signature must not verify once the SIGNED content changes. The
+    # signature covers `composite_signing_payload` (which itself encodes
+    # bundle_hash|jcs|version), not the loose `bundle_hash_sha256` field — so
+    # tamper the signed core to exercise rejection.
+    key = Ed25519PrivateKey.generate()
+    signed, _ = sign_certificate_local(_cert(), private_key=key)
+    tampered = signed.model_copy(
+        update={"composite_signing_payload": "tampered|payload|9.9.9"}
+    )
+    assert verify_certificate_local(tampered, public_key=key.public_key()) is False
+
+
+def test_verify_false_when_signature_absent():
+    # Presence of no signature → not verified (never trusted on absence either).
+    assert verify_certificate_local(_cert(), public_key=Ed25519PrivateKey.generate().public_key()) is False
+
+
+def test_verify_false_when_no_pubkey_configured(monkeypatch):
+    # No embedded const and no env override → cannot verify → False, even with a
+    # present signature. Guards "presence is not proof".
+    monkeypatch.delenv("AURORA_LAUNCH_CERT_PUBLIC_KEY_HEX", raising=False)
+    key = Ed25519PrivateKey.generate()
+    signed, _ = sign_certificate_local(_cert(), private_key=key)
+    assert verify_certificate_local(signed) is False  # no pubkey param, none embedded
+
+
+def test_verify_uses_env_pubkey_override(monkeypatch):
+    key = Ed25519PrivateKey.generate()
+    pub_hex = key.public_key().public_bytes_raw().hex()
+    monkeypatch.setenv("AURORA_LAUNCH_CERT_PUBLIC_KEY_HEX", pub_hex)
+    signed, _ = sign_certificate_local(_cert(), private_key=key)
+    assert verify_certificate_local(signed) is True  # resolves pubkey from env

@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Optional
 from uuid import UUID, uuid4
 
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
@@ -268,6 +269,58 @@ def sign_certificate_local(
         }
     )
     return signed, True
+
+
+# ─── Local Ed25519 verifier (pair to the signer) ─────────────────────
+#
+# The crypto pair to `sign_certificate_local`. Completes the round-trip so a
+# consumer can CRYPTOGRAPHICALLY verify a cert's local signature rather than
+# trust the mere PRESENCE of a `signature_local_ed25519` field (which a forged
+# bundle could fabricate). The vendor public key is embedded at the key
+# ceremony; until then verification cannot succeed and a cert is reported
+# unverified — never trusted on presence alone.
+#
+# NOT yet wired into trust scoring (`trust_score_project.py` still scores on
+# presence): that rewire changes product trust behaviour and needs the real
+# embedded pubkey + a design sign-off. This is the ready-to-call primitive.
+
+# EMBED_AT_CEREMONY: 64-hex Ed25519 public key for `~/.secrets/rosst_launch_private.key`.
+# None until the variant-B key ceremony mints the key and exports its pubkey.
+AURORA_LAUNCH_CERT_PUBLIC_KEY_HEX: Optional[str] = None
+
+_CERT_PUBKEY_ENV = "AURORA_LAUNCH_CERT_PUBLIC_KEY_HEX"
+
+
+def _resolve_cert_public_key() -> Optional[Ed25519PublicKey]:
+    """The embedded/overridden vendor cert pubkey, or None if not configured."""
+    src = os.environ.get(_CERT_PUBKEY_ENV) or AURORA_LAUNCH_CERT_PUBLIC_KEY_HEX
+    if not src:
+        return None
+    try:
+        return Ed25519PublicKey.from_public_bytes(bytes.fromhex(src.strip()))
+    except ValueError:
+        return None
+
+
+def verify_certificate_local(
+    cert_data: MethodologyCertificateData,
+    public_key: Optional[Ed25519PublicKey] = None,
+) -> bool:
+    """True iff `signature_local_ed25519` is a valid vendor signature over this
+    cert's signing input. Returns False when the signature is absent, when no
+    pubkey is provided/embedded, or when verification fails — a cert is never
+    trusted on the mere PRESENCE of a signature field."""
+    sig = cert_data.signature_local_ed25519
+    if not sig:
+        return False
+    key = public_key or _resolve_cert_public_key()
+    if key is None:
+        return False
+    try:
+        key.verify(bytes(sig), cert_signing_input(cert_data))
+        return True
+    except InvalidSignature:
+        return False
 
 
 # ─── Workflow handler entry point ────────────────────────────────────
