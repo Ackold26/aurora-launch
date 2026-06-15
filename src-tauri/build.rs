@@ -24,6 +24,20 @@ fn main() {
     // Embed at compile time. Available в Rust код через env!("AURORA_BUILD_PROFILE")
     println!("cargo:rustc-env=AURORA_BUILD_PROFILE={}", build_profile);
 
+    // Emit BUILD_TIMESTAMP (unix seconds) so the licence layer re-gains the LI-009
+    // anti-rollback clock check via `aurora_fleet::license::validate_with_build_env`
+    // (the Core SSOT compares it against `Utc::now()`, fixed in the same release —
+    // earlier it mixed UTC build-date vs Local today and false-rejected fresh
+    // installs in behind-UTC zones; caught here on a Pacific box). A stale-but-past
+    // timestamp is harmless: anti-rollback only rejects a clock EARLIER than the
+    // build instant. Production builds flip AURORA_BUILD_PROFILE → build.rs reruns →
+    // fresh stamp; clean release builds rerun unconditionally.
+    let build_ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    println!("cargo:rustc-env=BUILD_TIMESTAMP={build_ts}");
+
     // Emit warning if production build wasn't explicitly requested
     if std::env::var("PROFILE").unwrap_or_default() == "release" && build_profile != "production" {
         println!(

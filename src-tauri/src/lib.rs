@@ -48,16 +48,12 @@ pub const BUILD_PROFILE: &str = env!("AURORA_BUILD_PROFILE");
 /// Map a fleet updater error (`[UP-xxx] …`) to Launch's structured `UpdateFailed`
 /// so the frontend banner keeps its `{ code, message }` contract.
 fn map_update_err(e: aurora_fleet::FleetError) -> AuroraError {
-    let s = e.to_string(); // "[UP-xxx] detail" for the Update variant
-    match s.strip_prefix('[').and_then(|r| r.split_once("] ")) {
-        Some((code, message)) => AuroraError::UpdateFailed {
-            code: code.to_string(),
-            message: message.to_string(),
-        },
-        None => AuroraError::UpdateFailed {
-            code: "UP-000".to_string(),
-            message: s,
-        },
+    // Q3.1: the Core crate now parses the `[UP-xxx]` prefix once — use its
+    // `code()` / `message()` instead of re-implementing the split here. Non-coded
+    // variants (network/io surfaced via `?`) carry no code → fall back to UP-000.
+    AuroraError::UpdateFailed {
+        code: e.code().unwrap_or("UP-000").to_string(),
+        message: e.message().to_string(),
     }
 }
 
@@ -267,4 +263,39 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running aurora-launch");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Pins Launch's `[UP-xxx]` → `UpdateFailed { code, message }` glue after the
+    /// Q3.1 switch to the crate's `code()` / `message()`. The crate tests the prefix
+    /// parse itself; this guards Launch's OWN decisions — the frontend banner's
+    /// `{ code, message }` contract and the `UP-000` fallback for non-coded errors.
+    #[test]
+    fn map_update_err_uses_crate_code_and_message() {
+        // Coded updater error → code + prefix-stripped message.
+        let mapped = map_update_err(aurora_fleet::FleetError::Update(
+            "[UP-003] integrity check failed".into(),
+        ));
+        match mapped {
+            AuroraError::UpdateFailed { code, message } => {
+                assert_eq!(code, "UP-003");
+                assert_eq!(message, "integrity check failed");
+            }
+            other => panic!("expected UpdateFailed, got {other:?}"),
+        }
+
+        // Non-coded error (e.g. a network failure surfaced via `?`) → UP-000 fallback,
+        // message carried through.
+        let mapped = map_update_err(aurora_fleet::FleetError::Network("timeout".into()));
+        match mapped {
+            AuroraError::UpdateFailed { code, message } => {
+                assert_eq!(code, "UP-000");
+                assert_eq!(message, "timeout");
+            }
+            other => panic!("expected UpdateFailed, got {other:?}"),
+        }
+    }
 }

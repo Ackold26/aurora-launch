@@ -16,10 +16,13 @@
 //! denied state the resolved cabinets are empty, so the membership test denies —
 //! fail-closed by construction.
 //!
-//! NOTE: the crate's offline `validate(build_date)` also runs an anti-rollback
-//! clock check (LI-009). Launch does not yet embed a build date, so we call
-//! `validate_without_rollback_check()` to preserve Phase B behaviour exactly;
-//! wiring `BUILD_TIMESTAMP` to re-gain LI-009 is a separate hardening follow-up.
+//! Anti-rollback (LI-009): the offline path validates via the crate's
+//! `validate_with_build_env(env!("BUILD_TIMESTAMP"))`, which derives the build date
+//! from the `BUILD_TIMESTAMP` env our `build.rs` emits (unix seconds) and keeps the
+//! LI-009 clock check ON. An unparseable timestamp is a HARD ERROR (a misbuilt
+//! binary), NOT a silent anti-rollback skip. (Core fixed the cross-frame bug this
+//! consumer first hit on a Pacific box: build date and `now` are both compared in
+//! UTC, so a fresh install in a behind-UTC zone is no longer false-rejected.)
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -158,7 +161,7 @@ async fn resolve_status(app_config_dir: &Path) -> LicenseStatusPayload {
         }
         // "offline" — server unreachable AND no fresh cache → offline Ed25519 (crate).
         _ => match FleetLicense::load(app_config_dir) {
-            Ok(lic) => match lic.validate_without_rollback_check() {
+            Ok(lic) => match lic.validate_with_build_env(env!("BUILD_TIMESTAMP")) {
                 Ok(st) if st.valid => granted(
                     st.cabinets,
                     Some(st.expires_at),
@@ -245,8 +248,8 @@ pub async fn is_dev_build() -> AuroraResult<bool> {
 
 /// Import an offline Ed25519 `license.json`: verify signature + machine binding
 /// (via the fleet crate) before saving to the per-app config dir. Invalidates the
-/// resolution cache. Uses `validate_without_rollback_check` to match resolution
-/// (anti-rollback LI-009 is a deferred hardening — see module note).
+/// resolution cache. Validates with `validate_with_build_env` so the imported
+/// licence is checked under the same LI-009 anti-rollback gate as resolution.
 #[tauri::command]
 pub fn import_license(path: String, app: tauri::AppHandle) -> AuroraResult<()> {
     let dir = config_dir(&app)?;
@@ -256,7 +259,7 @@ pub fn import_license(path: String, app: tauri::AppHandle) -> AuroraResult<()> {
         .map_err(|e| AuroraError::Other(format!("Некорректный файл лицензии: {e}")))?;
 
     let st = lic
-        .validate_without_rollback_check()
+        .validate_with_build_env(env!("BUILD_TIMESTAMP"))
         .map_err(|e| AuroraError::Other(format!("Лицензия недействительна: {e}")))?;
     if !st.valid {
         let reason = st.error.unwrap_or_else(|| "Неизвестная ошибка".to_string());
@@ -346,7 +349,9 @@ mod tests {
             }
         };
         let lic = FleetLicense::load(&dir).expect("license.json present and parseable");
-        let st = lic.validate_without_rollback_check().expect("validate returns Ok");
+        let st = lic
+            .validate_with_build_env(env!("BUILD_TIMESTAMP"))
+            .expect("validate returns Ok");
         println!(
             "offline validate (fleet crate): valid={} cabinets={:?} err={:?}",
             st.valid, st.cabinets, st.error
