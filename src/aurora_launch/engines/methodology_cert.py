@@ -184,7 +184,7 @@ def cert_payload_sha256(cert_data: MethodologyCertificateData) -> str:
 # surfaced as a local-trust badge, never as production / cloud-KMS (that
 # stays the deferred `signature_aurora_*` slot).
 #
-# Custody (variant B): a dedicated `~/.secrets/rosst_launch_private.key`,
+# Custody (variant B): a dedicated `~/.secrets/rosst_launch_cert_private.key`,
 # SEPARATE from the fleet licence key (`rosst_agency`). Minted in a key
 # ceremony; this module only READS it. Absent key → honest `local_signed`
 # = False (an unsigned certificate is emitted, never a fabricated signature).
@@ -194,9 +194,9 @@ _CERT_KEY_ENV = "AURORA_LAUNCH_CERT_SIGNING_KEY_PATH"
 
 def _resolve_cert_signing_key_path() -> Path:
     """Cert signing key location: `$AURORA_LAUNCH_CERT_SIGNING_KEY_PATH` else the
-    custody default `~/.secrets/rosst_launch_private.key`."""
+    custody default `~/.secrets/rosst_launch_cert_private.key`."""
     override = os.environ.get(_CERT_KEY_ENV)
-    return Path(override) if override else Path.home() / ".secrets" / "rosst_launch_private.key"
+    return Path(override) if override else Path.home() / ".secrets" / "rosst_launch_cert_private.key"
 
 
 def _private_key_from_keyfile_bytes(raw: bytes) -> Optional[Ed25519PrivateKey]:
@@ -284,9 +284,13 @@ def sign_certificate_local(
 # presence): that rewire changes product trust behaviour and needs the real
 # embedded pubkey + a design sign-off. This is the ready-to-call primitive.
 
-# EMBED_AT_CEREMONY: 64-hex Ed25519 public key for `~/.secrets/rosst_launch_private.key`.
-# None until the variant-B key ceremony mints the key and exports its pubkey.
-AURORA_LAUNCH_CERT_PUBLIC_KEY_HEX: Optional[str] = None
+# Vendor cert public key (64-hex Ed25519), embedded at the variant-B key ceremony
+# (2026-06-14) for the custody key `~/.secrets/rosst_launch_cert_private.key`. This
+# is a PUBLIC key — safe to commit; the private half never leaves ~/.secrets. An
+# env override (`AURORA_LAUNCH_CERT_PUBLIC_KEY_HEX`) supports rotation / tests.
+AURORA_LAUNCH_CERT_PUBLIC_KEY_HEX: Optional[str] = (
+    "ef0dce4560d7af310e7713ccc8db0259a54f7b3b692e172af8eb24bd3d7d6eb4"
+)
 
 _CERT_PUBKEY_ENV = "AURORA_LAUNCH_CERT_PUBLIC_KEY_HEX"
 
@@ -371,7 +375,7 @@ async def build_certificate(ctx: Any, **kwargs: Any) -> dict[str, Any]:
     )
 
     # Local Ed25519 signature (Phase D variant B): real when the custody key
-    # `~/.secrets/rosst_launch_private.key` is present, honestly unsigned
+    # `~/.secrets/rosst_launch_cert_private.key` is present, honestly unsigned
     # otherwise. The Aurora cloud-KMS signature stays deferred (aurora_pending).
     cert_data, local_signed = sign_certificate_local(cert_data)
 

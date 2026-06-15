@@ -161,3 +161,20 @@ def test_verify_uses_env_pubkey_override(monkeypatch):
     monkeypatch.setenv("AURORA_LAUNCH_CERT_PUBLIC_KEY_HEX", pub_hex)
     signed, _ = sign_certificate_local(_cert(), private_key=key)
     assert verify_certificate_local(signed) is True  # resolves pubkey from env
+
+
+def test_real_custody_key_matches_embedded_pubkey(monkeypatch):
+    """End-to-end against the REAL minted custody key (skips if absent, e.g. CI):
+    a cert signed by ~/.secrets/rosst_launch_cert_private.key must verify against
+    the EMBEDDED AURORA_LAUNCH_CERT_PUBLIC_KEY_HEX const — proving the ceremony
+    embedded the matching public key. No env override → exercises the const."""
+    monkeypatch.delenv("AURORA_LAUNCH_CERT_SIGNING_KEY_PATH", raising=False)
+    monkeypatch.delenv("AURORA_LAUNCH_CERT_PUBLIC_KEY_HEX", raising=False)
+    key = load_cert_signing_key()  # default custody path ~/.secrets/...
+    if key is None:
+        import pytest
+
+        pytest.skip("no custody key on this box (expected in CI)")
+    signed, ok = sign_certificate_local(_cert(), private_key=key)
+    assert ok is True
+    assert verify_certificate_local(signed) is True  # against the embedded const
