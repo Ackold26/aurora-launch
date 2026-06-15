@@ -74,6 +74,12 @@ jobs:
         run: |
           uv pip install -e ../aurora-platform-core/aurora_engines --no-deps
           uv pip install -e ../aurora-platform-core/aurora_observability --no-deps
+          # Sprint B4: aurora-reporting + its monorepo deps (aurora-common,
+          # aurora-schema-registry) — provision the cross-repo editable on every
+          # build-site so uv sync resolves the [tool.uv.sources] path-dep (PR #23 lesson).
+          uv pip install -e ../aurora-platform-core/aurora_common --no-deps
+          uv pip install -e ../aurora-platform-core/aurora_schema_registry --no-deps
+          uv pip install -e ../aurora-platform-core/aurora_reporting --no-deps
 
       - name: Install deps (including pre-commit)
         run: uv pip install pre-commit ruff mypy pydantic numpy
@@ -120,6 +126,12 @@ jobs:
         run: |
           uv pip install -e ../aurora-platform-core/aurora_engines --no-deps
           uv pip install -e ../aurora-platform-core/aurora_observability --no-deps
+          # Sprint B4: aurora-reporting + its monorepo deps (aurora-common,
+          # aurora-schema-registry) — provision the cross-repo editable on every
+          # build-site so uv sync resolves the [tool.uv.sources] path-dep (PR #23 lesson).
+          uv pip install -e ../aurora-platform-core/aurora_common --no-deps
+          uv pip install -e ../aurora-platform-core/aurora_schema_registry --no-deps
+          uv pip install -e ../aurora-platform-core/aurora_reporting --no-deps
 
       - name: Install deps
         # Sibling aurora-engines + aurora-observability installed editable в prior step;
@@ -182,6 +194,12 @@ jobs:
         run: |
           uv pip install -e ../aurora-platform-core/aurora_engines --no-deps
           uv pip install -e ../aurora-platform-core/aurora_observability --no-deps
+          # Sprint B4: aurora-reporting + its monorepo deps (aurora-common,
+          # aurora-schema-registry) — provision the cross-repo editable on every
+          # build-site so uv sync resolves the [tool.uv.sources] path-dep (PR #23 lesson).
+          uv pip install -e ../aurora-platform-core/aurora_common --no-deps
+          uv pip install -e ../aurora-platform-core/aurora_schema_registry --no-deps
+          uv pip install -e ../aurora-platform-core/aurora_reporting --no-deps
 
       - name: Install dependencies
         # Sibling aurora-engines + aurora-observability installed editable в prior step;
@@ -252,6 +270,12 @@ jobs:
         run: |
           uv pip install -e ../aurora-platform-core/aurora_engines --no-deps
           uv pip install -e ../aurora-platform-core/aurora_observability --no-deps
+          # Sprint B4: aurora-reporting + its monorepo deps (aurora-common,
+          # aurora-schema-registry) — provision the cross-repo editable on every
+          # build-site so uv sync resolves the [tool.uv.sources] path-dep (PR #23 lesson).
+          uv pip install -e ../aurora-platform-core/aurora_common --no-deps
+          uv pip install -e ../aurora-platform-core/aurora_schema_registry --no-deps
+          uv pip install -e ../aurora-platform-core/aurora_reporting --no-deps
 
       - name: Install dependencies
         # Full main deps resolution (msgpack, pymc, etc.); sibling editable satisfies aurora-engines/observability.

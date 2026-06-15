@@ -23,7 +23,6 @@ import logging
 import os
 import re
 import secrets
-from typing import Optional
 
 _log = logging.getLogger(__name__)
 
@@ -86,6 +85,7 @@ def get_or_create_db_key(
     # 2. Keychain lookup (optional — `keyring` may not be installed in dev)
     try:
         import keyring  # noqa: PLC0415 — optional dep, defer import
+        from keyring.errors import KeyringError  # noqa: PLC0415
 
         stored = keyring.get_password(keyring_service, keyring_account)
         if stored:
@@ -101,7 +101,17 @@ def get_or_create_db_key(
         if not auto_create:
             raise EncryptionKeyError(
                 "Cannot retrieve key: keyring unavailable + no env override + auto_create=False"
-            )
+            ) from None
+    except KeyringError:
+        # keyring installed but no functional backend (headless / no OS secret
+        # service / no D-Bus) — treat the keychain as unavailable, fail closed.
+        _log.warning(
+            "keyring backend unavailable (no OS secret service) — fallback к env-var-only mode."
+        )
+        if not auto_create:
+            raise EncryptionKeyError(
+                "Cannot retrieve key: keyring backend unavailable + no env override + auto_create=False"
+            ) from None
 
     # 3. Generate + persist new key (first-run case)
     if not auto_create:
@@ -112,12 +122,18 @@ def get_or_create_db_key(
     new_key = generate_db_key()
     try:
         import keyring  # noqa: PLC0415
+        from keyring.errors import KeyringError  # noqa: PLC0415
 
         keyring.set_password(keyring_service, keyring_account, new_key)
         _log.info("Generated new DB key + persisted к OS keychain")
     except ImportError:
         _log.warning(
             "Generated new DB key но keyring not installed — key NOT persisted. "
+            "Will regenerate на next run unless AURORA_DB_KEY_HEX is set."
+        )
+    except KeyringError:
+        _log.warning(
+            "Generated new DB key но keyring backend unavailable — key NOT persisted. "
             "Will regenerate на next run unless AURORA_DB_KEY_HEX is set."
         )
 
@@ -136,6 +152,7 @@ def clear_keychain_key(
     """
     try:
         import keyring  # noqa: PLC0415
+        from keyring.errors import KeyringError  # noqa: PLC0415
 
         existing = keyring.get_password(keyring_service, keyring_account)
         if existing is None:
@@ -145,4 +162,7 @@ def clear_keychain_key(
         return True
     except ImportError:
         _log.warning("keyring library not installed — nothing к clear")
+        return False
+    except KeyringError:
+        _log.warning("keyring backend unavailable — nothing к clear")
         return False
