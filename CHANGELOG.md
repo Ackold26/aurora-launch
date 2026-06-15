@@ -53,6 +53,36 @@ panicked without a keypair (which exists nowhere in the fleet) is removed. See
   makensis OK, 115 MB) — `installer_hooks.nsh` valid; production installer
   unblocked. (Not code-signed; cert pubkey placeholder = Phase D.)
 
+### Phase B — licence (platform-core JWT → fleet online_auth + offline Ed25519)
+
+Reverses **ADR-007** (see the REVERSAL note in that file). Launch's licence client
+now uses the fleet model instead of the Python `aurora_common.license` JWT path.
+
+#### Added
+- `crypto/fingerprint.rs` (machine fingerprint, WMI on Windows / ioreg on macOS)
+  + `crypto/ed25519.rs` (fleet licence pubkey verify) + `crypto/mod.rs`.
+- `commands/online_auth.rs` — Supabase `/auth` (cabinets + expires_at, 24h cache,
+  offline fallback), `detect_product()="launch"`.
+- `get_machine_id` command (machine id for licence issuance) + `import_license`
+  command (offline `license.json`, signature + binding verified before save).
+
+#### Changed
+- `commands/license.rs` rewritten: was a Python-sidecar IPC shell, now Rust-native
+  (online_auth + offline Ed25519). Command surface preserved
+  (current_license_status / has_feature / require_feature / is_dev_build);
+  `has_feature` = cabinets membership (fail-closed — denied states expose no
+  cabinets); dev-bypass double gate kept; short in-memory resolution cache so
+  feature checks don't each hit the network.
+
+#### Verified / pending
+- **LIVE:** online_auth smoke vs prod `/auth` → `status=ok`,
+  cabinets `[launch_core, launch_proxy_single]` (Starter test licence), and the
+  deny path (no `launch_proxy_multi`). Whole online wiring proven end-to-end.
+  `cargo test` 79.
+- **PENDING:** offline Ed25519 integration smoke (needs Anton's signed
+  `license.json`), then retire the Python licence path (additive-then-switch —
+  `engines/license_validator.py` + sidecar handlers remain, unused, until then).
+
 ## Unreleased — Sprint 11 (commercial-readiness review + audit)
 
 Reframed after ground-truth review: the three presumed commercial blockers

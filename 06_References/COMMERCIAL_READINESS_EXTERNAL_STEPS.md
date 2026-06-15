@@ -53,42 +53,46 @@ Function deploy needed (`app-update` / `auth` are product-agnostic).
 
 ---
 
-## Track B — License activation (`SPRINT_BUFFER #52`)
+## Track B — License — MIGRATED to fleet online_auth + offline Ed25519 (ADR-007 REVERSAL)
 
-**In code (✅):** Launch's licence client is fully wired to the platform-core
-JWT SDK — see **ADR-007**. `license.rs` (Rust IPC shell) → `LaunchLicenseValidator`
-(`engines/license_validator.py`) → `aurora_common.license.LicenseSDK`. Enforcement
-made real in the C-3 closure (Phase 2.A). Tier flags `launch_proxy_single` /
-`launch_proxy_multi` exist in `aurora_common.tier_matrix`. Fail-closed: when
-`aurora_common` is absent the validator denies all paid features; when the sidecar
-is unavailable the Rust layer returns a `degraded` state.
+**Reframed 2026-06-14 (fleet-unify migration):** the platform-core JWT plan below
+is **obsolete**. Launch's licence client now uses the fleet model (Supabase
+`/auth` cabinets + offline Ed25519 `license.json`), the same as Econometrica + 6
+other products — see the **REVERSAL** note in ADR-007. No JWT issuer to deploy,
+no `aurora_common` bundling.
 
-**Decision (ADR-007):** stay on platform-core JWT; do NOT switch to Econometrica's
-cabinet/Supabase model (would be a destructive rewrite of working code).
+**In code (✅, Phase B DONE — online live-verified):** `commands/online_auth.rs`
+(Supabase `/auth`, `detect_product="launch"`, 24h cache, offline fallback) +
+`commands/license.rs` (offline Ed25519, `has_feature` = cabinets membership,
+fail-closed, dev-bypass gate) + `crypto/{fingerprint,ed25519}.rs`. Command surface
+unchanged for the frontend. The online path is live-verified against prod with a
+Starter test licence.
 
-**External steps (⏳):**
+**Backend done (✅, this session):** `licenses_product_check` += `'launch'`; a
+Starter test licence (cabinets `launch_core` + `launch_proxy_single`) issued for
+the dev box fingerprint `c8780e…87e9f`. No Edge Function deploy needed (`auth` is
+product-agnostic — cabinets come from the `licenses` row).
 
-1. **Bundle `aurora_common`** as a real dependency in the production build
-   (currently graceful-fallback). Retire the `HAS_PLATFORM_CORE` flag /
-   `try/except ImportError` in `license_validator.py` once it is reliably present.
-2. **Deploy the JWT issuer backend:** Ed25519 keypair + an issue/refresh endpoint
-   the SDK can validate against (the SDK already does Ed25519 JWT verify, 24h TTL,
-   7-day offline grace, machine-ID binding, jti revocation).
-3. **Integration smoke on a REAL signed token** (Launch is the first production
-   consumer of this SDK — unit tests alone are insufficient): verify online
-   validation, offline-grace window, machine-ID mismatch rejection, expiry.
-4. **Per-seat annual subscription** productization (`expires_at` already supported
-   by the SDK) — pricing tiers per `06_References/PRICING_TIERS.md`.
+**External steps (⏳ — Anton):**
 
-**Recommended hardening (audit 2026-06-14, defense-in-depth — apply during activation):**
-- `license_validator.py::_info_to_status` trusts `aurora_common` to raise on
-  expiry; add a local safety net before mapping state:
-  `if info.valid_until and info.valid_until < datetime.now(timezone.utc): → EXPIRED`.
-  (Verify against the SDK's `valid_until` tz semantics with a real token.)
-- Grace-day display uses `timedelta.days` (truncates → off-by-one pessimistic);
-  use `math.ceil(total_seconds/86400)` for the `offline grace day N/7` string.
-  These paths are skipped in CI when `aurora_common` is absent — exercise them in
-  the real-token integration smoke (step 3).
+1. **Offline `license.json` for the integration smoke (long-pole):** sign a
+   `license.json` for the dev fingerprint with the **fleet private key** (the
+   gen_license pipeline / custody) — cabinets matching the test licence,
+   `expires_at` `YYYY-MM-DD`, `machine_fingerprint_hash = c8780e…87e9f`. Drop it
+   via the in-app **Import licence** (or `%APPDATA%\pro.auroraai.launch\license.json`)
+   → then run the offline smoke: server-unreachable → `grace` state, expiry,
+   machine-mismatch reject. Once green, **retire the Python licence path**
+   (`engines/license_validator.py` + sidecar `get_license_status` /
+   `has_license_feature`).
+2. **Issue production licences** per customer/tier into the fleet `licenses` table
+   (online) + a signed `license.json` (offline fallback). Tier → cabinets:
+   Starter = `[launch_core, launch_proxy_single]`, Pro = `+ launch_proxy_multi`.
+3. **Per-seat annual subscription** productization (`expires_at` supported) —
+   pricing per `06_References/PRICING_TIERS.md`.
+
+**Obsolete (removed by the ADR-007 reversal — do NOT do these):** bundling
+`aurora_common`, deploying a JWT issuer backend, the `HAS_PLATFORM_CORE` flag, and
+the `license_validator.py` JWT hardening notes (that Python path is being retired).
 
 ---
 

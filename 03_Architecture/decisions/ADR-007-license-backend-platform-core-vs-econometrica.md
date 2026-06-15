@@ -1,9 +1,55 @@
 # ADR-007: License backend — platform-core JWT SDK, NOT Econometrica online_auth
 
-**Status:** Accepted
+**Status:** ❌ SUPERSEDED (2026-06-14, same day) by the fleet signing & licensing
+unification migration — Launch **DID** adopt the Econometrica/fleet `online_auth`
++ offline Ed25519 model. See the **REVERSAL** note below; the original decision
+and its reasoning are kept for the record.
 **Date:** 2026-06-14
 **Authors:** Маша маленькая (Opus 4.8), Антон (decision owner)
 **Sprint context:** Sprint 11 — commercial-readiness review
+
+---
+
+## ⛔ REVERSAL (2026-06-14, fleet-unify migration)
+
+**New decision (supersedes the "Decision" section below): Aurora Launch adopts
+the fleet `online_auth` (Supabase `/auth`, cabinets + `expires_at`) with an
+offline Ed25519 `license.json` fallback — the same stack Econometrica + 6 other
+products run in production. The platform-core `aurora_common.license` JWT path is
+dropped.**
+
+Why the original decision was reversed (Антон approved 2026-06-14):
+1. **The decisive premise flipped.** The original ADR argued the JWT path was
+   already-wired and low-risk. Re-examination found it depends on an **undeployed
+   JWT-issuer backend** (#52 Track B) with Launch as its **first unproven
+   production consumer** — i.e. it was *half-built on absent infra*, not a
+   finished system. The fleet `online_auth` backend already exists and is proven
+   across 7 products.
+2. **The "doesn't unify Launch's cloud" counter-argument no longer holds.** The
+   original ADR noted Launch's updater was on `updates.auroraai.pro` (minisign),
+   so a Supabase licence wouldn't unify the cloud surface. **ADR-008 moved the
+   updater onto the same fleet Supabase backend** — so adopting `online_auth` now
+   *does* consolidate Launch onto ONE backend, eliminating two bespoke stacks.
+3. **One backend, not two issuers to operate.** Deploying + running a separate
+   JWT issuer for a single product is more operational surface than onboarding
+   `launch` to the existing fleet `licenses` table (which is now done:
+   constraint + test licence).
+
+What this looks like in code (done — commits `6feed17`, `478e563`):
+`commands/online_auth.rs` (Supabase `/auth`, `detect_product()="launch"`, 24h
+cache) + `commands/license.rs` rewritten to offline Ed25519 (`license.json`,
+fleet pubkey via `crypto/ed25519.rs`, machine binding, `has_feature` = cabinets
+membership, fail-closed) + `crypto/fingerprint.rs`. The Python
+`license_validator.py` path is left in place (additive-then-switch) until the
+offline smoke on a real signed `license.json` confirms the Rust path, then retired.
+
+**Live-verified:** the online path returns `status=ok` + the Starter test
+licence's cabinets from the prod backend against this dev box's fingerprint.
+
+The rest of this document is the **superseded original decision**, retained for
+provenance.
+
+---
 
 ## Context
 
