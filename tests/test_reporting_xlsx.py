@@ -52,9 +52,26 @@ class TestWorkbookStructure:
 class TestBrandStyling:
     def test_header_uses_aurora_deep_fill(self, workbook: dict) -> None:
         ws = workbook["wb"]["Summary"]
-        # Aurora Deep #0A1628 → ARGB FF0A1628.
+        # Aurora Deep #0A1628 → ARGB FF0A1628 (Core add_table_sheet themed header).
         assert ws["A1"].fill.fgColor.rgb == "FF0A1628"
         assert ws.freeze_panes == "A2"
+
+
+class TestConditionalFormatting:
+    """spec §2.3 — conditional formatting via the Core xlsx primitives (a capability
+    the earlier raw-openpyxl version lacked; gained by consuming aurora_xlsx.sheets)."""
+
+    def test_weekly_ci_width_color_scale(self, workbook: dict) -> None:
+        ws = workbook["wb"]["12w forecast"]
+        # 5th column is the CI-width, carrying a 3-colour scale rule.
+        assert ws.max_column == 5
+        assert len(ws.conditional_formatting._cf_rules) >= 1
+
+    def test_summary_confidence_tier_fill(self, workbook: dict) -> None:
+        ws = workbook["wb"]["Summary"]
+        # Confidence cells take the tier badge colour (silver → deep-40 #99ADC2),
+        # not the default no-fill.
+        assert ws["D2"].fill.fgColor.rgb == "FF99ADC2"
 
 
 class TestChannelDecomposition:
