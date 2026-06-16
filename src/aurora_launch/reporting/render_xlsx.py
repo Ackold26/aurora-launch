@@ -11,10 +11,12 @@ Conditional formatting (spec §2.3): a per-week CI-width column carries a 3-colo
 scale (widest = most uncertain), and the Summary confidence cells take the tier
 badge colour.
 
-Three sheets are data-gated and emitted as present-but-flagged placeholders (header
-+ pending note, reported in the manifest, never silently dropped): Channel
-decomposition lands via the per-channel path; Anchors is not on the context
-contract; Diagnostics needs posterior diagnostics not emitted yet.
+Channel decomposition lands via the per-channel path, and Anchors via the recipient
+launch-assumptions context-enrichment. Diagnostics stays a present-but-flagged
+placeholder (header + note, reported in the manifest, never silently dropped):
+posterior convergence diagnostics (R-hat/ESS) exist only on the recipient-fit path,
+not the pure-transfer baseline — emitting r_hat=1.0 "by construction" would
+misrepresent convergence (INV-50).
 """
 
 from __future__ import annotations
@@ -123,10 +125,34 @@ def _sheet_proxy(wb: Any, ctx: dict[str, Any]) -> None:
 
 
 def _sheet_anchors(wb: Any, ctx: dict[str, Any]) -> bool:
-    cols = [Column("Поле anchor", "k", width=28), Column("Значение", "v", width=40)]
-    add_table_sheet(wb, "Anchors", cols,
-                    [{"k": "Recipient anchors не входят в контракт контекста — context-enrichment follow-up."}])
-    return False
+    anchors = ctx.get("recipient_anchors")
+    cols = [Column("Допущение запуска", "k", width=36), Column("Значение", "v", width=44)]
+    if not anchors:
+        add_table_sheet(wb, "Anchors", cols,
+                        [{"k": "Recipient anchors не входят в контракт контекста — context-enrichment follow-up."}])
+        return False
+
+    def _ramp(traj: list[float]) -> str:
+        return f"{traj[0] * 100:.0f}% → {max(traj) * 100:.0f}% (рост за {len(traj)} нед.)"
+
+    seasonality = anchors.get("seasonality")
+    seasonality_v = (
+        "плоская (1.0)"
+        if not seasonality or len(set(seasonality)) == 1
+        else f"{min(seasonality):.2f}–{max(seasonality):.2f}"
+    )
+    pricing = anchors["pricing_index"]
+    rows: list[dict[str, Any]] = [
+        {"k": "Размер рынка", "v": f"{anchors['market_size']:,.0f} ₽".replace(",", " ")},
+        {"k": "Неопределённость размера рынка (CV)", "v": f"{anchors['market_size_cv'] * 100:.0f}%"},
+        {"k": "Плановая доля рынка", "v": _ramp(anchors["planned_share_trajectory"])},
+        {"k": "Дистрибуция", "v": _ramp(anchors["distribution_trajectory"])},
+        {"k": "Ценовой индекс", "v": f"{pricing:.2f} (+{(pricing - 1) * 100:.0f}% к категории)"},
+        {"k": "Ценовая эластичность", "v": f"{anchors['elasticity']:.2f}"},
+        {"k": "Сезонность", "v": seasonality_v},
+    ]
+    add_table_sheet(wb, "Anchors", cols, rows)
+    return True
 
 
 def _sheet_diagnostics(wb: Any, ctx: dict[str, Any]) -> bool:
