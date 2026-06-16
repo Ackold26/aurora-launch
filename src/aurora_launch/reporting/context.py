@@ -177,8 +177,9 @@ def build_report_context(fixture: dict[str, Any]) -> dict[str, Any]:
             "references": _REFERENCES,
             "cross_reference": method_xref,
             "posterior_update_reminder": posterior,
-            # model card / diagnostics filled from the real posterior at emit time:
-            "diagnostics": None,
+            # Transfer-method diagnostics (proxy-posterior provenance + INV-50 note);
+            # None on paths that don't surface a model card.
+            "diagnostics": meta.get("model_diagnostics"),
             "hash_signature": None,
         },
         # §5.4 sensitivity tornado (project-level, annual horizon) + §1.4 per-channel

@@ -245,6 +245,18 @@ def build_sample_forecast_fixture() -> dict[str, Any]:
     # context for the XLSX Anchors sheet. The longest horizon carries the full
     # ramp→plateau trajectories; the scalar fields are horizon-independent.
     meta["recipient_anchors"] = _anchors(_HORIZONS[-1]).model_dump()
+    # Transfer-method diagnostics (honest model card). MCMC convergence metrics
+    # (R-hat/ESS) do NOT apply on the pure-transfer path (no recipient-fit), so the
+    # sheet reports proxy-posterior provenance + an explicit not-applicable note (INV-50).
+    proxy = _proxy_bundle()
+    meta["model_diagnostics"] = {
+        "Метод оценки": horizons[0]["mode"],
+        "Методологическая подпись": horizons[0]["methodology_signature"],
+        "Наблюдений прокси-постериора": proxy.n_proxy_observations,
+        "Размер постериора (семплов)": int(np.asarray(proxy.samples["media_betas"]).shape[-1]),
+        "Каналов в модели": len(_MEDIA_COLS),
+        "Сходимость (R-hat / ESS)": "неприменимо — перенос прокси-постериора без recipient-fit",
+    }
     return {
         "schema": "launch_forecast_report_fixture_v1",
         "metadata": meta,

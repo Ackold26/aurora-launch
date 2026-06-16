@@ -94,8 +94,20 @@ class TestAnchorsSheet:
         assert "₽" in str(ws["B2"].value)
 
 
+class TestDiagnosticsSheet:
+    def test_diagnostics_sheet_populated_transfer_method(self, workbook: dict) -> None:
+        ws = workbook["wb"]["Diagnostics"]
+        # 6 transfer-method rows + header.
+        assert ws.max_row == 7
+        keys = [ws.cell(row=r, column=1).value for r in range(2, ws.max_row + 1)]
+        assert any("прокси-постериора" in str(k) for k in keys)
+        # INV-50: convergence is explicitly not-applicable, never faked as r_hat=1.0.
+        vals = [str(ws.cell(row=r, column=2).value) for r in range(2, ws.max_row + 1)]
+        assert any("неприменимо" in v for v in vals)
+
+
 class TestPendingSheetsFlagged:
-    def test_data_gated_sheets_reported_not_dropped(self, workbook: dict) -> None:
-        # Channel decomposition lands via the per-channel path, Anchors via context-
-        # enrichment; only Diagnostics remains data-gated (no recipient-fit posterior).
-        assert set(workbook["manifest"]["pending"]) == {"Diagnostics"}
+    def test_all_sheets_now_populated(self, workbook: dict) -> None:
+        # Every sheet lands real data: channel-decomp (per-channel path), Anchors
+        # (context-enrichment), Diagnostics (transfer-method model card).
+        assert set(workbook["manifest"]["pending"]) == set()
