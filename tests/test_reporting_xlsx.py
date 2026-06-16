@@ -83,8 +83,19 @@ class TestChannelDecomposition:
         assert isinstance(ws["B2"].value, (int, float)) and ws["B2"].value > 0
 
 
+class TestAnchorsSheet:
+    def test_anchors_sheet_populated_from_context(self, workbook: dict) -> None:
+        ws = workbook["wb"]["Anchors"]
+        # 7 anchor params + header (recipient launch assumptions, context-enrichment).
+        assert ws.max_row == 8
+        keys = [ws.cell(row=r, column=1).value for r in range(2, ws.max_row + 1)]
+        assert any("Размер рынка" in str(k) for k in keys)
+        # First value carries the real market-size figure, not the follow-up note.
+        assert "₽" in str(ws["B2"].value)
+
+
 class TestPendingSheetsFlagged:
     def test_data_gated_sheets_reported_not_dropped(self, workbook: dict) -> None:
-        # Channel decomposition now lands via the per-channel path; only anchors
-        # (not on the context contract) + diagnostics (no posterior yet) remain.
-        assert set(workbook["manifest"]["pending"]) == {"Anchors", "Diagnostics"}
+        # Channel decomposition lands via the per-channel path, Anchors via context-
+        # enrichment; only Diagnostics remains data-gated (no recipient-fit posterior).
+        assert set(workbook["manifest"]["pending"]) == {"Diagnostics"}

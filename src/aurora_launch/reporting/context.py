@@ -185,4 +185,7 @@ def build_report_context(fixture: dict[str, Any]) -> dict[str, Any]:
         # hill curves — real engine data via the per-channel forecast path.
         "sensitivity": meta.get("sensitivity"),
         "hill_curves": meta.get("channel_hill"),
+        # Recipient launch assumptions (anchors) — user-provided inputs the forecast
+        # is built on; rendered as the XLSX Anchors sheet (context-enrichment).
+        "recipient_anchors": meta.get("recipient_anchors"),
     }

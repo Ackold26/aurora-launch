@@ -241,6 +241,10 @@ def build_sample_forecast_fixture() -> dict[str, Any]:
     # tornado on the annual horizon + §1.4 per-channel hill curves.
     meta["sensitivity"] = _sensitivity(_HORIZONS[-1])
     meta["channel_hill"] = _channel_hill_params()
+    # Recipient anchors (user-provided launch assumptions) — surfaced to the report
+    # context for the XLSX Anchors sheet. The longest horizon carries the full
+    # ramp→plateau trajectories; the scalar fields are horizon-independent.
+    meta["recipient_anchors"] = _anchors(_HORIZONS[-1]).model_dump()
     return {
         "schema": "launch_forecast_report_fixture_v1",
         "metadata": meta,
