@@ -50,6 +50,7 @@ dependencies = [
     # primitives. Same wiring convention as aurora-engines: local path-dep editable
     # below; prod = git+https tag pin (aurora_reporting-v0.1.0, cut at merge-to-main).
     "aurora-reporting>=0.1.0,<0.2",
+    "reportlab>=4.5.1",
 ]
 
 # Editable local checkout для Phase A platform-core packages (Sprint 0 dev workflow).

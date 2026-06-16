@@ -52,4 +52,4 @@ fixtures/private/
 
 # Sprint B4: generated report deliverables are build output, never committed
 *.pptx
-launch_forecast_sample.*
+launch_forecast_sample*
