@@ -101,7 +101,7 @@ def get_or_create_db_key(
         if not auto_create:
             raise EncryptionKeyError(
                 "Cannot retrieve key: keyring unavailable + no env override + auto_create=False"
-            )
+            ) from None
     except KeyringError:
         # keyring installed but no functional backend (headless / no OS secret
         # service / no D-Bus) — treat the keychain as unavailable, fail closed.
@@ -111,7 +111,7 @@ def get_or_create_db_key(
         if not auto_create:
             raise EncryptionKeyError(
                 "Cannot retrieve key: keyring backend unavailable + no env override + auto_create=False"
-            )
+            ) from None
 
     # 3. Generate + persist new key (first-run case)
     if not auto_create:
