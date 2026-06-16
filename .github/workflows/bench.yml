@@ -51,6 +51,15 @@ jobs:
           pip install --upgrade pip
           pip install -e ../aurora-platform-core/aurora_engines --no-deps
           pip install -e ../aurora-platform-core/aurora_observability --no-deps
+          # Sprint B4: aurora-reporting + monorepo deps (aurora-common, aurora-schema-
+          # registry) editable before `pip install -e .` — plain pip ignores
+          # [tool.uv.sources], so the path-dep must be pre-satisfied (PR #23 lesson).
+          # --no-deps: reporting's heavy deps (matplotlib/python-pptx) aren't pulled;
+          # the cold-start path doesn't import aurora_launch.reporting, so the 2s gate
+          # is unaffected.
+          pip install -e ../aurora-platform-core/aurora_common --no-deps
+          pip install -e ../aurora-platform-core/aurora_schema_registry --no-deps
+          pip install -e ../aurora-platform-core/aurora_reporting --no-deps
           pip install -e .
 
       - name: Verify bench script exists
