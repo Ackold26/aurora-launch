@@ -43,6 +43,13 @@ dependencies = [
     # Prod distribution: replace sources с git+https tag pin (Sprint 0 audit clear gate).
     "aurora-engines>=0.1.0,<0.2",
     "aurora-observability>=0.1.0,<0.2",
+    # Sprint B4 (2026-06-15): report/deliverable engine. Launch = first consumer of
+    # the Core `aurora_reporting` SSOT (generic render primitives: theme, matplotlib
+    # →PNG charts, styled table, vector tier badge, OFL font embed). Launch owns the
+    # 8-section launch_forecast composition (reporting/render_pptx.py); Core owns the
+    # primitives. Same wiring convention as aurora-engines: local path-dep editable
+    # below; prod = git+https tag pin (aurora_reporting-v0.1.0, cut at merge-to-main).
+    "aurora-reporting>=0.1.0,<0.2",
 ]
 
 # Editable local checkout для Phase A platform-core packages (Sprint 0 dev workflow).
@@ -50,6 +57,7 @@ dependencies = [
 [tool.uv.sources]
 aurora-engines = { path = "../aurora-platform-core/aurora_engines", editable = true }
 aurora-observability = { path = "../aurora-platform-core/aurora_observability", editable = true }
+aurora-reporting = { path = "../aurora-platform-core/aurora_reporting", editable = true }
 
 [tool.uv]
 managed = true
