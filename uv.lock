@@ -313,6 +313,7 @@ source = { editable = "../aurora-platform-core/aurora_reporting" }
 dependencies = [
     { name = "aurora-common" },
     { name = "aurora-schema-registry" },
+    { name = "cryptography" },
     { name = "matplotlib" },
     { name = "openpyxl" },
     { name = "pydantic" },
@@ -323,6 +324,7 @@ dependencies = [
 requires-dist = [
     { name = "aurora-common", editable = "../aurora-platform-core/aurora_common" },
     { name = "aurora-schema-registry", editable = "../aurora-platform-core/aurora_schema_registry" },
+    { name = "cryptography", specifier = ">=42.0" },
     { name = "matplotlib", specifier = ">=3.8" },
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pydantic", specifier = ">=2.9.0" },

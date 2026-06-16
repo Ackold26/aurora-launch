@@ -34,10 +34,11 @@ def report(tmp_path_factory) -> dict:
 
 
 class TestConsumesDesignShell:
-    def test_eight_sections(self, report: dict) -> None:
-        # cover + exec + proxy + caveats + 3 forecast + methodology, all .section.
-        assert report["doc"].count('class="section"') == 8
-        assert report["manifest"]["sections"] == 8
+    def test_ten_sections(self, report: dict) -> None:
+        # cover + exec + proxy + caveats + 3 forecast + sensitivity + hill +
+        # methodology, all .section (per-channel path adds tornado + hill).
+        assert report["doc"].count('class="section"') == 10
+        assert report["manifest"]["sections"] == 10
         assert report["manifest"]["design_shell"] is True
 
     def test_layout_css_components_present(self, report: dict) -> None:
@@ -51,8 +52,9 @@ class TestConsumesDesignShell:
         assert "Content-Security-Policy" in report["doc"]
         assert "sha256-" in report["doc"]  # hash-based, not 'unsafe-inline'
 
-    def test_five_charts_inlined(self, report: dict) -> None:
-        assert report["doc"].count("data:image/png;base64,") == 5
+    def test_seven_charts_inlined(self, report: dict) -> None:
+        # radar + 3 cones + donut + sensitivity tornado + hill curves.
+        assert report["doc"].count("data:image/png;base64,") == 7
 
 
 class TestStandalone:
@@ -82,9 +84,7 @@ class TestAccessibilityAndHygiene:
         assert copy.find_forbidden_phrases(vis) == []
 
 
-class TestPendingDataLogged:
-    def test_channel_and_sensitivity_skipped(self, report: dict) -> None:
-        skipped = report["manifest"]["skipped"]
-        for key in ("forecast_12w", "forecast_26w", "forecast_52w"):
-            assert f"{key}.channel_decomposition" in skipped
-            assert f"{key}.sensitivity" in skipped
+class TestPerChannelPathLanded:
+    def test_nothing_skipped(self, report: dict) -> None:
+        # channel decomposition + sensitivity tornado + hill curves all render.
+        assert report["manifest"]["skipped"] == []

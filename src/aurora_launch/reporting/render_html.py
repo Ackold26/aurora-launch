@@ -23,8 +23,10 @@ from typing import Any
 from aurora_reporting.aurora_html import design_shell, security
 from aurora_reporting.primitives import (
     forecast_cone,
+    hill_curve,
     pie_breakdown,
     similarity_radar,
+    tornado,
 )
 
 from aurora_launch.reporting import copy
@@ -198,10 +200,44 @@ def _sec_forecast(ctx, key: str, weeks: int) -> str | None:
     note = ("" if len(section["weekly_breakdown"]) <= 12 else
             f'<div class="footnotes"><ul class="footnotes-list"><li>Показаны первые 12 из '
             f'{len(section["weekly_breakdown"])} недель (полная разбивка — в XLSX).</li></ul></div>')
+    cd = section.get("channel_decomposition")
+    channel = _channel_table(cd) if cd else ""
     body = _chart_block(f"Веер прогноза · {weeks} недель", png, f"Веер прогноза {weeks} недель") \
-        + table + note
+        + table + note + channel
     return _section(f"forecast-{weeks}", f"Прогноз · {weeks} недель",
-                    "Веер прогноза и понедельная разбивка", body)
+                    "Веер прогноза, понедельная разбивка и каналы", body)
+
+
+def _sec_tornado(ctx) -> str | None:
+    sens = ctx.get("sensitivity")
+    if not sens:
+        return None
+    png = tornado(factors=[(f["label"], f["low"], f["high"]) for f in sens["factors"]],
+                  baseline=sens["baseline"], size_px=(1600, 760))
+    body = _chart_block(f"Влияние anchors на прогноз (±{sens['delta_pct']}%)", png,
+                        "Тонадо чувствительности")
+    return _section("sensitivity", "Чувствительность", "Влияние входных предпосылок", body)
+
+
+def _sec_hill(ctx) -> str | None:
+    hills = ctx.get("hill_curves")
+    if not hills:
+        return None
+    curves = [(h["label"], h["beta"], h["gamma"], h["k"]) for h in hills]
+    png = hill_curve(curves=curves, x_max=max(h["k"] for h in hills) * 3.0, size_px=(1600, 760))
+    body = _chart_block("Кривые насыщения по каналам (Hill)", png, "Кривые Hill")
+    return _section("hill", "Методология", "Кривые насыщения каналов", body)
+
+
+def _channel_table(cd: dict) -> str:
+    base_total = sum(cd["baseline"])
+    chan_totals = {c: sum(v) for c, v in cd["channels"].items()}
+    grand = base_total + sum(chan_totals.values())
+    rows = [["Baseline", f'{base_total:,.0f}'.replace(",", " "), f"{100 * base_total / grand:.1f}%"]]
+    rows += [[c.upper(), f'{t:,.0f}'.replace(",", " "), f"{100 * t / grand:.1f}%"]
+             for c, t in chan_totals.items()]
+    return _action_table(["Источник", "Вклад, ₽", "Доля"], rows, num_cols={1, 2},
+                         caption="Декомпозиция по каналам (сумма за горизонт)")
 
 
 def _sec_methodology(ctx) -> str:
@@ -263,8 +299,16 @@ def build_launch_forecast_html(
         section_specs.append((f"forecast-{weeks}", f"Прогноз {weeks} нед.", s))
         if (context[key] or {}).get("channel_decomposition") is None:
             skipped.append(f"{key}.channel_decomposition")
-        if (context[key] or {}).get("sensitivity") is None:
-            skipped.append(f"{key}.sensitivity")
+    tornado_html = _sec_tornado(context)
+    if tornado_html:
+        section_specs.append(("sensitivity", "Чувствительность", tornado_html))
+    else:
+        skipped.append("sensitivity")
+    hill_html = _sec_hill(context)
+    if hill_html:
+        section_specs.append(("hill", "Кривые Hill", hill_html))
+    else:
+        skipped.append("hill_curves")
     section_specs.append(("methodology", "Методология", _sec_methodology(context)))
 
     sections_html = "".join(html for _, _, html in section_specs)

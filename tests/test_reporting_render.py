@@ -43,24 +43,24 @@ def deck(tmp_path_factory) -> dict:
 class TestDeckStructure:
     def test_slide_count_covers_eight_sections(self, deck: dict) -> None:
         # cover + exec-headline + key-metrics + proxy + radar + caveats + uncertainty
-        # + (cone + weekly) × 3 horizons + methodology + model-card = 15.
-        assert len(list(deck["prs"].slides)) == 15
+        # + (cone + weekly + channel) × 3 horizons + tornado + hill + methodology +
+        # model-card = 20 (within the spec's 16–20 premium pacing).
+        assert len(list(deck["prs"].slides)) == 20
 
     def test_widescreen_16_9(self, deck: dict) -> None:
         prs = deck["prs"]
         assert round(Emu(prs.slide_width).inches, 2) == 13.33
         assert round(Emu(prs.slide_height).inches, 1) == 7.5
 
-    def test_five_embedded_png_charts(self, deck: dict) -> None:
-        # radar + 3 forecast cones + uncertainty donut — each a Core charts_png
-        # primitive embedded as PNG.
+    def test_seven_embedded_png_charts(self, deck: dict) -> None:
+        # radar + 3 cones + uncertainty donut + sensitivity tornado + hill curves.
         pics = sum(1 for s in deck["prs"].slides for sh in s.shapes if sh.shape_type == 13)
-        assert pics == 5
+        assert pics == 7
 
-    def test_four_styled_tables(self, deck: dict) -> None:
-        # key-metrics + weekly-breakdown × 3 (uncertainty is now a donut chart).
+    def test_seven_styled_tables(self, deck: dict) -> None:
+        # key-metrics + weekly × 3 + channel-decomposition × 3.
         tables = sum(1 for s in deck["prs"].slides for sh in s.shapes if sh.has_table)
-        assert tables == 4
+        assert tables == 7
 
 
 class TestFontEmbedding:
@@ -90,14 +90,11 @@ class TestClientSurfaceHygiene:
         assert copy.find_forbidden_phrases("\n".join(texts)) == []
 
 
-class TestPendingDataLogged:
-    def test_channel_and_sensitivity_skipped_not_silently_dropped(self, deck: dict) -> None:
-        skipped = deck["manifest"]["skipped"]
-        # per-channel forecast path (engine follow-up) → these sections have no data
-        # yet and must be reported as skipped, not silently omitted.
-        for key in ("forecast_12w", "forecast_26w", "forecast_52w"):
-            assert f"{key}.channel_decomposition" in skipped
-            assert f"{key}.sensitivity" in skipped
+class TestPerChannelPathLanded:
+    def test_nothing_skipped_all_sections_have_data(self, deck: dict) -> None:
+        # The per-channel forecast path now feeds channel decomposition (§5.3),
+        # sensitivity tornado (§5.4) and hill curves (§1.4) — nothing is skipped.
+        assert deck["manifest"]["skipped"] == []
 
 
 class TestBandDerivation:

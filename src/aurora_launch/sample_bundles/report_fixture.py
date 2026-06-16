@@ -84,22 +84,34 @@ def _spend_plan(horizon: int) -> dict[str, list[float]]:
     return {"tv": [200.0] * horizon, "digital": [80.0] * horizon}
 
 
-def _run_horizon(horizon: int) -> dict[str, Any]:
-    """Run a real orchestrator forecast for one horizon → per-period points."""
-    result = LaunchOrchestrator().forecast_recipient(
+def _forecast(horizon: int, anchors: RecipientAnchors | None = None):
+    """Run a real orchestrator forecast for one horizon. Returns the result."""
+    return LaunchOrchestrator().forecast_recipient(
         proxy=_proxy_bundle(),
-        anchors=_anchors(horizon),
+        anchors=anchors or _anchors(horizon),
         spend_plan=_spend_plan(horizon),
         horizon_periods=horizon,
         granularity="weekly",
         n_recipient=0,
     )
+
+
+def _run_horizon(horizon: int) -> dict[str, Any]:
+    """Run a real orchestrator forecast for one horizon → per-period points.
+
+    Points now carry the per-channel contribution + baseline (the engine already
+    computes them on each ForecastPoint) so the report can render the §5.3 channel
+    decomposition — no longer dropped on the floor.
+    """
+    result = _forecast(horizon)
     points = [
         {
             "period": i + 1,
             "mean": float(p.point_forecast),
             "ci_lower": float(p.ci_lower),
             "ci_upper": float(p.ci_upper),
+            "baseline": float(p.baseline),
+            "channels": {k: float(v) for k, v in p.per_channel_contribution.items()},
         }
         for i, p in enumerate(result.forecast.points)
     ]
@@ -120,6 +132,65 @@ def _run_horizon(horizon: int) -> dict[str, Any]:
         "total_forecast": round(total, 2),
         "ci_pct": ci_pct,
     }
+
+
+def _scaled_anchors(base: RecipientAnchors, field: str, factor: float) -> RecipientAnchors:
+    """A copy of `base` with one anchor field scaled by `factor` (±20% probe)."""
+    data = base.model_dump()
+    if field == "market_size":
+        data["market_size"] *= factor
+    elif field == "planned_share":
+        data["planned_share_trajectory"] = [min(s * factor, 1.0) for s in data["planned_share_trajectory"]]
+    elif field == "distribution":
+        data["distribution_trajectory"] = [min(d * factor, 1.0) for d in data["distribution_trajectory"]]
+    elif field == "pricing_index":
+        data["pricing_index"] *= factor
+    elif field == "elasticity":
+        data["elasticity"] *= factor
+    return RecipientAnchors(**data)
+
+
+# Anchor fields probed for the §5.4 sensitivity tornado (label → anchor field).
+_SENSITIVITY_FIELDS = (
+    ("Размер рынка", "market_size"),
+    ("Плановая доля", "planned_share"),
+    ("Дистрибуция", "distribution"),
+    ("Ценовой индекс", "pricing_index"),
+    ("Эластичность", "elasticity"),
+)
+
+
+def _sensitivity(horizon: int, *, delta: float = 0.20) -> dict[str, Any]:
+    """§5.4 tornado: each anchor field ±`delta` → total-forecast impact.
+
+    A real orchestration-level sensitivity: re-run the forecast with each anchor
+    perturbed low/high and record the total. Sorted widest-first is the Core
+    tornado primitive's job; here we just emit baseline + (label, low, high).
+    """
+    base_anchors = _anchors(horizon)
+    baseline_total = sum(p.point_forecast for p in _forecast(horizon, base_anchors).forecast.points)
+    factors = []
+    for label, field in _SENSITIVITY_FIELDS:
+        lo = sum(p.point_forecast for p in _forecast(horizon, _scaled_anchors(base_anchors, field, 1 - delta)).forecast.points)
+        hi = sum(p.point_forecast for p in _forecast(horizon, _scaled_anchors(base_anchors, field, 1 + delta)).forecast.points)
+        factors.append({"label": label, "low": float(lo), "high": float(hi)})
+    return {"baseline": float(baseline_total), "delta_pct": int(delta * 100), "factors": factors}
+
+
+def _channel_hill_params() -> list[dict[str, Any]]:
+    """Per-channel hill curve params (β, γ, k) from the proxy priors — for the §1.4
+    hill_curve primitive. Read from the orchestrator's `proxy_priors_used` (already
+    surfaced on the result), not re-derived."""
+    result = _forecast(_HORIZONS[-1])
+    return [
+        {
+            "label": cid.upper(),
+            "beta": float(prior.proxy_beta_mean),
+            "gamma": float(prior.hill_alpha),
+            "k": float(prior.hill_half_saturation),
+        }
+        for cid, prior in result.proxy_priors_used.items()
+    ]
 
 
 # Representative project metadata the forecast engine does NOT compute — the
@@ -160,9 +231,14 @@ def _metadata() -> dict[str, Any]:
 def build_sample_forecast_fixture() -> dict[str, Any]:
     """The full report input: real multi-horizon forecast + project metadata."""
     horizons = [_run_horizon(h) for h in _HORIZONS]
+    meta = _metadata()
+    # Per-channel forecast path additions (engine data, real): §5.4 sensitivity
+    # tornado on the annual horizon + §1.4 per-channel hill curves.
+    meta["sensitivity"] = _sensitivity(_HORIZONS[-1])
+    meta["channel_hill"] = _channel_hill_params()
     return {
         "schema": "launch_forecast_report_fixture_v1",
-        "metadata": _metadata(),
+        "metadata": meta,
         "horizons": horizons,
         "summary": {
             f"total_forecast_{h['horizon_weeks']}w": h["total_forecast"] for h in horizons

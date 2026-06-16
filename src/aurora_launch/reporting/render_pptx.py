@@ -38,11 +38,13 @@ from aurora_reporting.primitives import (
     AURORA_HYBRID,
     TierVerdict,
     forecast_cone,
+    hill_curve,
     pie_breakdown,
     similarity_radar,
     styled_table,
     tier_badge,
     tier_for,
+    tornado,
 )
 
 from aurora_launch.reporting import copy
@@ -381,6 +383,60 @@ def _weekly_breakdown_slide(prs, ctx, section_key: str, weeks: int, *, max_rows:
     return slide
 
 
+def _channel_decomposition_slide(prs, ctx, section_key: str, weeks: int):
+    """§5.3 — per-channel contribution vs baseline (total over the horizon).
+
+    Rendered as a styled table (the stacked-area PNG primitive is a future Core
+    Batch — flagged); the data is the engine's real per-period decomposition.
+    """
+    section = ctx.get(section_key)
+    cd = (section or {}).get("channel_decomposition")
+    if cd is None:
+        return None
+    slide = _blank_slide(prs)
+    _section_title(slide, f"ПРОГНОЗ · {weeks} НЕДЕЛЬ", "Декомпозиция по каналам")
+    base_total = sum(cd["baseline"])
+    chan_totals = {c: sum(v) for c, v in cd["channels"].items()}
+    grand = base_total + sum(chan_totals.values())
+    rows = [["Baseline", f"{base_total:,.0f}".replace(",", " "),
+             f"{100 * base_total / grand:.1f}%"]]
+    rows += [[c.upper(), f"{t:,.0f}".replace(",", " "), f"{100 * t / grand:.1f}%"]
+             for c, t in chan_totals.items()]
+    styled_table(slide, _MARGIN_IN, 2.3, 9.0, headers=["Источник", "Вклад, ₽", "Доля"],
+                 rows=rows, row_height_in=0.5, font_size=13)
+    _footer(slide, ctx["cover"])
+    return slide
+
+
+def _sensitivity_tornado_slide(prs, ctx):
+    """§5.4 — anchor sensitivity tornado (Core `tornado` primitive)."""
+    sens = ctx.get("sensitivity")
+    if not sens:
+        return None
+    slide = _blank_slide(prs)
+    _section_title(slide, "ЧУВСТВИТЕЛЬНОСТЬ", "Влияние anchors на прогноз (±20%)")
+    factors = [(f["label"], f["low"], f["high"]) for f in sens["factors"]]
+    png = tornado(factors=factors, baseline=sens["baseline"], theme=_THEME, size_px=(1600, 760))
+    _add_png(slide, png, x=_MARGIN_IN, y=1.95, w=11.9)
+    _footer(slide, ctx["cover"])
+    return slide
+
+
+def _hill_curves_slide(prs, ctx):
+    """§1.4 — per-channel hill saturation curves (Core `hill_curve` primitive)."""
+    hills = ctx.get("hill_curves")
+    if not hills:
+        return None
+    slide = _blank_slide(prs)
+    _section_title(slide, "МЕТОДОЛОГИЯ", "Кривые насыщения по каналам (Hill)")
+    curves = [(h["label"], h["beta"], h["gamma"], h["k"]) for h in hills]
+    x_max = max(h["k"] for h in hills) * 3.0
+    png = hill_curve(curves=curves, x_max=x_max, theme=_THEME, size_px=(1600, 760))
+    _add_png(slide, png, x=_MARGIN_IN, y=1.95, w=11.9)
+    _footer(slide, ctx["cover"])
+    return slide
+
+
 def _methodology(prs, ctx):
     slide = _blank_slide(prs)
     method = ctx["methodology"]
@@ -458,11 +514,13 @@ def build_launch_forecast_pptx(
             continue
         _forecast_cone_slide(prs, context, key, weeks)
         _weekly_breakdown_slide(prs, context, key, weeks)
-        # §5.3 channel decomposition / §5.4 tornado need a per-channel forecast path.
-        if context[key].get("channel_decomposition") is None:
+        if _channel_decomposition_slide(prs, context, key, weeks) is None:
             skipped.append(f"{key}.channel_decomposition")
-        if context[key].get("sensitivity") is None:
-            skipped.append(f"{key}.sensitivity")
+    # §5.4 sensitivity tornado + §1.4 hill curves (project-level, per-channel path).
+    if _sensitivity_tornado_slide(prs, context) is None:
+        skipped.append("sensitivity")
+    if _hill_curves_slide(prs, context) is None:
+        skipped.append("hill_curves")
     _methodology(prs, context)
     _model_card(prs, context)
 

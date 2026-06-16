@@ -126,16 +126,25 @@ def _sheet_weekly(wb: Workbook, ctx: dict[str, Any], section_key: str, title: st
 
 def _sheet_channel(wb: Workbook, ctx: dict[str, Any]) -> bool:
     ws = wb.create_sheet("Channel decomposition")
-    # §5.3 — needs a per-channel forecast path (orchestrator emits total points).
-    has = any(
-        (ctx.get(k) or {}).get("channel_decomposition") is not None
-        for k in ("forecast_12w", "forecast_26w", "forecast_52w")
-    )
-    if not has:
+    # §5.3 — per-channel contribution + baseline per period (engine surfaces it now).
+    section = ctx.get("forecast_12w") or ctx.get("forecast_26w") or ctx.get("forecast_52w")
+    cd = (section or {}).get("channel_decomposition")
+    if not cd:
         _pending_sheet(ws, ["Период", "Канал", "Вклад, ₽", "Доля, %"],
-                       "Появится при per-channel forecast path (engine follow-up).")
+                       "Горизонт не рассчитан.")
         return False
-    return True  # real population lands with the per-channel path
+    channel_ids = list(cd["channels"])
+    headers = ["Период", "Baseline, ₽", *[f"{c}, ₽" for c in channel_ids], "Итого, ₽"]
+    rows = []
+    for i, period in enumerate(cd["periods"]):
+        base = cd["baseline"][i]
+        chan_vals = [cd["channels"][c][i] for c in channel_ids]
+        rows.append([period, base, *chan_vals, base + sum(chan_vals)])
+    num_cols = {c: _RUB_FMT for c in range(1, len(headers))}
+    _write_header(ws, headers)
+    _write_rows(ws, rows, number_cols=num_cols)
+    _autosize(ws, [10] + [16] * (len(headers) - 1))
+    return True
 
 
 def _sheet_proxy(wb: Workbook, ctx: dict[str, Any]) -> None:

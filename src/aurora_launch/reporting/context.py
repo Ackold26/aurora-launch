@@ -75,14 +75,23 @@ def _weekly_breakdown(horizon: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def _forecast_section(horizon: dict[str, Any]) -> dict[str, Any]:
-    """One forecast horizon (spec §1.5–1.7): cone chart-data + weekly table.
+def _channel_decomposition(horizon: dict[str, Any]) -> dict[str, Any] | None:
+    """§5.3 per-channel contribution + baseline per period (engine now surfaces it)."""
+    pts = horizon["points"]
+    if not pts or "channels" not in pts[0]:
+        return None
+    channel_ids = list(pts[0]["channels"])
+    return {
+        "periods": [pt["period"] for pt in pts],
+        "baseline": [pt["baseline"] for pt in pts],
+        "channels": {cid: [pt["channels"][cid] for pt in pts] for cid in channel_ids},
+    }
 
-    `channel_decomposition` / `sensitivity` are NOT populated: the orchestrator
-    returns total per-period points, not per-channel contributions. Those need a
-    per-channel forecast path (engine follow-up) before the stacked-area (§5.3)
-    and tornado (§5.4) charts can render real data.
-    """
+
+def _forecast_section(horizon: dict[str, Any]) -> dict[str, Any]:
+    """One forecast horizon (spec §1.5–1.7): cone chart-data + weekly table +
+    per-channel decomposition (§5.3) now that the engine surfaces it. The §5.4
+    sensitivity tornado is a project-level analysis (see `build_report_context`)."""
     cone = [
         {"x": pt["period"], "mean": pt["mean"], "lo": pt["ci_lower"], "hi": pt["ci_upper"]}
         for pt in horizon["points"]
@@ -93,8 +102,8 @@ def _forecast_section(horizon: dict[str, Any]) -> dict[str, Any]:
         "weekly_breakdown": _weekly_breakdown(horizon),
         "mode": horizon["mode"],
         "warnings": horizon.get("warnings", []),
-        "channel_decomposition": None,  # pending per-channel forecast (engine follow-up)
-        "sensitivity": None,            # pending sensitivity engine (tornado)
+        "channel_decomposition": _channel_decomposition(horizon),  # §5.3 (engine data)
+        "sensitivity": None,  # project-level tornado lives at context["sensitivity"]
     }
 
 
@@ -172,4 +181,8 @@ def build_report_context(fixture: dict[str, Any]) -> dict[str, Any]:
             "diagnostics": None,
             "hash_signature": None,
         },
+        # §5.4 sensitivity tornado (project-level, annual horizon) + §1.4 per-channel
+        # hill curves — real engine data via the per-channel forecast path.
+        "sensitivity": meta.get("sensitivity"),
+        "hill_curves": meta.get("channel_hill"),
     }

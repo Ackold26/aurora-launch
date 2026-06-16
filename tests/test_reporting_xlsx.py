@@ -58,13 +58,17 @@ class TestBrandStyling:
         assert ws.freeze_panes == "A2"
 
 
+class TestChannelDecomposition:
+    def test_channel_sheet_populated_from_per_channel_path(self, workbook: dict) -> None:
+        ws = workbook["wb"]["Channel decomposition"]
+        # header + 12 weekly periods (per-channel path now feeds it).
+        assert ws.max_row == 13
+        # Baseline column carries a real ruble number, not a note string.
+        assert isinstance(ws["B2"].value, (int, float)) and ws["B2"].value > 0
+
+
 class TestPendingSheetsFlagged:
     def test_data_gated_sheets_reported_not_dropped(self, workbook: dict) -> None:
-        pending = workbook["manifest"]["pending"]
-        assert set(pending) == {"Channel decomposition", "Anchors", "Diagnostics"}
-
-    def test_pending_sheet_has_note_not_fabricated_data(self, workbook: dict) -> None:
-        ws = workbook["wb"]["Channel decomposition"]
-        # header row + a single note row, no fabricated numbers.
-        assert ws.max_row == 2
-        assert isinstance(ws["A2"].value, str) and ws["A2"].value
+        # Channel decomposition now lands via the per-channel path; only anchors
+        # (not on the context contract) + diagnostics (no posterior yet) remain.
+        assert set(workbook["manifest"]["pending"]) == {"Anchors", "Diagnostics"}
