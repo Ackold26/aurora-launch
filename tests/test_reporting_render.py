@@ -51,15 +51,16 @@ class TestDeckStructure:
         assert round(Emu(prs.slide_width).inches, 2) == 13.33
         assert round(Emu(prs.slide_height).inches, 1) == 7.5
 
-    def test_four_embedded_png_charts(self, deck: dict) -> None:
-        # radar + 3 forecast cones, each a Core charts_png primitive embedded as PNG.
+    def test_five_embedded_png_charts(self, deck: dict) -> None:
+        # radar + 3 forecast cones + uncertainty donut — each a Core charts_png
+        # primitive embedded as PNG.
         pics = sum(1 for s in deck["prs"].slides for sh in s.shapes if sh.shape_type == 13)
-        assert pics == 4
+        assert pics == 5
 
-    def test_five_styled_tables(self, deck: dict) -> None:
-        # key-metrics + uncertainty + weekly-breakdown × 3.
+    def test_four_styled_tables(self, deck: dict) -> None:
+        # key-metrics + weekly-breakdown × 3 (uncertainty is now a donut chart).
         tables = sum(1 for s in deck["prs"].slides for sh in s.shapes if sh.has_table)
-        assert tables == 5
+        assert tables == 4
 
 
 class TestFontEmbedding:

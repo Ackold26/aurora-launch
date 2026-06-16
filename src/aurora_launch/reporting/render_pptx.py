@@ -38,6 +38,7 @@ from aurora_reporting.primitives import (
     AURORA_HYBRID,
     TierVerdict,
     forecast_cone,
+    pie_breakdown,
     similarity_radar,
     styled_table,
     tier_badge,
@@ -284,24 +285,30 @@ def _transfer_caveats(prs, ctx):
 
 
 def _uncertainty(prs, ctx):
-    """§4.2 — rendered as a styled table until Core ships the `pie` primitive (Batch 2)."""
+    """§4.2 — 4-source uncertainty decomposition as a donut (Core `pie_breakdown`).
+
+    Labels are RU (app-side); Core is copy-agnostic and normalizes the values.
+    """
     slide = _blank_slide(prs)
     tc = ctx["transfer_caveats"]
     _section_title(slide, "ОГОВОРКИ ТРАНСФЕРА", "Декомпозиция неопределённости")
     unc = tc["uncertainty"]
     label_ru = {
-        "proxy": "Прокси (proxy)",
-        "transfer": "Трансфер (transfer)",
+        "proxy": "Прокси",
+        "transfer": "Трансфер",
         "anchor": "Anchors",
-        "sampling": "Сэмплинг (sampling)",
+        "sampling": "Сэмплинг",
     }
-    rows = [[label_ru.get(k, k), f"{v * 100:g}%"] for k, v in unc.items()]
-    styled_table(slide, _MARGIN_IN, 2.3, 6.0, headers=["Источник", "Доля вариации"],
-                 rows=rows, row_height_in=0.5, font_size=13)
+    slices = {label_ru.get(k, k): v for k, v in unc.items()}
+    png = pie_breakdown(slices=slices, donut=True, theme=_THEME)
+    _add_png(slide, png, x=_MARGIN_IN, y=2.0, h=4.8)
     inflation = tc.get("inflation_factor")
+    notes: list[str] = []
     if inflation:
-        _text(slide, f"Inflation factor: ×{inflation:g} (verdict Medium → расширение 95% CI)",
-              x=_MARGIN_IN, y=5.2, w=11.0, h=0.6, size=12, color=_THEME.text_secondary)
+        notes.append(f"Inflation factor: ×{inflation:g} (verdict Medium → расширение 95% CI)")
+    notes.append("При более близком прокси (S ≥ 0.85) доля transfer-неопределённости "
+                 "снижается с 40% до ~22% общей вариации.")
+    _bullets(slide, notes, x=7.4, y=2.6, w=5.2, h=3.0, size=13)
     _footer(slide, ctx["cover"])
     return slide
 
