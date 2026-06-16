@@ -18,6 +18,7 @@ import json
 import sys
 import threading
 import time
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -30,6 +31,23 @@ from aurora_launch.persistence.autosave import (
     AutosaveSnapshot,
     _autosave_filename,
 )
+
+
+def _wait_until(
+    predicate: Callable[[], bool], *, timeout: float = 3.0, interval: float = 0.01
+) -> bool:
+    """Poll ``predicate`` until true or timeout — replaces fixed-sleep timer races (#72).
+
+    Timer-driven autosave writes land at OS-scheduler-dependent moments; a fixed
+    ``time.sleep`` margin flakes on loaded CI runners. Polling waits for the real
+    state to materialise instead of guessing the timing.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(interval)
+    return predicate()
 
 
 # ---------------------------------------------------------------------------
@@ -359,13 +377,24 @@ class TestTimerScheduling:
 
     def test_replace_provider(self, autosave_dir: Path) -> None:
         with AutosaveManager(autosave_dir, session_id="t", interval_s=0.05) as mgr:
+            slot1 = autosave_dir / _autosave_filename("p", 1)
+
+            def _slot_value() -> str | None:
+                if not slot1.exists():
+                    return None
+                try:
+                    return json.loads(slot1.read_text())["working_state"]["v"]  # type: ignore[no-any-return]
+                except (json.JSONDecodeError, KeyError):
+                    return None
+
             mgr.start_autosave("p", lambda: (None, {"v": "first"}))
-            time.sleep(0.07)
+            # Poll for the timer-driven write instead of a fixed sleep (#72 — the
+            # 0.07s margin flaked on loaded ubuntu/py3.12 CI runners).
+            assert _wait_until(lambda: _slot_value() is not None), "first autosave never landed"
             mgr.start_autosave("p", lambda: (None, {"v": "second"}))
-            time.sleep(0.07)
+            assert _wait_until(lambda: _slot_value() == "second"), "provider swap never took effect"
             mgr.stop_autosave("p")
 
-            slot1 = autosave_dir / _autosave_filename("p", 1)
             payload = json.loads(slot1.read_text())
             assert payload["working_state"]["v"] == "second"
 
