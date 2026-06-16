@@ -20,6 +20,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from aurora_reporting.fonts import font_path
+from aurora_reporting.primitives import AURORA_HYBRID
 from reportlab.lib.colors import HexColor
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib.pagesizes import A4
@@ -35,9 +37,6 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-from aurora_reporting.fonts import font_path
-from aurora_reporting.primitives import AURORA_HYBRID
-
 from aurora_launch.engines.methodology_cert import (
     build_certificate_data,
     sign_certificate_local,
@@ -45,6 +44,7 @@ from aurora_launch.engines.methodology_cert import (
 from aurora_launch.reporting import copy
 from aurora_launch.schemas.forecast import (
     ForecastSummary,
+    MethodologyCertificateData,
     ProxyMetadataSummary,
     TransferSummary,
 )
@@ -104,7 +104,7 @@ def _styles(has_brand_fonts: bool) -> dict[str, ParagraphStyle]:
 
 
 def _build_cert_data(ctx: dict[str, Any], *, aurora_version: str, bundle_hash: str,
-                     jcs_hash: str | None):
+                     jcs_hash: str | None) -> tuple[MethodologyCertificateData, bool]:
     """Compose + locally-sign the certificate data from the report context."""
     pq = ctx["proxy_quality"]
     radar = pq["radar"]
@@ -190,8 +190,8 @@ def build_methodology_cert_pdf(
         f"hill saturation, категорийная сезонность); magnitude калибруется от recipient "
         f"anchors. Неопределённость разложена на 4 источника: proxy {unc['proxy']*100:g}%, "
         f"transfer {unc['transfer']*100:g}%, anchor {unc['anchor']*100:g}%, "
-        f"sampling {unc['sampling']*100:g}%. 95% ДИ расширен на "
-        f"×{tc.get('inflation_factor') or 1:g} согласно вердикту."
+        f"sampling {unc['sampling']*100:g}%. Вердикту соответствует inflation factor "
+        f"×{tc.get('inflation_factor') or 1:g} для transfer-неопределённости."
     )
     copy.assert_client_safe(summary)
     flow.append(Paragraph(summary, st["body"]))
@@ -321,12 +321,12 @@ def build_methodology_cert_html(
         f"(итоговая близость S = {radar['aggregate']:g}, вердикт {radar['verdict']}). "
         f"Неопределённость разложена на 4 источника: proxy {unc['proxy']*100:g}%, "
         f"transfer {unc['transfer']*100:g}%, anchor {unc['anchor']*100:g}%, "
-        f"sampling {unc['sampling']*100:g}%; 95% ДИ расширен на "
-        f"×{tc.get('inflation_factor') or 1:g}."
+        f"sampling {unc['sampling']*100:g}%; вердикту соответствует inflation factor "
+        f"×{tc.get('inflation_factor') or 1:g} для transfer-неопределённости."
     )
     copy.assert_client_safe(summary)
 
-    def _row(r: dict) -> str:
+    def _row(r: dict[str, Any]) -> str:
         period = esc(f"{r['period_weeks']} недель")
         value = esc(f"{r['total_display']} ± {r['ci_pct']:g}%")
         return f'<tr><td>{period}</td><td class="num">{value}</td></tr>'
@@ -345,11 +345,11 @@ def build_methodology_cert_html(
         "*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);"
         "font-family:var(--font-sans);font-size:11px;line-height:1.5}"
         ".cert{max-width:170mm;margin:0 auto;padding:8mm}"
-        ".brand{color:var(--gold);font-weight:600;letter-spacing:.12em;text-align:center;font-size:12px}"
+        ".brand{color:var(--accent-muted,#C5A46D);font-weight:600;letter-spacing:.12em;text-align:center;font-size:12px}"
         "h1{font-family:var(--font-serif);font-size:24px;color:var(--deep-100,#0A1628);"
         "text-align:center;margin:4px 0 2px}"
         ".lime{width:48px;height:3px;background:var(--lime);margin:8px auto 16px}"
-        "h2{font-family:var(--font-sans);font-size:12px;color:var(--gold);"
+        "h2{font-family:var(--font-sans);font-size:12px;color:var(--accent-muted,#C5A46D);"
         "text-transform:uppercase;letter-spacing:.08em;margin:16px 0 6px}"
         "table{border-collapse:collapse;width:100%;font-size:11px;margin:6px 0}"
         "th{background:var(--deep-100,#0A1628);color:#fff;text-align:left;padding:6px 10px}"

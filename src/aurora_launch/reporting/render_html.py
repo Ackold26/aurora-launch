@@ -18,6 +18,7 @@ the manifest, never silently dropped.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from aurora_reporting.aurora_html import design_shell, security
@@ -29,7 +30,6 @@ from aurora_reporting.primitives import (
     tornado,
 )
 
-from aurora_launch.reporting import copy
 from aurora_launch.reporting.render_pptx import _derive_bands
 
 _esc = security.escape
@@ -58,7 +58,7 @@ def _ul(items: list[str], cls: str = "") -> str:
     return f"<ul{c}>" + "".join(f"<li>{_esc(i)}</li>" for i in items) + "</ul>"
 
 
-def _action_table(headers: list[str], rows: list[list[object]], *, num_cols: set[int],
+def _action_table(headers: Sequence[str], rows: Sequence[Sequence[object]], *, num_cols: set[int],
                   caption: str = "") -> str:
     cap = f"<caption>{_esc(caption)}</caption>" if caption else ""
     head = "".join(
@@ -86,7 +86,7 @@ def _chart_block(title: str, png_bytes: bytes, alt: str, subtitle: str = "") -> 
 # ── Section builders ─────────────────────────────────────────────────────────
 
 
-def _sec_cover(ctx) -> str:
+def _sec_cover(ctx: dict[str, Any]) -> str:
     c = ctx["cover"]
     cells = [
         ("Версия", c.get("aurora_version") or "—"),
@@ -109,7 +109,7 @@ def _sec_cover(ctx) -> str:
     )
 
 
-def _sec_executive(ctx) -> str:
+def _sec_executive(ctx: dict[str, Any]) -> str:
     es = ctx["executive_summary"]
     km = {r["period_weeks"]: r for r in es["key_metrics"]}
     h12 = km[12]
@@ -132,7 +132,7 @@ def _sec_executive(ctx) -> str:
                     key_message + table)
 
 
-def _sec_proxy(ctx) -> str:
+def _sec_proxy(ctx: dict[str, Any]) -> str:
     pq = ctx["proxy_quality"]
     radar = pq["radar"]
     png = similarity_radar(dimensions=list(radar["dimensions"]),
@@ -155,7 +155,7 @@ def _sec_proxy(ctx) -> str:
     return _section("proxy", "Качество прокси", "Выбранный прокси-бренд и близость", body)
 
 
-def _sec_caveats(ctx) -> str:
+def _sec_caveats(ctx: dict[str, Any]) -> str:
     tc = ctx["transfer_caveats"]
     scqar = (
         f'<div class="scqar"><div class="scqar-block accent"><div class="scqar-label">Переносится</div>'
@@ -172,9 +172,9 @@ def _sec_caveats(ctx) -> str:
     infl_block = ""
     if infl:
         infl_block = (f'<div class="commentary"><div class="commentary-block">'
-                      f'<div class="commentary-lead">Inflation factor: ×{infl:g}</div>'
-                      f'<div class="commentary-body">Вердикт Medium → расширение 95% '
-                      f'доверительного интервала.</div></div></div>')
+                      f'<div class="commentary-lead">Inflation factor (вердикт Medium): ×{infl:g}</div>'
+                      f'<div class="commentary-body">Степень расширения transfer-'
+                      f'неопределённости — растёт при менее близком прокси.</div></div></div>')
     body = (
         scqar
         + f'<p class="pull-quote">{_esc(tc["caveat_text"])}</p>'
@@ -184,7 +184,7 @@ def _sec_caveats(ctx) -> str:
     return _section("caveats", "Оговорки трансфера", "Что переносится, что — нет", body)
 
 
-def _sec_forecast(ctx, key: str, weeks: int) -> str | None:
+def _sec_forecast(ctx: dict[str, Any], key: str, weeks: int) -> str | None:
     section = ctx.get(key)
     if section is None:
         return None
@@ -208,18 +208,18 @@ def _sec_forecast(ctx, key: str, weeks: int) -> str | None:
                     "Веер прогноза, понедельная разбивка и каналы", body)
 
 
-def _sec_tornado(ctx) -> str | None:
+def _sec_tornado(ctx: dict[str, Any]) -> str | None:
     sens = ctx.get("sensitivity")
     if not sens:
         return None
     png = tornado(factors=[(f["label"], f["low"], f["high"]) for f in sens["factors"]],
                   baseline=sens["baseline"], size_px=(1600, 760))
     body = _chart_block(f"Влияние anchors на прогноз (±{sens['delta_pct']}%)", png,
-                        "Тонадо чувствительности")
+                        "Торнадо чувствительности")
     return _section("sensitivity", "Чувствительность", "Влияние входных предпосылок", body)
 
 
-def _sec_hill(ctx) -> str | None:
+def _sec_hill(ctx: dict[str, Any]) -> str | None:
     hills = ctx.get("hill_curves")
     if not hills:
         return None
@@ -229,10 +229,10 @@ def _sec_hill(ctx) -> str | None:
     return _section("hill", "Методология", "Кривые насыщения каналов", body)
 
 
-def _channel_table(cd: dict) -> str:
+def _channel_table(cd: dict[str, Any]) -> str:
     base_total = sum(cd["baseline"])
     chan_totals = {c: sum(v) for c, v in cd["channels"].items()}
-    grand = base_total + sum(chan_totals.values())
+    grand = (base_total + sum(chan_totals.values())) or 1.0  # guard /0 on degenerate data
     rows = [["Baseline", f'{base_total:,.0f}'.replace(",", " "), f"{100 * base_total / grand:.1f}%"]]
     rows += [[c.upper(), f'{t:,.0f}'.replace(",", " "), f"{100 * t / grand:.1f}%"]
              for c, t in chan_totals.items()]
@@ -240,7 +240,7 @@ def _channel_table(cd: dict) -> str:
                          caption="Декомпозиция по каналам (сумма за горизонт)")
 
 
-def _sec_methodology(ctx) -> str:
+def _sec_methodology(ctx: dict[str, Any]) -> str:
     m = ctx["methodology"]
     formulas = (
         '<div class="formula-box">Adstock:  A_t = X_t + λ · A_(t−1)\n'

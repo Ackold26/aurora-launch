@@ -14,6 +14,7 @@ The forecast itself IS a real orchestrator run (pure-transfer baseline, n_recipi
 
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import Any
 
 import numpy as np
@@ -29,11 +30,15 @@ _HORIZONS = (12, 26, 52)
 _MEDIA_COLS = ("tv", "digital")
 
 
-def _proxy_bundle():
+@lru_cache(maxsize=1)
+def _proxy_bundle() -> Any:
     """A Кагоцел-anonymized OTC proxy posterior (deterministic, seed=42).
 
     Mirrors the orchestrator integration-test posterior so the forecast is a real,
-    validated run — not a hand-faked curve.
+    validated run — not a hand-faked curve. Memoized: the fixture re-runs the
+    orchestrator ~15× (3 horizons + 11 sensitivity probes + hill params), each of
+    which would otherwise re-draw 5000×4 samples; deterministic, so caching the one
+    bundle is safe and cuts the fixture's cost ~15×.
     """
     rng = np.random.default_rng(42)
     n_samples = 5000
@@ -84,7 +89,7 @@ def _spend_plan(horizon: int) -> dict[str, list[float]]:
     return {"tv": [200.0] * horizon, "digital": [80.0] * horizon}
 
 
-def _forecast(horizon: int, anchors: RecipientAnchors | None = None):
+def _forecast(horizon: int, anchors: RecipientAnchors | None = None) -> Any:
     """Run a real orchestrator forecast for one horizon. Returns the result."""
     return LaunchOrchestrator().forecast_recipient(
         proxy=_proxy_bundle(),
@@ -104,7 +109,7 @@ def _run_horizon(horizon: int) -> dict[str, Any]:
     decomposition — no longer dropped on the floor.
     """
     result = _forecast(horizon)
-    points = [
+    points: list[dict[str, Any]] = [
         {
             "period": i + 1,
             "mean": float(p.point_forecast),
@@ -214,7 +219,7 @@ def _metadata() -> dict[str, Any]:
         "proxy_data_period": "DSM 2022-01 — 2024-12 (36 месяцев)",
         "similarity": {
             "dimensions": dimensions,
-            "aggregate": aggregate,  # 0.60 → Medium
+            "aggregate": aggregate,  # 0.70 → silver/Medium (matches tier_for + copy thresholds)
             "verdict": "Medium",
             "tier": "silver",
         },

@@ -15,7 +15,6 @@ from __future__ import annotations
 import zipfile
 
 import pytest
-
 from pptx import Presentation
 from pptx.util import Emu
 

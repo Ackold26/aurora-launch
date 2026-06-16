@@ -8,7 +8,6 @@ that data-gated sheets are present-but-flagged (never silently dropped).
 from __future__ import annotations
 
 import pytest
-
 from openpyxl import load_workbook
 
 from aurora_launch.reporting.context import build_report_context

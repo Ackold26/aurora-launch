@@ -25,12 +25,8 @@ until Core ships the ``pie`` primitive (Batch 2).
 from __future__ import annotations
 
 import io
+from collections.abc import Sequence
 from typing import Any
-
-from pptx import Presentation
-from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN
-from pptx.util import Emu, Inches, Pt
 
 # --- Core aurora_reporting primitives, via the monolith-free `primitives` facade
 # (one stable import path; no WeasyPrint/jinja pulled — verified in a clean subprocess).
@@ -46,8 +42,10 @@ from aurora_reporting.primitives import (
     tier_for,
     tornado,
 )
-
-from aurora_launch.reporting import copy
+from pptx import Presentation
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN
+from pptx.util import Inches, Pt
 
 # 16:9 widescreen deck.
 _SLIDE_W_IN = 13.333
@@ -56,11 +54,14 @@ _MARGIN_IN = 0.7
 _THEME = AURORA_HYBRID
 
 
-def _rgb(hex_color: str) -> RGBColor:
-    return RGBColor.from_string(hex_color.lstrip("#").upper())
+def _rgb(hex_color: str) -> Any:
+    # python-pptx's RGBColor.from_string is an unannotated classmethod (no stub),
+    # so the call is untyped under strict disallow_untyped_calls — a library typing
+    # gap, not fixable by annotating our own code.
+    return RGBColor.from_string(hex_color.lstrip("#").upper())  # type: ignore[no-untyped-call]
 
 
-def _blank_slide(prs: Presentation):
+def _blank_slide(prs: Any) -> Any:
     """A blank slide with the Aurora cream background."""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     bg = slide.background
@@ -70,7 +71,7 @@ def _blank_slide(prs: Presentation):
 
 
 def _text(
-    slide,
+    slide: Any,
     text: str,
     *,
     x: float,
@@ -83,7 +84,7 @@ def _text(
     align: PP_ALIGN = PP_ALIGN.LEFT,
     font: str | None = None,
     italic: bool = False,
-):
+) -> Any:
     """Add a single-paragraph text box. Returns the text frame for further runs."""
     box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
     tf = box.text_frame
@@ -100,7 +101,8 @@ def _text(
     return tf
 
 
-def _bullets(slide, items: list[str], *, x: float, y: float, w: float, h: float, size: int = 13):
+def _bullets(slide: Any, items: list[str], *, x: float, y: float, w: float, h: float,
+             size: int = 13) -> Any:
     """A bulleted list (each item one paragraph)."""
     box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
     tf = box.text_frame
@@ -116,7 +118,7 @@ def _bullets(slide, items: list[str], *, x: float, y: float, w: float, h: float,
     return tf
 
 
-def _accent_rule(slide, *, x: float, y: float, w: float = 1.4, lime: bool = False):
+def _accent_rule(slide: Any, *, x: float, y: float, w: float = 1.4, lime: bool = False) -> Any:
     """A 2pt rule under a title — gold by default; Sacred Lime is signature-only
     (the ONE sanctioned lime use, per the theme's lime-guard)."""
     from pptx.enum.shapes import MSO_SHAPE
@@ -129,7 +131,7 @@ def _accent_rule(slide, *, x: float, y: float, w: float = 1.4, lime: bool = Fals
     return rule
 
 
-def _section_title(slide, kicker: str, title: str, *, lime: bool = False):
+def _section_title(slide: Any, kicker: str, title: str, *, lime: bool = False) -> None:
     """Standard section header: small gold kicker + large display title + rule."""
     _text(slide, kicker, x=_MARGIN_IN, y=0.5, w=10.0, h=0.4, size=12, bold=True,
           color=_THEME.gold, font=_THEME.body)
@@ -138,7 +140,7 @@ def _section_title(slide, kicker: str, title: str, *, lime: bool = False):
     _accent_rule(slide, x=_MARGIN_IN, y=1.7, lime=lime)
 
 
-def _footer(slide, ctx_cover: dict[str, Any]):
+def _footer(slide: Any, ctx_cover: dict[str, Any]) -> None:
     """Slide footer: brand · version · project id."""
     parts = [
         "Aurora AI · Launch Forecast",
@@ -149,8 +151,8 @@ def _footer(slide, ctx_cover: dict[str, Any]):
           w=12.0, h=0.3, size=8, color=_THEME.text_secondary)
 
 
-def _add_png(slide, png: bytes, *, x: float, y: float, w: float | None = None,
-             h: float | None = None):
+def _add_png(slide: Any, png: bytes, *, x: float, y: float, w: float | None = None,
+             h: float | None = None) -> Any:
     """Embed PNG bytes (from a Core charts_png primitive) as a picture."""
     kwargs: dict[str, Any] = {}
     if w is not None:
@@ -163,7 +165,7 @@ def _add_png(slide, png: bytes, *, x: float, y: float, w: float | None = None,
 # ── Section builders ─────────────────────────────────────────────────────────
 
 
-def _cover(prs, ctx):
+def _cover(prs: Any, ctx: dict[str, Any]) -> Any:
     slide = _blank_slide(prs)
     cover = ctx["cover"]
     # Deep background band (premium, lime-guard respected — no lime fill).
@@ -190,7 +192,7 @@ def _cover(prs, ctx):
     return slide
 
 
-def _executive_headline(prs, ctx):
+def _executive_headline(prs: Any, ctx: dict[str, Any]) -> Any:
     slide = _blank_slide(prs)
     es = ctx["executive_summary"]
     _section_title(slide, "РЕЗЮМЕ ДЛЯ РУКОВОДСТВА", "Ключевой прогноз", lime=True)
@@ -210,7 +212,7 @@ def _executive_headline(prs, ctx):
     return slide
 
 
-def _key_metrics(prs, ctx):
+def _key_metrics(prs: Any, ctx: dict[str, Any]) -> Any:
     slide = _blank_slide(prs)
     _section_title(slide, "РЕЗЮМЕ ДЛЯ РУКОВОДСТВА", "Ключевые метрики")
     km = ctx["executive_summary"]["key_metrics"]
@@ -229,7 +231,7 @@ def _key_metrics(prs, ctx):
     return slide
 
 
-def _proxy_selected(prs, ctx):
+def _proxy_selected(prs: Any, ctx: dict[str, Any]) -> Any:
     slide = _blank_slide(prs)
     pq = ctx["proxy_quality"]
     _section_title(slide, "КАЧЕСТВО ПРОКСИ", "Выбранный прокси-бренд")
@@ -244,7 +246,7 @@ def _proxy_selected(prs, ctx):
     return slide
 
 
-def _similarity_radar_slide(prs, ctx):
+def _similarity_radar_slide(prs: Any, ctx: dict[str, Any]) -> Any:
     slide = _blank_slide(prs)
     radar = ctx["proxy_quality"]["radar"]
     _section_title(slide, "КАЧЕСТВО ПРОКСИ", "Карта близости (6 измерений)")
@@ -264,7 +266,7 @@ def _similarity_radar_slide(prs, ctx):
     return slide
 
 
-def _transfer_caveats(prs, ctx):
+def _transfer_caveats(prs: Any, ctx: dict[str, Any]) -> Any:
     slide = _blank_slide(prs)
     tc = ctx["transfer_caveats"]
     _section_title(slide, "ОГОВОРКИ ТРАНСФЕРА", "Что переносится, что — нет")
@@ -286,7 +288,7 @@ def _transfer_caveats(prs, ctx):
     return slide
 
 
-def _uncertainty(prs, ctx):
+def _uncertainty(prs: Any, ctx: dict[str, Any]) -> Any:
     """§4.2 — 4-source uncertainty decomposition as a donut (Core `pie_breakdown`).
 
     Labels are RU (app-side); Core is copy-agnostic and normalizes the values.
@@ -307,7 +309,8 @@ def _uncertainty(prs, ctx):
     inflation = tc.get("inflation_factor")
     notes: list[str] = []
     if inflation:
-        notes.append(f"Inflation factor: ×{inflation:g} (verdict Medium → расширение 95% CI)")
+        notes.append(f"Inflation factor (вердикт Medium): ×{inflation:g} — степень "
+                     "расширения transfer-неопределённости при менее близком прокси.")
     notes.append("При более близком прокси (S ≥ 0.85) доля transfer-неопределённости "
                  "снижается с 40% до ~22% общей вариации.")
     _bullets(slide, notes, x=7.4, y=2.6, w=5.2, h=3.0, size=13)
@@ -315,7 +318,7 @@ def _uncertainty(prs, ctx):
     return slide
 
 
-def _derive_bands(cone: list[dict[str, Any]]) -> dict[int, tuple[list[float], list[float]]]:
+def _derive_bands(cone: list[dict[str, Any]]) -> dict[int, tuple[Sequence[float], Sequence[float]]]:
     """Launch methodological assumption: derive 80%/50% CI bands from the engine's
     single 95% interval assuming normality (z₉₅=1.96, z₈₀=1.28, z₅₀=0.674), so the
     Core ``forecast_cone`` renders a nested fan. The 95% band is the engine's actual
@@ -323,17 +326,25 @@ def _derive_bands(cone: list[dict[str, Any]]) -> dict[int, tuple[list[float], li
     """
     z95, z80, z50 = 1.96, 1.2816, 0.6745
     mean = [pt["mean"] for pt in cone]
-    half95 = [(pt["hi"] - pt["lo"]) / 2.0 for pt in cone]
-    sigma = [h / z95 for h in half95]
-    bands: dict[int, tuple[list[float], list[float]]] = {
-        95: ([pt["lo"] for pt in cone], [pt["hi"] for pt in cone]),
-        80: ([m - z80 * s for m, s in zip(mean, sigma)], [m + z80 * s for m, s in zip(mean, sigma)]),
-        50: ([m - z50 * s for m, s in zip(mean, sigma)], [m + z50 * s for m, s in zip(mean, sigma)]),
+    sigma = [(pt["hi"] - pt["lo"]) / 2.0 / z95 for pt in cone]
+
+    # Clamp lower bounds at 0 — a 95% interval can dip below zero on early, small-
+    # baseline periods, but "negative sales ₽" is a nonsensical client visual.
+    def _lo(z: float) -> list[float]:
+        return [max(0.0, m - z * s) for m, s in zip(mean, sigma, strict=True)]
+
+    def _hi(z: float) -> list[float]:
+        return [m + z * s for m, s in zip(mean, sigma, strict=True)]
+
+    bands: dict[int, tuple[Sequence[float], Sequence[float]]] = {
+        95: ([max(0.0, pt["lo"]) for pt in cone], [pt["hi"] for pt in cone]),
+        80: (_lo(z80), _hi(z80)),
+        50: (_lo(z50), _hi(z50)),
     }
     return bands
 
 
-def _forecast_cone_slide(prs, ctx, section_key: str, weeks: int):
+def _forecast_cone_slide(prs: Any, ctx: dict[str, Any], section_key: str, weeks: int) -> Any:
     section = ctx[section_key]
     if section is None:
         return None
@@ -356,7 +367,8 @@ def _forecast_cone_slide(prs, ctx, section_key: str, weeks: int):
     return slide
 
 
-def _weekly_breakdown_slide(prs, ctx, section_key: str, weeks: int, *, max_rows: int = 8):
+def _weekly_breakdown_slide(prs: Any, ctx: dict[str, Any], section_key: str, weeks: int, *,
+                            max_rows: int = 8) -> Any:
     section = ctx[section_key]
     if section is None:
         return None
@@ -383,7 +395,8 @@ def _weekly_breakdown_slide(prs, ctx, section_key: str, weeks: int, *, max_rows:
     return slide
 
 
-def _channel_decomposition_slide(prs, ctx, section_key: str, weeks: int):
+def _channel_decomposition_slide(prs: Any, ctx: dict[str, Any], section_key: str,
+                                 weeks: int) -> Any:
     """§5.3 — per-channel contribution vs baseline (total over the horizon).
 
     Rendered as a styled table (the stacked-area PNG primitive is a future Core
@@ -397,7 +410,7 @@ def _channel_decomposition_slide(prs, ctx, section_key: str, weeks: int):
     _section_title(slide, f"ПРОГНОЗ · {weeks} НЕДЕЛЬ", "Декомпозиция по каналам")
     base_total = sum(cd["baseline"])
     chan_totals = {c: sum(v) for c, v in cd["channels"].items()}
-    grand = base_total + sum(chan_totals.values())
+    grand = (base_total + sum(chan_totals.values())) or 1.0  # guard /0 on degenerate data
     rows = [["Baseline", f"{base_total:,.0f}".replace(",", " "),
              f"{100 * base_total / grand:.1f}%"]]
     rows += [[c.upper(), f"{t:,.0f}".replace(",", " "), f"{100 * t / grand:.1f}%"]
@@ -408,7 +421,7 @@ def _channel_decomposition_slide(prs, ctx, section_key: str, weeks: int):
     return slide
 
 
-def _sensitivity_tornado_slide(prs, ctx):
+def _sensitivity_tornado_slide(prs: Any, ctx: dict[str, Any]) -> Any:
     """§5.4 — anchor sensitivity tornado (Core `tornado` primitive)."""
     sens = ctx.get("sensitivity")
     if not sens:
@@ -422,7 +435,7 @@ def _sensitivity_tornado_slide(prs, ctx):
     return slide
 
 
-def _hill_curves_slide(prs, ctx):
+def _hill_curves_slide(prs: Any, ctx: dict[str, Any]) -> Any:
     """§1.4 — per-channel hill saturation curves (Core `hill_curve` primitive)."""
     hills = ctx.get("hill_curves")
     if not hills:
@@ -437,11 +450,10 @@ def _hill_curves_slide(prs, ctx):
     return slide
 
 
-def _methodology(prs, ctx):
+def _methodology(prs: Any, ctx: dict[str, Any]) -> Any:
     slide = _blank_slide(prs)
     method = ctx["methodology"]
     _section_title(slide, "МЕТОДОЛОГИЯ", "Математика и источники")
-    formulas = method["formulas"]
     _text(slide, "Adstock:   A_t = X_t + λ · A_(t−1)", x=_MARGIN_IN, y=2.2, w=11.0, h=0.5,
           size=15, font=_THEME.mono_font[0], color=_THEME.deep[0])
     _text(slide, "Hill:   H(x) = β · x^γ / (k^γ + x^γ)", x=_MARGIN_IN, y=2.8, w=11.0, h=0.5,
@@ -453,7 +465,7 @@ def _methodology(prs, ctx):
     return slide
 
 
-def _model_card(prs, ctx):
+def _model_card(prs: Any, ctx: dict[str, Any]) -> Any:
     slide = _blank_slide(prs)
     method = ctx["methodology"]
     _section_title(slide, "МЕТОДОЛОГИЯ", "Карта модели и воспроизводимость")

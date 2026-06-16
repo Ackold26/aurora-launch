@@ -18,12 +18,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from aurora_reporting.primitives import AURORA_HYBRID
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
-
-from aurora_reporting.primitives import AURORA_HYBRID
 
 _THEME = AURORA_HYBRID
 
@@ -140,7 +139,9 @@ def _sheet_channel(wb: Workbook, ctx: dict[str, Any]) -> bool:
         base = cd["baseline"][i]
         chan_vals = [cd["channels"][c][i] for c in channel_ids]
         rows.append([period, base, *chan_vals, base + sum(chan_vals)])
-    num_cols = {c: _RUB_FMT for c in range(1, len(headers))}
+    # Columns are 1-based; format every ruble column (Baseline, channels, Итого =
+    # 2..N), leaving column 1 (Период, a week number) unformatted.
+    num_cols = dict.fromkeys(range(2, len(headers) + 1), _RUB_FMT)
     _write_header(ws, headers)
     _write_rows(ws, rows, number_cols=num_cols)
     _autosize(ws, [10] + [16] * (len(headers) - 1))
