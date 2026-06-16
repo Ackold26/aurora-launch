@@ -133,6 +133,11 @@ filterwarnings = [
     # entry rejection — our code raises после warning. Tests verify rejection;
     # warning is noise.
     "ignore:Duplicate name:UserWarning",
+    # matplotlib warns when the active font lacks a glyph (e.g. ₽ on a CI runner
+    # whose fallback is Arial, which has no RUBLE SIGN — Linux DejaVu / bundled Inter
+    # do). The chart still renders; production deliverables bundle Inter (which has ₽),
+    # so this is test-environment noise, not a real defect. (aurora_reporting charts.)
+    "ignore:Glyph \\d+ .* missing from font.*:UserWarning",
 ]
 
 [tool.ruff]
