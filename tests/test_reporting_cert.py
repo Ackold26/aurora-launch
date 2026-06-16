@@ -21,7 +21,11 @@ from aurora_launch.engines.methodology_cert import (
     verify_certificate_local,
 )
 from aurora_launch.reporting.context import build_report_context
-from aurora_launch.reporting.render_cert import _build_cert_data, build_methodology_cert_pdf
+from aurora_launch.reporting.render_cert import (
+    _build_cert_data,
+    build_methodology_cert_html,
+    build_methodology_cert_pdf,
+)
 from aurora_launch.sample_bundles.report_fixture import build_sample_forecast_fixture
 
 
@@ -81,3 +85,29 @@ class TestPdfArtifact:
         assert isinstance(signed, bool)
         if signed:
             assert pdf["manifest"]["signature_pubkey_id"]
+
+
+class TestCertHtmlWebviewInput:
+    """The ADR-006 PRIMARY path's input: a print-styled cert HTML a Tauri hidden
+    webview prints to PDF. (The webview print-to-PDF itself is an app-runtime step
+    — frontend CertExportModal → a Tauri command — not exercised headless here.)"""
+
+    @pytest.fixture(scope="class")
+    def html(self, ctx: dict, tmp_path_factory) -> dict:
+        out = tmp_path_factory.mktemp("cert_html") / "cert.html"
+        manifest = build_methodology_cert_html(ctx, str(out), aurora_version="v0.2.5",
+                                               bundle_hash="d" * 64)
+        return {"doc": out.read_text(encoding="utf-8"), "manifest": manifest}
+
+    def test_print_styled_single_page(self, html: dict) -> None:
+        assert "@page" in html["doc"] and "A4" in html["doc"]
+        assert 'lang="ru"' in html["doc"]
+        assert html["manifest"]["renderer"] == "tauri_webview"
+
+    def test_standalone_with_embedded_fonts(self, html: dict) -> None:
+        assert html["doc"].count("data:font/woff2;base64,") == 6
+        assert 'src="http' not in html["doc"] and 'href="http' not in html["doc"]
+
+    def test_hash_and_signing_surfaced(self, html: dict) -> None:
+        assert "d" * 64 in html["doc"]
+        assert isinstance(html["manifest"]["local_signed"], bool)

@@ -284,6 +284,116 @@ def _branded_table(rows: list[list[str]], st: dict[str, ParagraphStyle]) -> Tabl
     return t
 
 
+def build_methodology_cert_html(
+    context: dict[str, Any],
+    output_path: str,
+    *,
+    aurora_version: str = "v0.2.5",
+    bundle_hash: str = "0" * 64,
+    jcs_hash: str | None = None,
+) -> dict[str, Any]:
+    """Render the print-styled single-page cert HTML — the ADR-006 PRIMARY renderer
+    input (a Tauri hidden webview prints it to PDF via @page CSS). Renderer-independent
+    cert content (same `_build_cert_data` as the ReportLab fallback); the actual
+    webview print-to-PDF is an app-runtime step (see `cert_webview` Rust command).
+
+    Reuses the Core design-shell font + token CSS so the cert matches the deck/HTML
+    deliverables; @page rules size it to a single A4 page.
+    """
+    from pathlib import Path
+
+    from aurora_reporting.aurora_html import design_shell, security
+
+    esc = security.escape
+    cert, signed = _build_cert_data(context, aurora_version=aurora_version,
+                                    bundle_hash=bundle_hash, jcs_hash=jcs_hash)
+    recipient = context["cover"]["recipient_brand"]
+    pq = context["proxy_quality"]
+    radar = pq["radar"]
+    tc = context["transfer_caveats"]
+    unc = tc["uncertainty"]
+    km = context["executive_summary"]["key_metrics"]
+
+    summary = (
+        f"Прогноз запуска бренда «{recipient}» подготовлен Aurora AI Launch "
+        f"{aurora_version} методом байесовского Marketing Mix Modeling с переносом "
+        f"структурных параметров от прокси-бренда {pq['proxy_brand']} "
+        f"(итоговая близость S = {radar['aggregate']:g}, вердикт {radar['verdict']}). "
+        f"Неопределённость разложена на 4 источника: proxy {unc['proxy']*100:g}%, "
+        f"transfer {unc['transfer']*100:g}%, anchor {unc['anchor']*100:g}%, "
+        f"sampling {unc['sampling']*100:g}%; 95% ДИ расширен на "
+        f"×{tc.get('inflation_factor') or 1:g}."
+    )
+    copy.assert_client_safe(summary)
+
+    def _row(r: dict) -> str:
+        period = esc(f"{r['period_weeks']} недель")
+        value = esc(f"{r['total_display']} ± {r['ci_pct']:g}%")
+        return f'<tr><td>{period}</td><td class="num">{value}</td></tr>'
+
+    rows = "".join(_row(r) for r in km)
+    sig = (
+        f"Подпись разработчика (pilot release): Ed25519 · {esc(cert.signature_local_pubkey_id)} · "
+        "Aurora cloud-KMS: ожидается"
+        if signed else
+        "Сертификат не подписан (ключ custody отсутствует на этом сборочном узле)."
+    )
+
+    page_css = (
+        "@page { size: A4; margin: 18mm 20mm; }"
+        "@media print { .cert { box-shadow: none; } }"
+        "*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);"
+        "font-family:var(--font-sans);font-size:11px;line-height:1.5}"
+        ".cert{max-width:170mm;margin:0 auto;padding:8mm}"
+        ".brand{color:var(--gold);font-weight:600;letter-spacing:.12em;text-align:center;font-size:12px}"
+        "h1{font-family:var(--font-serif);font-size:24px;color:var(--deep-100,#0A1628);"
+        "text-align:center;margin:4px 0 2px}"
+        ".lime{width:48px;height:3px;background:var(--lime);margin:8px auto 16px}"
+        "h2{font-family:var(--font-sans);font-size:12px;color:var(--gold);"
+        "text-transform:uppercase;letter-spacing:.08em;margin:16px 0 6px}"
+        "table{border-collapse:collapse;width:100%;font-size:11px;margin:6px 0}"
+        "th{background:var(--deep-100,#0A1628);color:#fff;text-align:left;padding:6px 10px}"
+        "td{padding:6px 10px;border-bottom:1px solid var(--rule,#C8CDD4)}"
+        "td.num{text-align:right} .kv{color:var(--text-muted)}"
+        ".mono{font-family:var(--font-mono,monospace);font-size:10px;background:var(--surface);"
+        "padding:6px 10px;border-radius:6px}"
+        ".sig{margin-top:14px;font-size:9px;color:var(--text-muted);border-top:1px solid var(--rule);padding-top:8px}"
+    )
+    tokens = design_shell.tokens_css()
+    fonts = design_shell.fonts_css()
+    body = (
+        f'<div class="cert"><div class="brand">AURORA AI</div>'
+        f'<h1>Сертификат методологии</h1><div class="lime"></div>'
+        f'<h2>Идентификация проекта</h2><table>'
+        f'<tr><td class="kv">Бренд-получатель</td><td>{esc(recipient)}</td></tr>'
+        f'<tr><td class="kv">Версия</td><td>{esc(aurora_version)}</td></tr>'
+        f'<tr><td class="kv">Hash (SHA-256)</td><td>{esc(bundle_hash)}</td></tr>'
+        f'<tr><td class="kv">ID сертификата</td><td>{esc(str(cert.cert_id))}</td></tr></table>'
+        f'<h2>Сводка методологии</h2><p>{esc(summary)}</p>'
+        f'<h2>Прогноз продаж</h2><table><thead><tr><th>Период</th>'
+        f'<th class="num">Прогноз ± 95% ДИ</th></tr></thead><tbody>{rows}</tbody></table>'
+        f'<h2>Воспроизводимость</h2><div class="mono">{esc(cert.reproducibility_recipe.cli_command)}</div>'
+        f'<div class="sig">{sig}<br>Антон Сипович, Founder Aurora AI · auroraai.pro · '
+        f'проверка: {esc(cert.verifier_urls.cli_tool_command_example)}</div></div>'
+    )
+    doc = (
+        f'<!doctype html><html lang="ru"><head><meta charset="utf-8">'
+        f'<title>Сертификат методологии — {esc(recipient)}</title>'
+        f"<style>{tokens}\n{fonts}\n{page_css}</style></head>"
+        f'<body data-theme="light">{body}</body></html>'
+    )
+    Path(output_path).write_text(doc, encoding="utf-8")
+    return {
+        "output_path": output_path,
+        "renderer": "tauri_webview",  # ADR-006 primary; this HTML is the print input
+        "local_signed": signed,
+        "signature_pubkey_id": cert.signature_local_pubkey_id,
+        "cert_id": str(cert.cert_id),
+        "bundle_hash": bundle_hash,
+        "bytes": len(doc.encode("utf-8")),
+    }
+
+
 def _main() -> None:
     import json
 
@@ -291,11 +401,11 @@ def _main() -> None:
     from aurora_launch.sample_bundles.report_fixture import build_sample_forecast_fixture
 
     ctx = build_report_context(build_sample_forecast_fixture())
-    manifest = build_methodology_cert_pdf(
-        ctx, "launch_forecast_sample_cert.pdf", aurora_version="v0.2.5",
-        bundle_hash="a" * 64,
-    )
-    print(json.dumps(manifest, ensure_ascii=False, indent=2))
+    pdf = build_methodology_cert_pdf(
+        ctx, "launch_forecast_sample_cert.pdf", aurora_version="v0.2.5", bundle_hash="a" * 64)
+    html = build_methodology_cert_html(
+        ctx, "launch_forecast_sample_cert.html", aurora_version="v0.2.5", bundle_hash="a" * 64)
+    print(json.dumps({"pdf": pdf, "html": html}, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
