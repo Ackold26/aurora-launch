@@ -540,11 +540,18 @@ def build_launch_forecast_pptx(
 
     embedded: list[str] = []
     if embed_fonts:
+        import contextlib
+
         from aurora_reporting.primitives import bundled_font_resolver, embed_brand_fonts
 
-        with __import__("contextlib").suppress(Exception):
-            if embed_brand_fonts(output_path, ["Inter", "Lora"], font_resolver=bundled_font_resolver):
-                embedded = ["Inter", "Lora"]
+        with contextlib.suppress(Exception):
+            # embed_brand_fonts returns {"embedded": [...], "skipped": [...],
+            # "missing": [...]} — a truthy dict even when nothing embedded (e.g. the
+            # gitignored .ttf bundle is absent on a CI runner). Read ["embedded"] for
+            # the honest list of fonts actually written into the OOXML.
+            result = embed_brand_fonts(output_path, ["Inter", "Lora"],
+                                       font_resolver=bundled_font_resolver)
+            embedded = list(result.get("embedded", []))
 
     return {
         "output_path": output_path,
