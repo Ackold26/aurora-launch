@@ -11,12 +11,12 @@ Conditional formatting (spec §2.3): a per-week CI-width column carries a 3-colo
 scale (widest = most uncertain), and the Summary confidence cells take the tier
 badge colour.
 
-Channel decomposition lands via the per-channel path, and Anchors via the recipient
-launch-assumptions context-enrichment. Diagnostics stays a present-but-flagged
-placeholder (header + note, reported in the manifest, never silently dropped):
-posterior convergence diagnostics (R-hat/ESS) exist only on the recipient-fit path,
-not the pure-transfer baseline — emitting r_hat=1.0 "by construction" would
-misrepresent convergence (INV-50).
+Channel decomposition lands via the per-channel path, Anchors via the recipient
+launch-assumptions context-enrichment, and Diagnostics via a transfer-method model
+card (proxy-posterior provenance: mode, signature, n-observations, posterior size,
+channels). MCMC convergence diagnostics (R-hat/ESS) are reported as not-applicable on
+the pure-transfer path rather than faked as r_hat=1.0 "by construction" (INV-50) —
+they exist only once a recipient-fit posterior is present.
 """
 
 from __future__ import annotations
@@ -157,10 +157,10 @@ def _sheet_anchors(wb: Any, ctx: dict[str, Any]) -> bool:
 
 def _sheet_diagnostics(wb: Any, ctx: dict[str, Any]) -> bool:
     diag = ctx["methodology"].get("diagnostics")
-    cols = [Column("Метрика", "k", width=28), Column("Значение", "v", width=20)]
+    cols = [Column("Показатель", "k", width=32), Column("Значение", "v", width=48)]
     if diag is None:
         add_table_sheet(wb, "Diagnostics", cols,
-                        [{"k": "Posterior-диагностика (Gelman-Rubin/ESS/R²/MAPE) появится из реального постериора."}])
+                        [{"k": "Диагностика модели появится из реального постериора."}])
         return False
     add_table_sheet(wb, "Diagnostics", cols, [{"k": k, "v": v} for k, v in diag.items()])
     return True
