@@ -40,6 +40,18 @@
   let trustError = $state<string | null>(null);
   let trustIsRealCompute = $state<boolean>(false);
 
+  // exec-launch-trust (2026-07-29, INV-50): computeTrustForBundle() ниже шлёт
+  // model_convergence_passed=1 как консервативный дефолт (тот же, что уже
+  // документирован в backend-обёртке trust_score_project.extract_model_convergence
+  // для detected proxy-transfer без MCMC) — числовой вклад в score НЕ трогаем,
+  // это отдельное, уже принятое продуктовое решение. Но клиент не должен видеть
+  // зелёный итог без оговорки: только bayesian_with_proxy_priors в принципе
+  // запускает MCMC-сэмплинг; для остальных режимов (и когда режим не определён)
+  // R̂/ESS физически не вычислялись — интерфейс обязан сказать об этом прямо.
+  const mcmcDiagnosticsNotApplicable = $derived(
+    forecastData?.engineMode !== 'bayesian_with_proxy_priors'
+  );
+
   // Derived summary stats for NumberWithDrillDown wrappers — Sprint 3 D4
   const pointMeanDisplay = $derived.by((): string => {
     if (!forecastData || forecastData.points.length === 0) return '—';
@@ -286,6 +298,13 @@
                 <span class="badge-text">
                   Предварительная оценка — рассчитано только из similarity.
                   Полная диагностика появится после Bayesian fit.
+                </span>
+              </div>
+            {:else if mcmcDiagnosticsNotApplicable}
+              <div class="trust-preview-badge" role="note">
+                <span class="badge-icon" aria-hidden="true">📊</span>
+                <span class="badge-text">
+                  Диагностика сходимости не выполнялась – прогноз построен методом переноса.
                 </span>
               </div>
             {/if}
