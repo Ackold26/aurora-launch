@@ -1,4 +1,5 @@
-// Vitest tests for ForecastTab.svelte — exec-launch-trust (2026-07-29).
+// Vitest tests for ForecastTab.svelte — exec-launch-trust (2026-07-29),
+// расширено audit findings fix (2026-07-29, fix/audit-findings-72).
 //
 // Guards INV-50 (честность метрик): в режиме переноса (pure_transfer /
 // transfer_with_bias_check / ols_with_proxy_priors) MCMC-сэмплинг не
@@ -11,6 +12,14 @@
 // Красный прогон этого теста доказывается вручную (см. отчёт
 // D:\Docs\Aurora_Ai\Projects\exec_launch_trust_report.md): временно убрать
 // {:else if mcmcDiagnosticsNotApplicable} ветку в ForecastTab.svelte.
+//
+// 🔴 Приёмка audit findings (2026-07-29): причина оговорки раньше читалась из
+// engineMode (заказанный режим), а не из фактически исполненного пути —
+// methodologySignature. Ниже добавлены сценарии на fallback-выходы
+// (байесовский расчёт не состоялся → перенос) и на регрессию по данным
+// клиента (ols_with_proxy_priors_v1 — это НЕ перенос). HONEST_TRANSFER_NOTE
+// сужен до общего префикса всех пяти утверждённых текстов, т.к. конкретная
+// причина теперь варьируется по сценарию.
 
 import { describe, expect, it, beforeEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/svelte';
@@ -30,13 +39,16 @@ async function flushAsync() {
   await Promise.resolve();
 }
 
-// Текст оговорки расширен 2026-07-29 (внешний аудит, High): рядом с подставленной
-// единицей сходимости в том же вызове стоит подставленная достаточность данных —
-// вместе 40 pt из 100. Оговорка обязана называть обе, иначе половина нарушения
-// остаётся необъявленной.
-const HONEST_TRANSFER_NOTE = 'Диагностика сходимости и достаточности данных не выполнялась';
+// 🔴 audit findings (2026-07-29): общий префикс утверждённых клиентских текстов —
+// присутствует во всех пяти вариантах оговорки (перенос / байес-аналитика /
+// байес-fallback / регрессия / метод неизвестен), поэтому годится как базовая
+// проверка "оговорка вообще показана" независимо от конкретной причины.
+const HONEST_TRANSFER_NOTE = 'Диагностика сходимости не выполнялась';
 
-function baseForecastData(engineMode: ForecastData['engineMode']): ForecastData {
+function baseForecastData(
+  engineMode: ForecastData['engineMode'],
+  methodologySignature = 'test-signature',
+): ForecastData {
   return {
     points: [
       { weekIndex: 0, point: 1000, ciLower: 900, ciUpper: 1100 },
@@ -44,7 +56,7 @@ function baseForecastData(engineMode: ForecastData['engineMode']): ForecastData 
     ],
     horizonWeeks: 2,
     engineMode,
-    methodologySignature: 'test-signature',
+    methodologySignature,
     warnings: [],
     nRecipient: 500,
     granularity: 'weekly',
@@ -145,5 +157,72 @@ describe('ForecastTab — честность диагностики сходим
     // И причина переноса в этом режиме звучать НЕ должна — иначе оговорка
     // объясняет клиенту не то, что произошло.
     expect(screen.queryByText(/прогноз построен методом переноса/)).toBeNull();
+  });
+
+  // 🔴 Новые сценарии — audit findings (2026-07-29, fix/audit-findings-72).
+  // Разведка нашла: причина оговорки бралась из engineMode (заказанного режима),
+  // а не из methodologySignature (фактически исполненного пути). У байесовского
+  // и OLS-режимов есть fallback-выходы в dispatch_table.py, где engineMode
+  // остаётся прежним, а сигнатура называет то, что случилось на самом деле.
+
+  it('байесовский fallback (engineMode остался bayesian, но сигнатура — fallback): оговорка про несостоявшийся байесовский расчёт, НЕ про аналитический апостериор', async () => {
+    mockForecastIpc();
+    render(ForecastTab, {
+      // engine_config.mode всё ещё 'bayesian_with_proxy_priors' (заказан байес),
+      // но dispatch_table.py:483 вернул fallback-сигнатуру — recipient_y/
+      // historical_spend не хватило, апостериор не строился, реально
+      // выполнился чистый перенос.
+      forecastData: baseForecastData('bayesian_with_proxy_priors', 'bayesian_with_proxy_priors_fallback_v1'),
+      loading: false,
+      similarityScore: 0.82,
+      verificationValid: true,
+    });
+    await flushAsync();
+
+    expect(screen.getByText(new RegExp(HONEST_TRANSFER_NOTE))).toBeTruthy();
+    expect(screen.getByText(/байесовский расчёт не состоялся, прогноз построен методом переноса/)).toBeTruthy();
+    // Аналитический апостериор в этом случае НЕ строился — текст не должен
+    // утверждать обратное (это ровно тот дефект, что нашёл аудит).
+    expect(screen.queryByText(/получено аналитически/)).toBeNull();
+  });
+
+  it('регрессия по данным клиента (ols_with_proxy_priors_v1, реальный фит): текст про МНК с опорными значениями, а НЕ про перенос', async () => {
+    mockForecastIpc();
+    render(ForecastTab, {
+      // dispatch_table.py:407 — реальный ridge-фит на recipient_y, это НЕ перенос,
+      // хотя engineMode называется так же, как и fallback-вариант того же режима.
+      forecastData: baseForecastData('ols_with_proxy_priors', 'ols_with_proxy_priors_v1'),
+      loading: false,
+      similarityScore: 0.82,
+      verificationValid: true,
+    });
+    await flushAsync();
+
+    expect(screen.getByText(new RegExp(HONEST_TRANSFER_NOTE))).toBeTruthy();
+    expect(screen.getByText(/оценена по вашим данным методом наименьших квадратов с опорными значениями/)).toBeTruthy();
+    // "Перенос" в этом случае — неверное название метода (регрессия реально
+    // подгонялась по данным получателя, это не пассивное масштабирование).
+    expect(screen.queryByText(/прогноз построен методом переноса/)).toBeNull();
+  });
+
+  it('сигнатуры нет и режим неизвестен: оговорка не называет никакой метод', async () => {
+    mockForecastIpc();
+    render(ForecastTab, {
+      // methodologySignature отсутствует (напр. legacy-бандл, нормализованный
+      // forecast_bundle.py::_normalize_legacy_to_v1 c methodology_signature=""),
+      // engineMode тоже undefined — определить метод нечем.
+      forecastData: baseForecastData(undefined, ''),
+      loading: false,
+      similarityScore: 0.82,
+      verificationValid: true,
+    });
+    await flushAsync();
+
+    expect(screen.getByText(new RegExp(HONEST_TRANSFER_NOTE))).toBeTruthy();
+    expect(screen.getByText(/метод расчёта в сохранённом прогнозе не указан/)).toBeTruthy();
+    // Ни одна конкретная причина не должна называться — метод неизвестен.
+    expect(screen.queryByText(/прогноз построен методом переноса/)).toBeNull();
+    expect(screen.queryByText(/получено аналитически/)).toBeNull();
+    expect(screen.queryByText(/наименьших квадратов/)).toBeNull();
   });
 });
