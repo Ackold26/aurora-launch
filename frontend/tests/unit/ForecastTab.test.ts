@@ -30,7 +30,11 @@ async function flushAsync() {
   await Promise.resolve();
 }
 
-const HONEST_TRANSFER_NOTE = 'Диагностика сходимости не выполнялась';
+// Текст оговорки расширен 2026-07-29 (внешний аудит, High): рядом с подставленной
+// единицей сходимости в том же вызове стоит подставленная достаточность данных —
+// вместе 40 pt из 100. Оговорка обязана называть обе, иначе половина нарушения
+// остаётся необъявленной.
+const HONEST_TRANSFER_NOTE = 'Диагностика сходимости и достаточности данных не выполнялась';
 
 function baseForecastData(engineMode: ForecastData['engineMode']): ForecastData {
   return {
