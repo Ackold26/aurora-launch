@@ -117,7 +117,16 @@ describe('ForecastTab — честность диагностики сходим
     expect(screen.getByText(new RegExp(HONEST_TRANSFER_NOTE))).toBeTruthy();
   });
 
-  it('bayesian_with_proxy_priors: MCMC применим для этого режима → оговорка НЕ показывается', async () => {
+  it('bayesian_with_proxy_priors: сэмплирования там тоже нет → оговорка показана, но с другой причиной', async () => {
+    // 🔴 Приёмка 2026-07-29. Прежний контракт этого теста был обратным: в
+    // байесовском режиме оговорка не показывалась вовсе. Проверка по коду
+    // движка показала, что режим bayesian_with_proxy_priors ведёт в
+    // АНАЛИТИЧЕСКИЙ байес (`engines/bayesian_with_priors.py:183` —
+    // `r_hat=1.0, # analytical Gaussian → perfect convergence by construction`),
+    // MCMC-цепей нет ни здесь, ни в режимах переноса. Значит подставленная
+    // единица одинаково недоказана во всех режимах бандла, и молчание в
+    // байесовской ветке было бы тем же нарушением INV-50, только реже
+    // заметным. Оговорка обязана стоять всегда — меняется её причина.
     mockForecastIpc();
     render(ForecastTab, {
       forecastData: baseForecastData('bayesian_with_proxy_priors'),
@@ -127,6 +136,10 @@ describe('ForecastTab — честность диагностики сходим
     });
     await flushAsync();
 
-    expect(screen.queryByText(new RegExp(HONEST_TRANSFER_NOTE))).toBeNull();
+    expect(screen.getByText(new RegExp(HONEST_TRANSFER_NOTE))).toBeTruthy();
+    expect(screen.getByText(/получено аналитически, без сэмплирования/)).toBeTruthy();
+    // И причина переноса в этом режиме звучать НЕ должна — иначе оговорка
+    // объясняет клиенту не то, что произошло.
+    expect(screen.queryByText(/прогноз построен методом переноса/)).toBeNull();
   });
 });

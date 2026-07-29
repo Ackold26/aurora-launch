@@ -45,11 +45,19 @@
   // документирован в backend-обёртке trust_score_project.extract_model_convergence
   // для detected proxy-transfer без MCMC) — числовой вклад в score НЕ трогаем,
   // это отдельное, уже принятое продуктовое решение. Но клиент не должен видеть
-  // зелёный итог без оговорки: только bayesian_with_proxy_priors в принципе
-  // запускает MCMC-сэмплинг; для остальных режимов (и когда режим не определён)
-  // R̂/ESS физически не вычислялись — интерфейс обязан сказать об этом прямо.
-  const mcmcDiagnosticsNotApplicable = $derived(
-    forecastData?.engineMode !== 'bayesian_with_proxy_priors'
+  // зелёный итог без оговорки: R̂/ESS в этом окне не вычислялись — интерфейс
+  // обязан сказать об этом прямо.
+  //
+  // 🔴 Приёмка 2026-07-29 (дострой поверх): условие было
+  // `engineMode !== 'bayesian_with_proxy_priors'`, то есть в байесовском бандле
+  // оговорка ПРОПАДАЛА, а подставленная единица оставалась. Проверено по коду
+  // движка: bayesian_with_proxy_priors ведёт в аналитический байес
+  // (`engines/bayesian_with_priors.py:183` — `r_hat=1.0, # analytical Gaussian →
+  // perfect convergence by construction`), сэмплирования там нет вовсе.
+  // Значит подставленная единица одинаково недоказана во ВСЕХ режимах бандла,
+  // и оговорка обязана стоять всегда — меняется только её причина.
+  const analyticalPosterior = $derived(
+    forecastData?.engineMode === 'bayesian_with_proxy_priors'
   );
 
   // Derived summary stats for NumberWithDrillDown wrappers — Sprint 3 D4
@@ -300,11 +308,16 @@
                   Полная диагностика появится после Bayesian fit.
                 </span>
               </div>
-            {:else if mcmcDiagnosticsNotApplicable}
+            {:else}
               <div class="trust-preview-badge" role="note">
                 <span class="badge-icon" aria-hidden="true">📊</span>
                 <span class="badge-text">
-                  Диагностика сходимости не выполнялась – прогноз построен методом переноса.
+                  {#if analyticalPosterior}
+                    Диагностика сходимости не выполнялась – апостериорное распределение
+                    получено аналитически, без сэмплирования.
+                  {:else}
+                    Диагностика сходимости не выполнялась – прогноз построен методом переноса.
+                  {/if}
                 </span>
               </div>
             {/if}
