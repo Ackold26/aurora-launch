@@ -491,9 +491,15 @@
         // 1.3d: захватываем metadata для compose_forecast_json в save flow
         const summary = payload.forecast;
         if (summary) {
+          // 🔴 Внешний аудит 2026-07-30: сводку испускает и устаревший путь
+          // расчёта, а у него режима из EngineMode нет (engine_mode = null) и
+          // гранулярности нет вовсе — периоды безымянные. Режим забираем как
+          // есть (null доедет в forecast.json как «метод не указан»),
+          // гранулярность при отсутствии оставляем прежнюю, а не затираем
+          // undefined.
           forecastEngineMode = summary.engine_mode;
           forecastMethodologySignature = summary.methodology_signature;
-          forecastGranularity = summary.granularity;
+          forecastGranularity = summary.granularity ?? forecastGranularity;
           forecastWarnings = summary.warnings ?? [];
         }
         const totalPeriods = payload.horizon_weeks ?? payload.horizon_periods ?? forecastHorizon;
@@ -605,7 +611,15 @@
           ci_lower: p.ciLower,
           ci_upper: p.ciUpper,
         })),
-        engine_mode: forecastEngineMode ?? 'pure_transfer',
+        // 🔴 Внешний аудит 2026-07-30 (High): здесь стояло
+        // `forecastEngineMode ?? 'pure_transfer'` — подстановка чужого режима,
+        // когда фактический неизвестен. Из-за неё бандл мастера всегда называл
+        // клиенту метод переноса, даже когда прогноз считался устаревшим путём
+        // (выборкой из априорных допущений), и честная ветка «метод не указан»
+        // была недостижима для файлов, которые продукт пишет сам. Теперь режим
+        // уезжает как есть: null = «неизвестен», схема forecast.json его
+        // принимает.
+        engine_mode: forecastEngineMode,
         granularity: forecastGranularity,
         methodology_signature: forecastMethodologySignature ?? '',
         n_recipient: 0, // pre-launch

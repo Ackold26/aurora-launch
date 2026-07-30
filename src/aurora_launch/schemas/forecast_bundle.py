@@ -141,7 +141,17 @@ class ForecastJsonV1(BaseModel):
     version: Literal["1"] = "1"
     horizon_weeks: int = Field(ge=1)
     granularity: Granularity = "monthly"
-    engine_mode: EngineMode = "pure_transfer"
+    # 🔴 Внешний аудит 2026-07-30 (High): `None` — легальное значение «режим
+    # неизвестен». До этого тип не допускал null, поэтому писатель бандла обязан
+    # был подставить какой-нибудь режим даже там, где режима не было (мастер
+    # ставил 'pure_transfer' на устаревшем пути расчёта), и честная ветка
+    # «метод не указан» в инспекторе была недостижима для бандлов, которые
+    # производит сам продукт. Значение по умолчанию намеренно оставлено
+    # 'pure_transfer': оно относится к ЧТЕНИЮ старых файлов без этого ключа
+    # (см. load_forecast_json + _normalize_legacy_to_v1) и менять его — значит
+    # менять канонический хеш уже подписанных бандлов. Различие «поле
+    # отсутствует» ↔ «режим неизвестен» обеспечивает писатель: он пишет null.
+    engine_mode: EngineMode | None = "pure_transfer"
     methodology_signature: str = ""
     n_recipient: int = Field(ge=0, default=0)
     weekly_points: list[ForecastPoint] = Field(min_length=1)
@@ -299,7 +309,7 @@ def compose_forecast_json_bytes(
     *,
     horizon_weeks: int,
     weekly_points: list[dict[str, Any]],
-    engine_mode: EngineMode = "pure_transfer",
+    engine_mode: EngineMode | None = "pure_transfer",
     granularity: Granularity = "monthly",
     methodology_signature: str = "",
     n_recipient: int = 0,

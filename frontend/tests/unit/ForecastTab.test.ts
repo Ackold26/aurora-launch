@@ -20,6 +20,15 @@
 // клиента (ols_with_proxy_priors_v1 — это НЕ перенос). HONEST_TRANSFER_NOTE
 // сужен до общего префикса всех пяти утверждённых текстов, т.к. конкретная
 // причина теперь варьируется по сценарию.
+//
+// 🔴 Внешний аудит 2026-07-30 (High): то сужение и оказалось дырой — вместе с
+// компонентом сторож потерял «и достаточности данных», хотя вторая величина так
+// же подставлена (data_sufficiency = 1.0) и так же печатается клиенту зелёной.
+// HONEST_TRANSFER_NOTE заменён на пару «широкий якорь поиска + пообъектная
+// проверка каждой подставленной диагностики» (HONEST_NOTE_ANCHOR +
+// STUBBED_DIAGNOSTICS + expectDisclaimerNamesEveryStubbedDiagnostic).
+// Добавлен сценарий устаревшего пути расчёта (legacy_prior_predictive_v1):
+// раньше он вообще не имел сигнатуры и выдавал себя за перенос.
 
 import { describe, expect, it, beforeEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/svelte';
@@ -40,10 +49,57 @@ async function flushAsync() {
 }
 
 // 🔴 audit findings (2026-07-29): общий префикс утверждённых клиентских текстов —
-// присутствует во всех пяти вариантах оговорки (перенос / байес-аналитика /
-// байес-fallback / регрессия / метод неизвестен), поэтому годится как базовая
-// проверка "оговорка вообще показана" независимо от конкретной причины.
-const HONEST_TRANSFER_NOTE = 'Диагностика сходимости не выполнялась';
+// присутствует во всех вариантах оговорки (перенос / байес-аналитика /
+// байес-fallback / регрессия / устаревший путь / метод неизвестен), поэтому годится
+// как базовая проверка "оговорка вообще показана" независимо от конкретной причины.
+//
+// 🔴 Внешний аудит 2026-07-30 (High): прошлая версия сторожа держала здесь строку
+// 'Диагностика сходимости не выполнялась' — ровно тот усечённый префикс, в который
+// съехал компонент, потеряв «и достаточности данных». Сторож стал зелёным в обе
+// стороны: убрать упоминание достаточности — зелёный, вернуть — тоже зелёный.
+// Поэтому якорь для ПОИСКА элемента теперь максимально широкий (слово
+// «Диагностика»), а содержание оговорки проверяется отдельно, по каждой
+// подставленной величине из фикстуры (см. STUBBED_DIAGNOSTICS ниже). Так потеря
+// ЛЮБОЙ из двух величин красит тест.
+const HONEST_NOTE_ANCHOR = 'Диагностика';
+
+/** Диагностики, которые computeTrustForBundle() подставляет константами
+ * (model_convergence_passed = 1, data_sufficiency = 1.0), а панель TrustScore
+ * печатает клиенту зелёными. `fixtureLabel` — как величина названа в ответе
+ * IPC (mockTrustScoreResult ниже, форма реального compute_trust_score),
+ * `namedInNote` — как она обязана быть названа в тексте оговорки.
+ * INV-50 «нет числа — нет подписи»: подставленное не подаётся как измеренное. */
+const STUBBED_DIAGNOSTICS = [
+  { fixtureLabel: 'Сходимость модели', namedInNote: /сходимости/ },
+  { fixtureLabel: 'Достаточность данных', namedInNote: /достаточности данных/ },
+] as const;
+
+/** Сторож INV-50 для любого сценария: оговорка показана И называет КАЖДУЮ
+ * подставленную диагностику, которую фикстура печатает клиенту.
+ *
+ * Две стороны связаны намеренно: сначала утверждаем, что фикстура действительно
+ * печатает величину (иначе сторож ослаб бы вместе с урезанной фикстурой), затем —
+ * что оговорка её называет. Потеря «и достаточности данных» из текста красит
+ * второй assert; тихое удаление строки «Достаточность данных» из фикстуры —
+ * первый. */
+function expectDisclaimerNamesEveryStubbedDiagnostic(): void {
+  const note = screen.getByText(new RegExp(HONEST_NOTE_ANCHOR));
+  const noteText = note.textContent ?? '';
+  const fixtureLabels = mockTrustScoreResult().diagnostics.map((d) => d.label);
+
+  for (const stub of STUBBED_DIAGNOSTICS) {
+    expect(
+      fixtureLabels,
+      `фикстура trust score перестала печатать клиенту «${stub.fixtureLabel}» — ` +
+        `сторож INV-50 ослаб бы молча`,
+    ).toContain(stub.fixtureLabel);
+    expect(
+      stub.namedInNote.test(noteText),
+      `оговорка «${noteText}» не называет подставленную величину ` +
+        `«${stub.fixtureLabel}» (ожидался фрагмент ${stub.namedInNote})`,
+    ).toBe(true);
+  }
+}
 
 function baseForecastData(
   engineMode: ForecastData['engineMode'],
@@ -104,7 +160,7 @@ describe('ForecastTab — честность диагностики сходим
     });
     await flushAsync();
 
-    expect(screen.getByText(new RegExp(HONEST_TRANSFER_NOTE))).toBeTruthy();
+    expectDisclaimerNamesEveryStubbedDiagnostic();
   });
 
   it('ols_with_proxy_priors: тоже не запускает MCMC → та же честная оговорка', async () => {
@@ -117,7 +173,7 @@ describe('ForecastTab — честность диагностики сходим
     });
     await flushAsync();
 
-    expect(screen.getByText(new RegExp(HONEST_TRANSFER_NOTE))).toBeTruthy();
+    expectDisclaimerNamesEveryStubbedDiagnostic();
   });
 
   it('engineMode не определён (undefined): консервативно тоже считается "MCMC не подтверждён" → оговорка показана', async () => {
@@ -130,7 +186,7 @@ describe('ForecastTab — честность диагностики сходим
     });
     await flushAsync();
 
-    expect(screen.getByText(new RegExp(HONEST_TRANSFER_NOTE))).toBeTruthy();
+    expectDisclaimerNamesEveryStubbedDiagnostic();
   });
 
   it('bayesian_with_proxy_priors: сэмплирования там тоже нет → оговорка показана, но с другой причиной', async () => {
@@ -152,7 +208,7 @@ describe('ForecastTab — честность диагностики сходим
     });
     await flushAsync();
 
-    expect(screen.getByText(new RegExp(HONEST_TRANSFER_NOTE))).toBeTruthy();
+    expectDisclaimerNamesEveryStubbedDiagnostic();
     expect(screen.getByText(/получено аналитически, без сэмплирования/)).toBeTruthy();
     // И причина переноса в этом режиме звучать НЕ должна — иначе оговорка
     // объясняет клиенту не то, что произошло.
@@ -179,7 +235,7 @@ describe('ForecastTab — честность диагностики сходим
     });
     await flushAsync();
 
-    expect(screen.getByText(new RegExp(HONEST_TRANSFER_NOTE))).toBeTruthy();
+    expectDisclaimerNamesEveryStubbedDiagnostic();
     expect(screen.getByText(/байесовский расчёт не состоялся, прогноз построен методом переноса/)).toBeTruthy();
     // Аналитический апостериор в этом случае НЕ строился — текст не должен
     // утверждать обратное (это ровно тот дефект, что нашёл аудит).
@@ -198,7 +254,7 @@ describe('ForecastTab — честность диагностики сходим
     });
     await flushAsync();
 
-    expect(screen.getByText(new RegExp(HONEST_TRANSFER_NOTE))).toBeTruthy();
+    expectDisclaimerNamesEveryStubbedDiagnostic();
     expect(screen.getByText(/оценена по вашим данным методом наименьших квадратов с опорными значениями/)).toBeTruthy();
     // "Перенос" в этом случае — неверное название метода (регрессия реально
     // подгонялась по данным получателя, это не пассивное масштабирование).
@@ -218,11 +274,35 @@ describe('ForecastTab — честность диагностики сходим
     });
     await flushAsync();
 
-    expect(screen.getByText(new RegExp(HONEST_TRANSFER_NOTE))).toBeTruthy();
+    expectDisclaimerNamesEveryStubbedDiagnostic();
     expect(screen.getByText(/метод расчёта в сохранённом прогнозе не указан/)).toBeTruthy();
     // Ни одна конкретная причина не должна называться — метод неизвестен.
     expect(screen.queryByText(/прогноз построен методом переноса/)).toBeNull();
     expect(screen.queryByText(/получено аналитически/)).toBeNull();
     expect(screen.queryByText(/наименьших квадратов/)).toBeNull();
+  });
+
+  // 🔴 Новый сценарий — внешний аудит 2026-07-30 (High): устаревший путь расчёта.
+  it('устаревший путь (legacy_prior_predictive_v1): текст про выборку из априорных допущений, а НЕ про перенос', async () => {
+    mockForecastIpc();
+    render(ForecastTab, {
+      // methods_forecast.py, ветка legacy prior-predictive: расчёт идёт через
+      // prior_predictive_samples_real(n_samples=50) — это НЕ перенос (переноса
+      // не было) и НЕ «без сэмплирования» (выборка была). Мастер попадает сюда
+      // всегда, когда проекта нет в ProjectDB.
+      forecastData: baseForecastData(undefined, 'legacy_prior_predictive_v1'),
+      loading: false,
+      similarityScore: 0.82,
+      verificationValid: true,
+    });
+    await flushAsync();
+
+    expectDisclaimerNamesEveryStubbedDiagnostic();
+    expect(
+      screen.getByText(/выборкой из априорных допущений, модель по вашим данным не строилась/),
+    ).toBeTruthy();
+    // Оба прежних утверждения этого пути были ложными — они не должны вернуться.
+    expect(screen.queryByText(/прогноз построен методом переноса/)).toBeNull();
+    expect(screen.queryByText(/без сэмплирования/)).toBeNull();
   });
 });
