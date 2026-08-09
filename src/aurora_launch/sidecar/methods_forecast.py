@@ -166,7 +166,7 @@ def _compose_forecast_json(params: dict[str, Any]) -> dict[str, Any]:
     Params:
       - horizon_weeks: int
       - weekly_points: list[{week_index, point, ci_lower, ci_upper}]
-      - engine_mode: str = "pure_transfer"
+      - engine_mode: str | None = "pure_transfer" (null = «режим неизвестен»)
       - granularity: str = "monthly"
       - methodology_signature: str = ""
       - n_recipient: int = 0
@@ -195,10 +195,19 @@ def _compose_forecast_json(params: dict[str, Any]) -> dict[str, Any]:
                 f"Передавайте {{horizon_weeks, weekly_points, ...optional}}"
             )
 
+    # 🔴 Внешний аудит 2026-07-30 (High): явный null от писателя означает «режим
+    # неизвестен» и обязан доехать до forecast.json как null. Прежний
+    # str(params.get(...)) превращал None в строку "None" → ValidationError,
+    # поэтому у фронта не было способа сказать «режима нет», кроме подстановки
+    # чужого режима. Отсутствие ключа по-прежнему даёт 'pure_transfer' —
+    # обратная совместимость с вызывающими, которые режим не передают.
+    _raw_engine_mode = params.get("engine_mode", "pure_transfer")
+    _engine_mode = None if _raw_engine_mode is None else str(_raw_engine_mode)
+
     forecast_bytes = compose_forecast_json_bytes(
         horizon_weeks=int(params["horizon_weeks"]),
         weekly_points=list(params["weekly_points"]),
-        engine_mode=str(params.get("engine_mode", "pure_transfer")),  # type: ignore[arg-type]
+        engine_mode=_engine_mode,  # type: ignore[arg-type]
         granularity=str(params.get("granularity", "monthly")),  # type: ignore[arg-type]
         methodology_signature=str(params.get("methodology_signature", "")),
         n_recipient=int(params.get("n_recipient", 0)),
@@ -438,6 +447,7 @@ def _start_forecast(params: dict[str, Any]) -> dict[str, Any]:
                 n_samples=50,
                 seed=seed,
             )
+            legacy_points: list[dict[str, float]] = []
             for week_idx in range(horizon_weeks):
                 if cancel.is_set():
                     events.emit(
@@ -450,6 +460,9 @@ def _start_forecast(params: dict[str, Any]) -> dict[str, Any]:
                 sorted_vals = sorted(weekly_values)
                 lo = sorted_vals[int(0.025 * len(sorted_vals))]
                 hi = sorted_vals[int(0.975 * len(sorted_vals))]
+                legacy_points.append(
+                    {"point_forecast": mean_val, "ci_lower": lo, "ci_upper": hi}
+                )
                 events.emit(
                     "forecast_progress",
                     {
@@ -467,6 +480,38 @@ def _start_forecast(params: dict[str, Any]) -> dict[str, Any]:
                 # no-lying-progress, emit events at compute speed; UI shows
                 # real elapsed_ms not perceived smoothness.
 
+            # 🔴 Внешний аудит 2026-07-30 (High): раньше этот emit шёл БЕЗ ключа
+            # `forecast`, и фронт (wizard/+page.svelte) не получал ни сигнатуры,
+            # ни режима — а потому подставлял `engine_mode: 'pure_transfer'` и
+            # пустую сигнатуру в forecast.json. Клиенту это печаталось как
+            # «прогноз построен методом переноса, без сэмплирования» — ложны оба
+            # утверждения: переноса не было, а выборка (50 draws из априорных
+            # допущений, CI по 2,5/97,5 процентилям) была. Инвариант «клиенту
+            # называется фактически исполненный метод» (INV-50) требует, чтобы
+            # свою сигнатуру испускал и этот путь.
+            #
+            # `engine_mode: None` — намеренно: у устаревшего пути нет режима из
+            # EngineMode (это не перенос, не МНК и не байес). Схема forecast.json
+            # принимает null именно для «режим неизвестен» (forecast_bundle.py),
+            # а не подставленное значение по умолчанию.
+            #
+            # `granularity` намеренно НЕ передаётся: prior_predictive_samples_real
+            # считает безымянные периоды (horizon_weeks шагов без привязки к
+            # календарю), и любое значение здесь было бы такой же подстановкой.
+            # Фронт в этом случае сохраняет своё прежнее значение.
+            #
+            # `warnings` пуст: техническая строка про отсутствие project_id в
+            # ProjectDB уже ушла событием forecast_warning выше и клиентским
+            # текстом быть не может (внутренние имена). Метод расчёта клиенту
+            # объясняет оговорка инспектора по сигнатуре.
+            legacy_forecast_summary: dict[str, Any] = {
+                "horizon_periods": len(legacy_points),
+                "methodology_signature": "legacy_prior_predictive_v1",
+                "engine_mode": None,
+                "warnings": [],
+                "points": legacy_points,
+            }
+
             events.emit(
                 "forecast_completed",
                 {
@@ -474,6 +519,7 @@ def _start_forecast(params: dict[str, Any]) -> dict[str, Any]:
                     "horizon_weeks": horizon_weeks,
                     "elapsed_ms": int((time.monotonic() - started) * 1000),
                     "path": "legacy_prior_predictive",
+                    "forecast": legacy_forecast_summary,
                 },
             )
         except SystemExit:

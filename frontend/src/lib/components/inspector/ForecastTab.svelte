@@ -40,6 +40,98 @@
   let trustError = $state<string | null>(null);
   let trustIsRealCompute = $state<boolean>(false);
 
+  // exec-launch-trust (2026-07-29, INV-50): computeTrustForBundle() ниже шлёт
+  // model_convergence_passed=1 как консервативный дефолт (тот же, что уже
+  // документирован в backend-обёртке trust_score_project.extract_model_convergence
+  // для detected proxy-transfer без MCMC) — числовой вклад в score НЕ трогаем,
+  // это отдельное, уже принятое продуктовое решение. Но клиент не должен видеть
+  // зелёный итог без оговорки: R̂/ESS в этом окне не вычислялись — интерфейс
+  // обязан сказать об этом прямо.
+  //
+  // 🔴 Приёмка audit findings 2026-07-29 (fix/audit-findings-72): причина оговорки
+  // раньше читалась из engineMode — ЗАКАЗАННОГО режима движка (`engine_config.mode`),
+  // а не из фактически исполненного пути. У байесовского и OLS-режимов есть
+  // fallback-выходы в чистый перенос (`dispatch_table.py:274-304, 318-326, 351-360`
+  // для OLS; `:463-483, 490-499, 526-535` для Bayesian) — тогда engineMode остаётся
+  // прежним, а апостериор/регрессия по данным клиента не строятся вовсе. Фактический
+  // путь несёт `methodologySignature` — каждый handler в dispatch_table.py возвращает
+  // свою сигнатуру (`pure_transfer_v1`, `transfer_with_bias_check_v1`,
+  // `ols_with_proxy_priors_v1` / `..._fallback_v1`, `bayesian_with_proxy_priors_v1` /
+  // `..._fallback_v1`). Приоритет: сигнатура → engineMode (только когда сигнатуры нет,
+  // напр. legacy-бандл до появления поля) → «метод не указан» (когда нет ни того, ни
+  // другого). Клиентский текст не должен называть внутренние имена режимов/сигнатур.
+  //
+  // 🔴 Внешний аудит 2026-07-30 (High, регресс): предыдущая правка сузила общий
+  // префикс до одной только сходимости, и «и достаточности данных» пропало из всех
+  // пяти текстов. Подставлены ОБЕ величины (`model_convergence_passed: 1` и
+  // `data_sufficiency: 1.0` в computeTrustForBundle ниже), и обе видны клиенту
+  // зелёными строками панели TrustScore. INV-50 «нет числа — нет подписи»: каждая
+  // подставленная величина обязана быть названа в оговорке. Префикс ниже — SSOT
+  // для всех вариантов, менять его можно только вместе со сторожем в
+  // frontend/tests/unit/ForecastTab.test.ts (он ассертит обе величины по фикстуре).
+  const CLIENT_STUBBED_DIAGNOSTICS_PREFIX =
+    'Диагностика сходимости и достаточности данных не выполнялась';
+  const CLIENT_TRANSFER_TEXT =
+    `${CLIENT_STUBBED_DIAGNOSTICS_PREFIX} – прогноз построен методом переноса, без сэмплирования.`;
+  const CLIENT_BAYESIAN_ANALYTICAL_TEXT =
+    `${CLIENT_STUBBED_DIAGNOSTICS_PREFIX} – апостериорное распределение получено аналитически, без сэмплирования.`;
+  const CLIENT_BAYESIAN_FALLBACK_TEXT =
+    `${CLIENT_STUBBED_DIAGNOSTICS_PREFIX} – байесовский расчёт не состоялся, прогноз построен методом переноса.`;
+  const CLIENT_REGRESSION_TEXT =
+    `${CLIENT_STUBBED_DIAGNOSTICS_PREFIX} – модель оценена по вашим данным методом наименьших квадратов с опорными значениями, без сэмплирования.`;
+  // 🔴 Внешний аудит 2026-07-30 (High): устаревший путь расчёта
+  // (`methods_forecast.py`, ветка legacy prior-predictive) раньше вообще не
+  // сообщал о себе — сводки в `forecast_completed` не было, мастер подставлял
+  // `pure_transfer`, и клиенту говорилось «методом переноса, без сэмплирования».
+  // Ложны оба утверждения: переноса не было, выборка была (50 draws из априорных
+  // допущений). Теперь этот путь испускает сигнатуру `legacy_prior_predictive_v1`,
+  // и ей соответствует свой честный текст.
+  const CLIENT_LEGACY_PRIOR_PREDICTIVE_TEXT =
+    `${CLIENT_STUBBED_DIAGNOSTICS_PREFIX} – прогноз получен выборкой из априорных допущений, модель по вашим данным не строилась.`;
+  const CLIENT_UNKNOWN_METHOD_TEXT =
+    `${CLIENT_STUBBED_DIAGNOSTICS_PREFIX} – метод расчёта в сохранённом прогнозе не указан.`;
+
+  /** Текст оговорки по фактической сигнатуре методологии (см. dispatch_table.py).
+   * Возвращает null, если сигнатура не распознана — вызывающий код тогда обязан
+   * обратиться к engineMode как к запасному источнику. Проверка fallback-вариантов
+   * ДОЛЖНА идти раньше базового префикса — иначе `..._fallback_v1` матчится как
+   * успешный путь (fallback-строка сама начинается с базового имени режима). */
+  function textForSignature(sig: string): string | null {
+    if (sig.startsWith('bayesian_with_proxy_priors_fallback')) return CLIENT_BAYESIAN_FALLBACK_TEXT;
+    if (sig.startsWith('bayesian_with_proxy_priors')) return CLIENT_BAYESIAN_ANALYTICAL_TEXT;
+    if (sig.startsWith('ols_with_proxy_priors_fallback')) return CLIENT_TRANSFER_TEXT;
+    if (sig.startsWith('ols_with_proxy_priors')) return CLIENT_REGRESSION_TEXT;
+    if (sig.startsWith('transfer_with_bias_check')) return CLIENT_TRANSFER_TEXT;
+    if (sig.startsWith('pure_transfer')) return CLIENT_TRANSFER_TEXT;
+    if (sig.startsWith('legacy_prior_predictive')) return CLIENT_LEGACY_PRIOR_PREDICTIVE_TEXT;
+    return null;
+  }
+
+  /** Текст оговорки по ЗАКАЗАННОМУ режиму движка — запасной источник, только
+   * когда фактическая сигнатура недоступна (напр. legacy-бандл без поля
+   * methodology_signature). engineMode не различает реальный фит и fallback —
+   * это единственное известное ограничение этого запасного пути. */
+  function textForEngineMode(mode: ForecastData['engineMode']): string | null {
+    switch (mode) {
+      case 'pure_transfer':
+      case 'transfer_with_bias_check':
+        return CLIENT_TRANSFER_TEXT;
+      case 'ols_with_proxy_priors':
+        return CLIENT_REGRESSION_TEXT;
+      case 'bayesian_with_proxy_priors':
+        return CLIENT_BAYESIAN_ANALYTICAL_TEXT;
+      default:
+        return null;
+    }
+  }
+
+  const trustDisclaimerText = $derived.by((): string => {
+    const sig = forecastData?.methodologySignature;
+    const bySignature = sig ? textForSignature(sig) : null;
+    if (bySignature) return bySignature;
+    return textForEngineMode(forecastData?.engineMode) ?? CLIENT_UNKNOWN_METHOD_TEXT;
+  });
+
   // Derived summary stats for NumberWithDrillDown wrappers — Sprint 3 D4
   const pointMeanDisplay = $derived.by((): string => {
     if (!forecastData || forecastData.points.length === 0) return '—';
@@ -114,6 +206,11 @@
       trustResult = await computeTrustScore({
         proxy_similarity_score: similarityPct,
         methodology_certified: methodologyCertified as 0 | 1 | 0.5,
+        // 🔴 Внешний аудит 2026-07-29 (High): ОБА этих значения подставлены, а не измерены —
+        // вместе они дают 40 pt из 100 и диагностики «Сошлось» и «100.0% от минимума».
+        // Первая правка блока говорила только о сходимости; достаточность данных так же не
+        // проверялась (nRecipient есть в данных и не используется), поэтому оговорка ниже
+        // называет обе. Числовой вклад не трогаем — это отдельное, ранее принятое решение.
         model_convergence_passed: 1,
         data_sufficiency: 1.0,
         uncertainty_pct_inverse: uncertaintyInverse,
@@ -287,6 +384,11 @@
                   Предварительная оценка — рассчитано только из similarity.
                   Полная диагностика появится после Bayesian fit.
                 </span>
+              </div>
+            {:else}
+              <div class="trust-preview-badge" role="note">
+                <span class="badge-icon" aria-hidden="true">📊</span>
+                <span class="badge-text">{trustDisclaimerText}</span>
               </div>
             {/if}
             <TrustScore

@@ -157,6 +157,18 @@
   type TestForceUpdate = { version: string; body: string | null } | null;
   let _testForceUpdate = $state<TestForceUpdate>(null);
 
+  // 🔴 Внешний аудит 2026-07-30 (High): крючок ниже — ЕДИНСТВЕННЫЙ работающий
+  // писатель хранилища `activeBundle` во всём frontend/src, и он живёт под
+  // `import.meta.env?.DEV`. В выпускной сборке блок вырезается, наполнить
+  // `activeBundle` нечем (`openBundleAt` из stores/bundle.ts и `ipc.openBundle`
+  // не вызывает ни один компонент, хотя бэкендная команда `open_bundle` готова
+  // и зарегистрирована). Следствие: раздел «Инспектор» у клиента всегда
+  // показывает заглушку, вкладка прогноза не монтируется, её тексты не видны.
+  // Подключать инспектор здесь НЕЛЬЗЯ походя — это продуктовое решение владельца
+  // (каким жестом клиент открывает бандл и как это сочетается с потоком
+  // «мастер → проект»). Факты, файлы и строки:
+  // D:\Docs\Aurora_Ai\Aurora Launch\Projects\INSPECTOR_NOT_REACHABLE.md
+  //
   // @ts-expect-error — Vite's import.meta.env types injected at build time;
   // svelte-check tsconfig sometimes misses them, but runtime works correctly.
   if (import.meta.env?.DEV && typeof window !== 'undefined') {

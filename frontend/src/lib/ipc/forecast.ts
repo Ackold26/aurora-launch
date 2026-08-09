@@ -61,12 +61,18 @@ export interface ForecastCompletedEvent {
   horizon_weeks?: number;
   horizon_periods?: number;
   elapsed_ms: number;
-  /** Orchestrated path: full summary с points + engine_mode + methodology_signature + warnings + granularity. */
+  /** Orchestrated path: full summary с points + engine_mode + methodology_signature + warnings + granularity.
+   *
+   * 🔴 Внешний аудит 2026-07-30: сводку теперь испускает и устаревший путь
+   * расчёта (`legacy_prior_predictive_v1`) — до этого он молчал, и фронт
+   * подставлял чужой режим. У устаревшего пути `engine_mode` = null (режима из
+   * EngineMode у него нет), а `granularity` отсутствует (безымянные периоды),
+   * поэтому оба поля здесь ослаблены до необязательных/nullable. */
   forecast?: {
     horizon_periods: number;
-    granularity: 'monthly' | 'weekly';
+    granularity?: 'monthly' | 'weekly';
     methodology_signature: string;
-    engine_mode: 'pure_transfer' | 'transfer_with_bias_check' | 'ols_with_proxy_priors' | 'bayesian_with_proxy_priors';
+    engine_mode: 'pure_transfer' | 'transfer_with_bias_check' | 'ols_with_proxy_priors' | 'bayesian_with_proxy_priors' | null;
     warnings: string[];
     points: Array<{ point_forecast: number; ci_lower: number; ci_upper: number }>;
   };
@@ -263,7 +269,10 @@ export async function explainForecast(
 export interface ComposeForecastJsonParams {
   horizon_weeks: number;
   weekly_points: Array<{ week_index: number; point: number; ci_lower: number; ci_upper: number }>;
-  engine_mode?: 'pure_transfer' | 'transfer_with_bias_check' | 'ols_with_proxy_priors' | 'bayesian_with_proxy_priors';
+  /** 🔴 Внешний аудит 2026-07-30: `null` — «режим неизвестен», легальное значение
+   * схемы forecast.json. Писатель обязан передавать его вместо подстановки
+   * чужого режима; отсутствие ключа по-прежнему означает «по умолчанию». */
+  engine_mode?: 'pure_transfer' | 'transfer_with_bias_check' | 'ols_with_proxy_priors' | 'bayesian_with_proxy_priors' | null;
   granularity?: 'monthly' | 'weekly';
   methodology_signature?: string;
   n_recipient?: number;

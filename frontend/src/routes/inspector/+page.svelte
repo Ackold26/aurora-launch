@@ -108,7 +108,11 @@
           ci_upper: number;
         }>;
         horizon_weeks: number;
-        engine_mode?: EngineMode;
+        // 🔴 Внешний аудит 2026-07-30: `null` — «режим неизвестен» от писателя
+        // бандла (схема forecast.json допускает его с той же даты). Оба случая —
+        // null и отсутствие ключа — ниже одинаково проваливаются в вывод режима
+        // по сигнатуре, а при её отсутствии в честное «метод не указан».
+        engine_mode?: EngineMode | null;
         methodology_signature?: string;
         warnings?: string[];
         n_recipient?: number;

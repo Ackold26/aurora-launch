@@ -565,8 +565,14 @@ def _handle_bayesian_with_proxy_priors(
     )
 
     warnings.append(
+        # INV-50: R̂ здесь не измерен, а задан по построению — апостериорное
+        # распределение получено аналитически (bayesian_with_priors.py:183:
+        # `r_hat=1.0, # analytical Gaussian → perfect convergence by construction`),
+        # MCMC-цепей нет. Прежний текст читался клиентом как результат
+        # диагностики сходимости, которой не было; природа числа названа прямо.
         f"Bayesian+priors fit converged (N={result.n_observations}, "
-        f"samples={result.n_samples}, R̂={result.r_hat:.3f}, "
+        f"samples={result.n_samples}, R̂={result.r_hat:.3f} by construction — "
+        f"analytical Gaussian posterior, no MCMC sampling, "
         f"shrinkage={result.shrinkage_used:.2f})."
     )
     return forecast, "bayesian_with_proxy_priors_v1"
